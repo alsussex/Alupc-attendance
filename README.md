@@ -29,6 +29,7 @@ Requirements: Node.js 22.13 or newer, npm, and a Supabase project.
    - `supabase/migrations/202607290002_sync_timestamps.sql`
    - `supabase/migrations/202607290003_user_roles_and_record_lifecycle.sql`
    - `supabase/migrations/202607290004_inactive_member_metadata.sql`
+   - `supabase/migrations/202607290005_fix_people_lifecycle_rls.sql`
 
 4. Create the first user and organization using the steps below.
 5. Put the project URL, browser-safe anon key, and server-only service-role key in `.env.local`. The service-role key must never have a `NEXT_PUBLIC_` prefix.
@@ -107,7 +108,7 @@ The default Vercel domain is sufficient. Use the exact stable production domain 
 
 ## Private Vercel deployment checklist
 
-1. Confirm all four migrations were applied in filename order.
+1. Confirm all five migrations were applied in filename order.
 2. Confirm the first Admin and organization profile exist.
 3. Confirm `.env.example` contains placeholders and `.env.local` is untracked.
 4. Import the existing `alsussex/Alupc-attendance` repository and select `main`.
@@ -175,6 +176,14 @@ The prominent sync bar appears only when useful:
 - Member reactivation updates the existing UUID in place, clears its inactivity timestamp, and leaves every historical attendance row attached.
 - Conflict resolution is record-level last-server-write-wins; there is not yet a field-level conflict review screen.
 
+### People lifecycle RLS and queued recovery
+
+People synchronize with `INSERT ... ON CONFLICT DO UPDATE`. PostgreSQL evaluates the people INSERT policy even for an existing-row update. Migration `202607290005_fix_people_lifecycle_rls.sql` therefore has role-specific insert/upsert and update policies: Admins may upload valid active or inactive versions of existing organization members, while Attendance Takers may upsert only active members and the lifecycle trigger rejects any attempt to change lifecycle, organization, type, or creation ownership fields.
+
+The general people SELECT policy includes active and inactive rows in the authorized organization because PostgreSQL also requires SELECT access for updates and returned rows. The interface remains responsible for deciding which role sees inactive-member controls.
+
+A mutation that previously failed RLS remains in IndexedDB with `error` status. Applying the corrective migration is sufficient: the open app retries on its existing backoff schedule, reconnection, focus, or a new mutation. Reopening the app also retries it. **Sync now** is available as a secondary fallback; the member must not be recreated.
+
 ### Known limitations
 
 - Sync runs while the app is open; it does not use background sync, push notifications, or Supabase Realtime.
@@ -224,7 +233,7 @@ This release does not include Excel export, reports, charts, advanced conflict r
 
 Use fictional data such as **Alex Meadow** and **Robin Field**.
 
-1. Apply all four migrations and configure the same Supabase project.
+1. Apply all five migrations and configure the same Supabase project.
 2. Open Browser A as Admin, wait for **Online**, invite a fictional Attendance Taker, and complete that user's first sign-in online in Browser B.
 3. In Browser A, add Alex Meadow, create a draft service, check Alex present, and allow background sync to complete.
 4. In Browser B, focus the app and confirm Alex, the service, and attendance total of one.
