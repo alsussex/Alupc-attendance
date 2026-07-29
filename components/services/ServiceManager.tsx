@@ -19,6 +19,7 @@ import {
   saveService,
   setMemberAttendance,
 } from "@/lib/repositories/attendance-repository";
+import { subscribeToDataChanges } from "@/lib/storage/data-events";
 
 function localDate() {
   const date = new Date();
@@ -52,7 +53,12 @@ export function ServiceManager() {
   }, [user]);
 
   useEffect(() => {
-    void refreshLists();
+    const timer = window.setTimeout(() => void refreshLists(), 0);
+    const unsubscribe = subscribeToDataChanges(() => void refreshLists());
+    return () => {
+      window.clearTimeout(timer);
+      unsubscribe();
+    };
   }, [refreshLists]);
 
   async function openService(service: ChurchService) {

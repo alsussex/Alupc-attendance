@@ -9,6 +9,7 @@ import {
   markMemberInactive,
   saveMember,
 } from "@/lib/repositories/attendance-repository";
+import { subscribeToDataChanges } from "@/lib/storage/data-events";
 
 interface FormState {
   id?: string;
@@ -33,7 +34,11 @@ export function PeopleDirectory() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
-    return () => window.clearTimeout(timer);
+    const unsubscribe = subscribeToDataChanges(() => void refresh());
+    return () => {
+      window.clearTimeout(timer);
+      unsubscribe();
+    };
   }, [refresh]);
 
   const filtered = useMemo(() => {

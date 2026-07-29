@@ -1,65 +1,133 @@
 "use client";
 
-import { getSupabaseClient, hasSupabaseConfig } from "@/lib/supabase/client";
+import type { SyncPhase, SyncStatusRecord, UserContext } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
+import { hasSupabaseConfig } from "@/lib/supabase/client";
+import {
+  pullOrganizationData,
+  type PullResult,
+  type PullSource,
+} from "@/lib/sync/pull-service";
+import {
+  uploadPendingChanges,
+  type UploadResult,
+  type UploadTarget,
+} from "@/lib/sync/upload-service";
 
-let activeSync: Promise<void> | null = null;
-
-export function syncPendingChanges() {
-  if (activeSync) return activeSync;
-  activeSync = runSync().finally(() => {
-    activeSync = null;
-  });
-  return activeSync;
+export interface SynchronizationResult {
+  upload: UploadResult;
+  pull: PullResult;
 }
 
-async function runSync() {
-  if (
-    typeof navigator === "undefined" ||
-    !navigator.onLine ||
-    !hasSupabaseConfig()
-  ) {
-    return;
-  }
+export interface SynchronizationOptions {
+  pullSource?: PullSource;
+  uploadTarget?: UploadTarget;
+  isOnline?: boolean;
+  onPhase?: (phase: SyncPhase) => void;
+}
 
+const activeSyncs = new Map<string, Promise<SynchronizationResult>>();
+
+async function storeStatus(
+  organizationId: string,
+  phase: SyncPhase,
+  error?: string,
+) {
   const database = await getDatabase();
-  const supabase = getSupabaseClient();
-  const queue = await database.getAll("syncQueue");
+  const previous = await database.get("syncStatus", organizationId);
+  const timestamp = new Date().toISOString();
+  const status: SyncStatusRecord = {
+    id: organizationId,
+    organizationId,
+    phase,
+    lastAttemptAt: timestamp,
+    lastSuccessfulSyncAt:
+      phase === "complete" ? timestamp : previous?.lastSuccessfulSyncAt,
+    lastError: error,
+  };
+  await database.put("syncStatus", status);
+}
 
-  for (const item of queue) {
-    await database.put("syncQueue", {
-      ...item,
-      status: "processing",
-      attempts: item.attempts + 1,
-      updatedAt: new Date().toISOString(),
-    });
+export async function getStoredSyncStatus(organizationId: string) {
+  return (await getDatabase()).get("syncStatus", organizationId);
+}
 
-    const { error } = await supabase.from(item.table).upsert(item.payload, {
-      onConflict:
-        item.table === "service_attendance"
-          ? "organization_id,service_id,person_id"
-          : "id",
-    });
+async function runSynchronization(
+  user: UserContext,
+  options: SynchronizationOptions,
+): Promise<SynchronizationResult> {
+  const online =
+    options.isOnline ??
+    (typeof navigator !== "undefined" && navigator.onLine);
+  const injectedSynchronization = Boolean(
+    options.pullSource && options.uploadTarget,
+  );
+  if (!online || (!hasSupabaseConfig() && !injectedSynchronization)) {
+    options.onPhase?.("offline");
+    await storeStatus(user.organizationId, "offline");
+    return {
+      upload: { uploaded: 0, errors: [] },
+      pull: { downloaded: 0, merged: 0, skippedPending: 0, skippedOlder: 0 },
+    };
+  }
 
-    if (error) {
-      await database.put("syncQueue", {
-        ...item,
-        status: "error",
-        attempts: item.attempts + 1,
-        lastError: error.message,
-        updatedAt: new Date().toISOString(),
-      });
-      continue;
+  options.onPhase?.("loading");
+  await storeStatus(user.organizationId, "loading");
+  const upload = await uploadPendingChanges(
+    user.organizationId,
+    options.uploadTarget,
+  );
+
+  options.onPhase?.("downloading");
+  await storeStatus(user.organizationId, "downloading");
+  try {
+    const pull = await pullOrganizationData(
+      user.organizationId,
+      options.pullSource,
+    );
+    if (upload.errors.length) {
+      const message = upload.errors.join("\n");
+      options.onPhase?.("error");
+      await storeStatus(user.organizationId, "error", message);
+      return { upload, pull };
     }
-
-    await database.delete("syncQueue", item.id);
+    options.onPhase?.("complete");
+    await storeStatus(user.organizationId, "complete");
+    return { upload, pull };
+  } catch (caught) {
+    const message =
+      caught instanceof Error ? caught.message : "Download synchronization failed.";
+    options.onPhase?.("error");
+    await storeStatus(user.organizationId, "error", message);
+    throw caught;
   }
 }
 
-export function registerAutomaticSync(onSettled?: () => void) {
-  const handler = () => {
-    void syncPendingChanges().finally(onSettled);
+export function synchronizeOrganization(
+  user: UserContext,
+  options: SynchronizationOptions = {},
+) {
+  const existing = activeSyncs.get(user.organizationId);
+  if (existing) return existing;
+  const sync = runSynchronization(user, options).finally(() => {
+    activeSyncs.delete(user.organizationId);
+  });
+  activeSyncs.set(user.organizationId, sync);
+  return sync;
+}
+
+export function registerAutomaticSync(
+  user: UserContext,
+  synchronize: () => Promise<unknown>,
+) {
+  const online = () => void synchronize();
+  const focus = () => void synchronize();
+  window.addEventListener("online", online);
+  window.addEventListener("focus", focus);
+  const interval = window.setInterval(() => void synchronize(), 60_000);
+  return () => {
+    window.removeEventListener("online", online);
+    window.removeEventListener("focus", focus);
+    window.clearInterval(interval);
   };
-  window.addEventListener("online", handler);
-  return () => window.removeEventListener("online", handler);
 }

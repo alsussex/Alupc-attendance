@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { SyncIndicator } from "./SyncIndicator";
+import { SyncBanner, SyncIndicator } from "./SyncIndicator";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", glyph: "D" },
@@ -53,7 +53,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="mobile-brand">Church Attendance</div>
           <SyncIndicator />
         </header>
-        <main className="page-content">{children}</main>
+        <main className="page-content">
+          <SyncBanner />
+          {children}
+        </main>
       </div>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {navigation.map((item) => (

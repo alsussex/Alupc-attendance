@@ -12,7 +12,7 @@ export async function enqueueChange(
   const database = await getDatabase();
   const existing = (
     await database.getAllFromIndex("syncQueue", "recordId", input.recordId)
-  ).find((item) => item.table === input.table && item.status !== "processing");
+  ).find((item) => item.table === input.table);
   const timestamp = nowIso();
   const item: SyncQueueItem = existing
     ? {
@@ -40,8 +40,7 @@ export async function getPendingChanges(organizationId?: string) {
   const all = await database.getAll("syncQueue");
   return all.filter(
     (item) =>
-      (!organizationId || item.organizationId === organizationId) &&
-      item.status !== "processing",
+      !organizationId || item.organizationId === organizationId,
   );
 }
 

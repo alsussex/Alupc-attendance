@@ -1,62 +1,49 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import type { SyncState } from "@/lib/domain";
-import { useAuth } from "@/components/auth/AuthProvider";
-import { getPendingChanges } from "@/lib/sync/queue";
-import {
-  registerAutomaticSync,
-  syncPendingChanges,
-} from "@/lib/sync/sync-service";
+import type { SyncPhase } from "@/lib/domain";
+import { useSynchronization } from "@/components/sync/SyncProvider";
 
-const labels: Record<SyncState, string> = {
-  synced: "Online and synced",
-  local: "Saved locally",
+const labels: Record<SyncPhase, string> = {
+  loading: "Loading church data",
+  downloading: "Downloading updates",
+  complete: "Sync complete",
   pending: "Sync pending",
   error: "Sync error",
+  offline: "Offline — using saved data",
 };
 
 export function SyncIndicator() {
-  const { user } = useAuth();
-  const [state, setState] = useState<SyncState>("synced");
-
-  const refresh = useCallback(async () => {
-    if (!user) return;
-    const queue = await getPendingChanges(user.organizationId);
-    if (queue.some((item) => item.status === "error")) {
-      setState("error");
-    } else if (queue.length && navigator.onLine) {
-      setState("pending");
-    } else if (queue.length) {
-      setState("local");
-    } else {
-      setState(navigator.onLine ? "synced" : "local");
-    }
-  }, [user]);
-
-  useEffect(() => {
-    const initialRefresh = window.setTimeout(() => void refresh(), 0);
-    const cleanup = registerAutomaticSync(refresh);
-    const offline = () => void refresh();
-    window.addEventListener("offline", offline);
-    const interval = window.setInterval(refresh, 4000);
-    return () => {
-      cleanup();
-      window.clearTimeout(initialRefresh);
-      window.removeEventListener("offline", offline);
-      window.clearInterval(interval);
-    };
-  }, [refresh]);
-
+  const { phase, error, syncNow } = useSynchronization();
+  const label = labels[phase];
   return (
     <button
-      className={`sync-indicator ${state}`}
+      className={`sync-indicator ${phase}`}
       type="button"
-      onClick={() => void syncPendingChanges().finally(refresh)}
-      aria-label={`${labels[state]}. Activate to retry synchronization.`}
+      onClick={() => void syncNow()}
+      aria-label={`${label}. Activate to synchronize now.`}
+      title={error ?? "Activate to synchronize now"}
     >
       <span className="status-dot" aria-hidden="true" />
-      {labels[state]}
+      {label}
     </button>
+  );
+}
+
+export function SyncBanner() {
+  const { phase, error, syncNow } = useSynchronization();
+  if (phase === "complete") return null;
+  return (
+    <div className={`sync-banner ${phase}`} role={phase === "error" ? "alert" : "status"}>
+      <span className="status-dot" aria-hidden="true" />
+      <span>
+        <strong>{labels[phase]}</strong>
+        {phase === "error" && error ? <small>{error}</small> : null}
+      </span>
+      {(phase === "error" || phase === "offline" || phase === "pending") && (
+        <button type="button" onClick={() => void syncNow()}>
+          Try again
+        </button>
+      )}
+    </div>
   );
 }

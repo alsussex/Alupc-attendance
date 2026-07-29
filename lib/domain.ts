@@ -1,6 +1,13 @@
 export type PersonType = "member" | "visitor";
 export type ServiceStatus = "draft" | "completed";
 export type SyncState = "synced" | "local" | "pending" | "error";
+export type SyncPhase =
+  | "loading"
+  | "downloading"
+  | "complete"
+  | "pending"
+  | "error"
+  | "offline";
 
 export const SERVICE_TYPES = [
   "Sunday Morning",
@@ -19,6 +26,25 @@ export interface AuditedRecord {
   updatedAt: string;
   createdBy: string;
   updatedBy: string;
+}
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Profile {
+  id: string;
+  organizationId: string;
+  displayName?: string;
+  role: "admin" | "attendance_taker";
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Person extends AuditedRecord {
@@ -69,6 +95,34 @@ export interface SyncQueueItem {
   lastError?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export const PULL_TABLES = [
+  "organizations",
+  "profiles",
+  "people",
+  "services",
+  "service_attendance",
+  "service_visitors",
+] as const;
+
+export type PullTable = (typeof PULL_TABLES)[number];
+
+export interface SyncCursor {
+  id: string;
+  organizationId: string;
+  table: PullTable;
+  updatedAt: string;
+  lastSuccessfulPullAt: string;
+}
+
+export interface SyncStatusRecord {
+  id: string;
+  organizationId: string;
+  phase: SyncPhase;
+  lastAttemptAt: string;
+  lastSuccessfulSyncAt?: string;
+  lastError?: string;
 }
 
 export function normalizeName(value: string) {

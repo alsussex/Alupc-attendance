@@ -15,16 +15,9 @@ import {
   type UserContext,
 } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
+import { announceDataChanged } from "@/lib/storage/data-events";
 import { enqueueChange } from "@/lib/sync/queue";
-
-function toCloudRecord<T extends object>(value: T) {
-  return Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
-      key.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`),
-      entry,
-    ]),
-  );
-}
+import { toCloudRecord } from "@/lib/sync/serialization";
 
 export async function listActiveMembers(organizationId: string) {
   const database = await getDatabase();
@@ -77,6 +70,7 @@ export async function saveMember(
     recordId: person.id,
     payload: toCloudRecord(person),
   });
+  announceDataChanged();
   return person;
 }
 
@@ -92,6 +86,7 @@ export async function markMemberInactive(user: UserContext, id: string) {
     recordId: id,
     payload: toCloudRecord(updated),
   });
+  announceDataChanged();
   return updated;
 }
 
@@ -137,6 +132,7 @@ export async function saveService(
     recordId: service.id,
     payload: toCloudRecord(service),
   });
+  announceDataChanged();
   return service;
 }
 
@@ -173,6 +169,7 @@ export async function setMemberAttendance(
     recordId: id,
     payload: toCloudRecord(record),
   });
+  announceDataChanged();
   return record;
 }
 
@@ -210,6 +207,7 @@ export async function addServiceVisitor(
     recordId: visitor.id,
     payload: toCloudRecord(visitor),
   });
+  announceDataChanged();
   return { visitor, member };
 }
 
