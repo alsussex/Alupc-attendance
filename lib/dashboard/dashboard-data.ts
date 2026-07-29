@@ -76,9 +76,9 @@ export async function loadDashboardSnapshot(
       database.getAllFromIndex("visitors", "organizationId", organizationId),
     ]);
 
-  const orderedServices = services.sort((a, b) =>
-    b.serviceDate.localeCompare(a.serviceDate),
-  );
+  const orderedServices = services
+    .filter((service) => !service.deletedAt && !service.isArchived)
+    .sort((a, b) => b.serviceDate.localeCompare(a.serviceDate));
   const attendanceByService = new Map<string, Set<string>>();
   for (const record of attendance) {
     if (!record.present) continue;
@@ -150,7 +150,10 @@ export async function loadDashboardSnapshot(
   return {
     churchName: organization?.name || "Abundant Life UPC",
     totalPeople: people.filter(
-      (person) => person.isActive && person.personType === "member",
+      (person) =>
+        !person.deletedAt &&
+        person.isActive &&
+        person.personType === "member",
     ).length,
     servicesThisMonth: monthServices.length,
     attendanceThisMonth,

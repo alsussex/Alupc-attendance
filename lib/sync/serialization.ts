@@ -48,6 +48,10 @@ function requiredBoolean(row: Record<string, unknown>, key: string) {
   return value;
 }
 
+function optionalBoolean(row: Record<string, unknown>, key: string) {
+  return typeof row[key] === "boolean" ? row[key] : false;
+}
+
 function auditFields(row: Record<string, unknown>) {
   return {
     id: requiredString(row, "id"),
@@ -103,6 +107,7 @@ export function fromCloudRecord(
       displayName: requiredString(row, "display_name"),
       personType,
       isActive: requiredBoolean(row, "is_active"),
+      deletedAt: optionalString(row, "deleted_at"),
     };
   }
 
@@ -113,6 +118,8 @@ export function fromCloudRecord(
       serviceType: requiredString(row, "service_type") as ChurchService["serviceType"],
       customName: optionalString(row, "custom_name"),
       status: requiredString(row, "status") as ChurchService["status"],
+      isArchived: optionalBoolean(row, "is_archived"),
+      deletedAt: optionalString(row, "deleted_at"),
     };
   }
 

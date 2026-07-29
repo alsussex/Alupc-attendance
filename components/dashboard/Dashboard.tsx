@@ -10,6 +10,7 @@ import {
   type DashboardSnapshot,
 } from "@/lib/dashboard/dashboard-data";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
+import { isAdmin } from "@/lib/auth/permissions";
 
 const emptySnapshot: DashboardSnapshot = {
   churchName: "Abundant Life UPC",
@@ -237,12 +238,14 @@ export function Dashboard() {
               <small>Coming in a future stage</small>
             </span>
           </button>
-          <QuickAction
-            href="/settings"
-            glyph="⚙"
-            label="Settings"
-            description="Application preferences"
-          />
+          {isAdmin(user) && (
+            <QuickAction
+              href="/settings"
+              glyph="⚙"
+              label="Settings"
+              description="Organization preferences"
+            />
+          )}
         </div>
       </section>
 

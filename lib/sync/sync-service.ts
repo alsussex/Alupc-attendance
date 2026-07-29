@@ -28,6 +28,10 @@ export interface SynchronizationOptions {
 
 const activeSyncs = new Map<string, Promise<SynchronizationResult>>();
 
+export function syncRetryDelay(failedAttempts: number) {
+  return Math.min(2_000 * 2 ** Math.max(0, failedAttempts), 60_000);
+}
+
 async function storeStatus(
   organizationId: string,
   phase: SyncPhase,

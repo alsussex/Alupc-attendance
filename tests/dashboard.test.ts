@@ -13,6 +13,7 @@ const user: UserContext = {
   userId: "10000000-0000-4000-8000-000000000010",
   organizationId: "20000000-0000-4000-8000-000000000010",
   email: "dashboard@example.test",
+  role: "admin",
 };
 
 beforeEach(async () => {
@@ -73,6 +74,7 @@ describe("dashboard snapshot", () => {
       userId: "10000000-0000-4000-8000-000000000011",
       organizationId: "20000000-0000-4000-8000-000000000011",
       email: "other@example.test",
+      role: "attendance_taker",
     };
     await saveMember(otherUser, {
       firstName: "Riley",

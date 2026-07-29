@@ -16,10 +16,17 @@ import {
 } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
 import { announceDataChanged } from "@/lib/storage/data-events";
+import { isAdmin } from "@/lib/auth/permissions";
 import { enqueueChange } from "@/lib/sync/queue";
 import { toCloudRecord } from "@/lib/sync/serialization";
 
 export async function listActiveMembers(organizationId: string) {
+  return (await listMembers(organizationId)).filter(
+    (person) => person.isActive,
+  );
+}
+
+export async function listMembers(organizationId: string) {
   const database = await getDatabase();
   const records = await database.getAllFromIndex(
     "people",
@@ -27,7 +34,7 @@ export async function listActiveMembers(organizationId: string) {
     organizationId,
   );
   return records
-    .filter((person) => person.isActive && person.personType === "member")
+    .filter((person) => !person.deletedAt && person.personType === "member")
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
@@ -75,6 +82,9 @@ export async function saveMember(
 }
 
 export async function markMemberInactive(user: UserContext, id: string) {
+  if (!isAdmin(user)) {
+    throw new Error("Only an administrator can archive church members.");
+  }
   const database = await getDatabase();
   const person = await database.get("people", id);
   if (!person) throw new Error("Person not found");
@@ -90,14 +100,72 @@ export async function markMemberInactive(user: UserContext, id: string) {
   return updated;
 }
 
-export async function listServices(organizationId: string) {
+export async function restoreMember(user: UserContext, id: string) {
+  if (!isAdmin(user)) {
+    throw new Error("Only an administrator can restore church members.");
+  }
+  const database = await getDatabase();
+  const person = await database.get("people", id);
+  if (!person || person.deletedAt) throw new Error("Person not found");
+  const updated = {
+    ...person,
+    isActive: true,
+    updatedAt: nowIso(),
+    updatedBy: user.userId,
+  };
+  await database.put("people", updated);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "people",
+    recordId: id,
+    payload: toCloudRecord(updated),
+  });
+  announceDataChanged();
+  return updated;
+}
+
+export async function removeMember(user: UserContext, id: string) {
+  if (!isAdmin(user)) {
+    throw new Error("Only an administrator can remove church members.");
+  }
+  const database = await getDatabase();
+  const person = await database.get("people", id);
+  if (!person) throw new Error("Person not found");
+  const timestamp = nowIso();
+  const updated = {
+    ...person,
+    isActive: false,
+    deletedAt: timestamp,
+    updatedAt: timestamp,
+    updatedBy: user.userId,
+  };
+  await database.put("people", updated);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "people",
+    recordId: id,
+    payload: toCloudRecord(updated),
+  });
+  announceDataChanged();
+  return updated;
+}
+
+export async function listServices(
+  organizationId: string,
+  includeArchived = false,
+) {
   const database = await getDatabase();
   const records = await database.getAllFromIndex(
     "services",
     "organizationId",
     organizationId,
   );
-  return records.sort((a, b) => b.serviceDate.localeCompare(a.serviceDate));
+  return records
+    .filter(
+      (service) =>
+        !service.deletedAt && (includeArchived || !service.isArchived),
+    )
+    .sort((a, b) => b.serviceDate.localeCompare(a.serviceDate));
 }
 
 export async function saveService(
@@ -120,6 +188,8 @@ export async function saveService(
     serviceType: input.serviceType,
     customName: input.customName?.trim() || undefined,
     status: input.status,
+    isArchived: existing?.isArchived ?? false,
+    deletedAt: existing?.deletedAt,
     createdAt: existing?.createdAt ?? timestamp,
     updatedAt: timestamp,
     createdBy: existing?.createdBy ?? user.userId,
@@ -134,6 +204,60 @@ export async function saveService(
   });
   announceDataChanged();
   return service;
+}
+
+export async function setServiceArchived(
+  user: UserContext,
+  id: string,
+  isArchived: boolean,
+) {
+  if (!isAdmin(user)) {
+    throw new Error("Only an administrator can archive services.");
+  }
+  const database = await getDatabase();
+  const service = await database.get("services", id);
+  if (!service || service.deletedAt) throw new Error("Service not found");
+  const updated = {
+    ...service,
+    isArchived,
+    updatedAt: nowIso(),
+    updatedBy: user.userId,
+  };
+  await database.put("services", updated);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "services",
+    recordId: id,
+    payload: toCloudRecord(updated),
+  });
+  announceDataChanged();
+  return updated;
+}
+
+export async function removeService(user: UserContext, id: string) {
+  if (!isAdmin(user)) {
+    throw new Error("Only an administrator can remove services.");
+  }
+  const database = await getDatabase();
+  const service = await database.get("services", id);
+  if (!service) throw new Error("Service not found");
+  const timestamp = nowIso();
+  const updated = {
+    ...service,
+    isArchived: true,
+    deletedAt: timestamp,
+    updatedAt: timestamp,
+    updatedBy: user.userId,
+  };
+  await database.put("services", updated);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "services",
+    recordId: id,
+    payload: toCloudRecord(updated),
+  });
+  announceDataChanged();
+  return updated;
 }
 
 export async function getServiceAttendance(serviceId: string) {

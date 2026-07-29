@@ -1,44 +1,37 @@
 # Church Attendance
 
-Stage 1.5 foundation for an offline-capable church attendance Progressive Web App. Authorized users can maintain an active member directory, create services, record attendance by name, and add one-time visitors. Changes are written to IndexedDB first, uploaded to Supabase, and pulled onto other authorized devices.
+Offline-capable church attendance Progressive Web App for Abundant Life UPC. Authorized users can maintain the member directory, create services, record attendance by name, and add one-time visitors. IndexedDB is the immediate data source; Supabase provides authentication, organization-scoped cloud storage, and multi-device synchronization.
 
-## What is included
+## Included
 
-- Supabase email/password login with persistent sessions and no public registration
-- Protected Dashboard, People, Services, and Settings routes
-- Active-member search, create, edit, duplicate-name warning, and soft deactivation
-- Draft/completed services with the five requested service types
-- Searchable, touch-friendly attendance checklist with a live total
-- One-service visitors, optionally promoted to members
-- Stable client-generated UUIDs
-- IndexedDB stores for organizations, profiles, people, services, attendance, visitors, synchronization cursors, and the upload queue
-- Initial and incremental authenticated pull synchronization from Supabase
-- Automatic synchronization at startup, on focus, periodically, and when connectivity returns
-- PWA manifest and an application-shell service worker
+- Supabase email/password login with persistent per-device sessions and no public registration
+- Admin and Attendance Taker roles enforced in the interface, server routes, database triggers, and RLS
+- Admin-only invitations, role changes, access suspension/restoration, resend, and pending-invitation cancellation
+- Responsive Dashboard, People, Services, Users, and Settings routes
+- Active-member search, create, edit, duplicate-name warning, and Admin lifecycle controls
+- Draft/completed services, searchable attendance checklist, live totals, and service visitors
+- Stable client-generated UUIDs and durable IndexedDB writes
+- Authenticated initial and incremental pull synchronization
+- Automatic upload/download synchronization with retry
+- Installable PWA shell with safe service-worker updates
 - Organization-scoped PostgreSQL schema with validation, indexes, foreign keys, and RLS
-- Optional fictional development seed members
+- Optional fictional local development seed members
 
 ## Local setup
 
 Requirements: Node.js 22.13 or newer, npm, and a Supabase project.
 
-1. Install dependencies:
-
-   ```bash
-   npm install
-   ```
-
+1. Install dependencies with `npm install`.
 2. Copy `.env.example` to `.env.local`.
-3. In Supabase SQL Editor, run these migrations in filename order:
+3. Run these files in Supabase SQL Editor in filename order:
+
    - `supabase/migrations/202607290001_stage_one.sql`
    - `supabase/migrations/202607290002_sync_timestamps.sql`
-4. Create the first user and organization using the steps below.
-5. Put the project URL and browser-safe anon key in `.env.local`. Never use the service-role key in this app.
-6. Start development:
+   - `supabase/migrations/202607290003_user_roles_and_record_lifecycle.sql`
 
-   ```bash
-   npm run dev
-   ```
+4. Create the first user and organization using the steps below.
+5. Put the project URL, browser-safe anon key, and server-only service-role key in `.env.local`. The service-role key must never have a `NEXT_PUBLIC_` prefix.
+6. Start development with `npm run dev`.
 
 Useful checks:
 
@@ -50,187 +43,185 @@ npm run build
 npm audit --omit=dev
 ```
 
-## Private Vercel test deployment
+## Environment variables
 
-The default Vercel `*.vercel.app` production domain is sufficient. A custom domain is not required. The application derives host-dependent metadata from the incoming request and uses root-relative PWA paths, so there is no production hostname hardcoded in the source.
-
-### Required Vercel environment variables
-
-Add these in **Vercel → Project → Settings → Environment Variables**:
-
-| Variable | Production value |
+| Variable | Value and exposure |
 | --- | --- |
-| `NEXT_PUBLIC_SUPABASE_URL` | The existing Supabase project URL, such as `https://your-project-ref.supabase.co` |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | The existing browser-safe anon/publishable key |
-| `NEXT_PUBLIC_ENABLE_DEMO_SEED` | `false` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Existing Supabase project URL; browser-safe |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Existing anon/publishable key; browser-safe and protected by RLS |
+| `NEXT_PUBLIC_ENABLE_DEMO_SEED` | `false` in production |
+| `SUPABASE_SERVICE_ROLE_KEY` | Existing service-role key; server-only |
 
-Apply all three to **Production**. Apply the same values to **Preview** only if preview deployments will be used for testing. Values prefixed with `NEXT_PUBLIC_` are included in browser code: the anon key is designed for this use, while a service-role key, database password, access token, or other privileged credential must never be added.
+The service-role key is used only after an Admin API route verifies the caller's Supabase access token and active Admin profile. Never paste it into source code, chat, a client-side variable, or GitHub.
 
-### Supabase authentication URLs
+## Create the first organization and Admin
 
-After Vercel creates the project, copy its stable production domain exactly. In **Supabase → Authentication → URL Configuration**, configure:
+1. In **Supabase > Authentication > Users**, add the first user with email and password.
+2. Copy that user's Auth UUID.
+3. Open `supabase/bootstrap-first-organization.sql` and replace its clearly marked placeholders.
+4. Run the edited block once in Supabase SQL Editor.
+5. Sign in through `/login`.
 
-- **Site URL:** `https://<assigned-production-domain>.vercel.app`
-- **Production Redirect URL:** `https://<assigned-production-domain>.vercel.app/login`
-- **Local Development Redirect URL:** `http://localhost:3000/login`
+The bootstrap script is for the first organization only. Invitations and the fallback workflow below always reuse that organization.
 
-For the expected project name, these will normally be `https://alupc-attendance.vercel.app` and `https://alupc-attendance.vercel.app/login`, but use the domain Vercel actually assigns if it differs. The current password sign-in does not initiate a redirect; these settings establish the correct safe destination for Supabase-generated authentication links. Keep the production entry exact. Add Supabase's Vercel preview wildcard only if preview authentication is genuinely required.
+## User roles and permissions
 
-### Safe deployment checklist
+| Capability | Admin | Attendance Taker |
+| --- | --- | --- |
+| View people, services, and attendance | Yes | Yes |
+| Add members and edit basic member names | Yes | Yes |
+| Create services and record attendance/visitors | Yes | Yes |
+| Archive, restore, or remove members | Yes | No |
+| Edit, archive, or remove services | Yes | No |
+| Invite users, change roles, disable/restore access | Yes | No |
+| Open User Management or organization Settings | Yes | No |
 
-1. Confirm both Supabase migrations have been applied.
-2. Confirm the first authorized authentication user and organization profile exist.
-3. Confirm `.env.example` still contains placeholders and no `.env.local` file is tracked.
-4. Confirm `NEXT_PUBLIC_ENABLE_DEMO_SEED=false` in Vercel.
-5. Import the existing `alsussex/Alupc-attendance` GitHub repository into Vercel; do not create another repository.
-6. Select the `main` production branch, leave the root directory as the repository root, and use the **Next.js** framework preset.
-7. Keep the default install command and build command (`npm run build`). Do not set an output directory override.
-8. Add the three environment variables above without exposing them in source control or chat.
-9. Deploy and copy the assigned production `vercel.app` domain.
-10. Add the exact Site URL and redirect URLs to Supabase as described above.
-11. For a genuinely private test, enable Vercel Deployment Protection using Vercel Authentication or password protection when available. Supabase login still controls application data access.
-12. Open `/login`, sign in, and wait for **Sync complete** before entering test data.
-13. Use fictional records only during deployment verification.
+Interface checks improve clarity, but are not the security boundary. RLS limits every user to their active organization. Database triggers reject Attendance Taker lifecycle operations. User/profile administration is performed only through server routes that independently verify an active Admin.
 
-### PWA deployment behavior
+### Add an Attendance Taker
 
-- Navigation requests use the network first, so a new deployment replaces an older application shell whenever connectivity is available.
-- The service-worker script and manifest are served with revalidation headers, and the browser checks for updates on registration, focus, reconnection, and hourly while open.
-- Activating a new service worker removes only older Church Attendance shell caches.
-- IndexedDB is separate from Cache Storage. Service-worker activation does not delete people, services, attendance, visitors, pending writes, or synchronization cursors.
-- The service worker ignores all cross-origin requests, including Supabase authentication and synchronization traffic.
+1. Apply `202607290003_user_roles_and_record_lifecycle.sql`.
+2. Add `SUPABASE_SERVICE_ROLE_KEY` to the local or Vercel server environment. Never prefix it with `NEXT_PUBLIC_`.
+3. Add the invitation redirect URLs listed below in Supabase.
+4. Sign in with the existing Admin account and open **Users**.
+5. Select **Invite user**, enter the person's display name and email, choose **Attendance Taker**, and send the invitation.
+6. The invited person opens the email link while online, chooses a password, and completes their first sign-in online.
+7. Wait for **Synced** on the new device before testing offline use.
 
-## Create the first organization and authorized user
+The profile is attached automatically to the Admin's existing organization. No new organization is created.
 
-1. In the Supabase dashboard, open **Authentication → Users → Add user**.
-2. Create the user with email and password. Do not add a public sign-up flow.
-3. Copy the new user UUID.
-4. Open `supabase/bootstrap-first-organization.sql` and replace:
-   - `REPLACE_WITH_AUTH_USER_UUID`
-   - `REPLACE WITH CHURCH NAME`
-   - `replace-with-church-slug`
-   - `REPLACE WITH USER NAME`
-5. Run the edited block once in Supabase SQL Editor.
-6. Sign in through `/login`.
+If invitation email delivery is unavailable, create and confirm the additional user in **Supabase > Authentication > Users**, then run `supabase/add-existing-user-to-organization.sql`. Replace its placeholders with the existing Admin Auth UUID, the new user's Auth UUID, and a display name. The SQL derives the organization from the existing Admin and will not create another organization. The new user must still sign in online once on each new device.
 
-For each future authorized user, create the authentication user and insert one `profiles` row pointing to the correct `organization_id`. Stage 1.5 intentionally does not include user administration.
+## Supabase authentication URLs
 
-## Optional fictional seed data
+In **Supabase > Authentication > URL Configuration**, configure:
 
-Set this only in local development:
+- Site URL: `https://<assigned-production-domain>.vercel.app`
+- Production login redirect: `https://<assigned-production-domain>.vercel.app/login`
+- Production invitation redirect: `https://<assigned-production-domain>.vercel.app/accept-invite`
+- Local login redirect: `http://localhost:3000/login`
+- Local invitation redirect: `http://localhost:3000/accept-invite`
 
-```env
-NEXT_PUBLIC_ENABLE_DEMO_SEED=true
-```
+The default Vercel domain is sufficient. Use the exact stable production domain Vercel assigns. Add preview wildcards only if preview authentication is genuinely needed.
 
-When the organization has no active members, the app adds Jack Black, Chris Cummings, and Taylor Swift. Turn the flag off to disable seeding. Existing seed records remain ordinary member records and can be marked inactive.
+## Private Vercel deployment checklist
+
+1. Confirm all three migrations were applied in filename order.
+2. Confirm the first Admin and organization profile exist.
+3. Confirm `.env.example` contains placeholders and `.env.local` is untracked.
+4. Import the existing `alsussex/Alupc-attendance` repository and select `main`.
+5. Use the Next.js preset, repository root, default install command, and `npm run build`.
+6. Add the four environment variables above; set demo seed to `false`.
+7. Deploy, copy the assigned production domain, and configure the exact Supabase URLs.
+8. Enable Vercel Deployment Protection if desired for private testing.
+9. Sign in, wait for **Synced**, and use fictional records for verification.
 
 ## Offline and synchronization architecture
 
-The data flow remains local-first:
-
 ```text
-Screen -> typed repository -> IndexedDB transaction -> upload queue
-                                                        |
-                                                        v
-                                                     Supabase
-                                                        |
-                                                        v
-                         authenticated pull -> safe IndexedDB merge -> screen
+Screen -> repository -> IndexedDB transaction -> mutation queue
+                                                   |
+                                                   v
+                                                Supabase
+                                                   |
+                                                   v
+                    authenticated pull -> safe IndexedDB merge -> screen
 ```
 
-- UI components do not call Supabase for writes.
-- `lib/repositories/attendance-repository.ts` owns local domain writes.
-- `lib/storage/database.ts` defines the versioned IndexedDB schema.
+- UI writes never wait for Supabase. Repositories write IndexedDB first and queue an idempotent upsert.
+- `lib/storage/database.ts` defines the durable local stores.
 - `lib/sync/queue.ts` coalesces repeated upserts for the same record.
-- `lib/sync/upload-service.ts` uploads queued changes in dependency order.
-- `lib/sync/pull-service.ts` downloads and merges cloud changes in dependency order.
-- `lib/sync/sync-service.ts` coordinates the separate upload and pull operations.
-- Client-generated UUIDs remain stable locally and in Supabase.
-- The service worker caches the previously loaded application shell. IndexedDB holds product records; the service-worker cache is not treated as data storage.
+- Upload and pull remain separate, testable operations and run in dependency order.
+- Sync runs after login/startup, shortly after every local change, on reconnection/focus, periodically, and after capped exponential retry delays.
+- Client UUIDs remain stable locally and in Supabase.
+- Cache Storage holds only the application shell; IndexedDB holds church records and pending mutations. A service-worker update does not delete IndexedDB.
 
-### Initial pull synchronization
+### First sign-in and offline reopening
 
-After login, the authenticated profile identifies the active organization. The coordinator first attempts to upload pending local writes, then downloads the permitted organization and profile, followed by people and services, then attendance and visitors. Parent records therefore exist locally before dependent records. A new browser with no cursors downloads every available record and the interface refreshes from IndexedDB as each table is safely merged.
+A user must sign in online once on each new device. A successful sign-in stores the Supabase session and a small local profile cache. Thereafter, a previously authorized device can reopen offline and use its synchronized IndexedDB data. A brand-new user cannot authenticate for the first time while offline, and the login screen explains this limitation.
 
-Row Level Security remains the authorization boundary. Pull queries are organization-scoped, and the merge layer also rejects any row whose organization does not match the authenticated profile.
+Disabling an account takes effect immediately for online database/API access. A device that is already offline cannot learn it was disabled until it reconnects. On reconnection, session/profile revalidation and RLS remove access.
 
-### Incremental synchronization
+### Initial and incremental pull
 
-Each successfully downloaded table has its own `updated_at` cursor in IndexedDB. Later pulls request records at or after that cursor and paginate in deterministic `updated_at`, `id` order. The inclusive boundary makes equal-timestamp rows safe to repeat, and IndexedDB upserts make the operation idempotent. A cursor advances only after the entire table download completes, so a temporary failure cannot skip partially downloaded data.
+After login, the profile identifies the active organization. The coordinator uploads pending writes, then downloads organization/profile parents, people/services, and finally attendance/visitors. A fresh browser downloads all permitted records.
 
-Synchronization runs after login, when the app starts, when it regains connectivity, when its window regains focus, and periodically while it remains open. The app continues to use the last synchronized IndexedDB data while offline.
+Each table stores its own `updated_at` cursor. Later pulls use deterministic `updated_at, id` pagination from an inclusive cursor. Repeated boundary rows are safe because IndexedDB upserts are idempotent. A cursor advances only after a complete table pull.
 
-The visible synchronization states are:
+### Visible sync states
 
-- **Loading church data** — preparing the local repository after login.
-- **Downloading updates** — uploading pending writes or pulling cloud changes.
-- **Sync complete** — the pull completed and no upload error remains.
-- **Sync pending** — local writes remain queued.
-- **Sync error** — an upload or pull failed; use **Retry sync** after correcting connectivity or configuration.
-- **Offline — using saved data** — the app is reading previously synchronized IndexedDB data.
+- **Offline** — previously authorized local data is being used without a connection
+- **Saved on this device** — a change is durable in IndexedDB while offline
+- **Waiting to sync** — local mutations are queued
+- **Syncing** — uploads or downloads are running
+- **Synced** — synchronization finished without an outstanding error
+- **Sync error** — synchronization failed and will retry automatically; **Sync now** is a backup
 
-### Conflict-resolution behavior
+### Conflict resolution and data safety
 
-- A record with a pending local upload is never overwritten by a cloud pull.
-- Otherwise, the current cloud record is authoritative because the Stage 1.5 migration makes its `updated_at` server-managed on both insert and update. An untrusted device clock never outranks the server clock.
+- A record with a pending local mutation is never overwritten by a pull.
+- Otherwise, the newest valid cloud record wins using Supabase-managed `updated_at`.
 - Stable UUID upserts prevent duplicate people, services, and visitors.
-- Attendance is canonicalized by service/person, and the database unique constraint on `(organization_id, service_id, person_id)` prevents duplicate attendance rows.
-- Failed uploads stay in the queue with their error and attempt count. Failed pulls keep the previous table cursor. Neither path silently discards work.
-- Upload and pull are separate, directly testable operations. The coordinator uploads first so a device's pending writes are protected before it downloads updates.
+- Attendance is canonicalized by service/person; the unique `(organization_id, service_id, person_id)` constraint prevents duplicates.
+- Queue entries retain errors and attempt counts. Failed pulls retain the prior cursor. Work is never silently discarded.
+- Member and service removal uses synchronized tombstone fields, preserving historical references and allowing other devices to hide removed rows.
+- Conflict resolution is record-level last-server-write-wins; there is not yet a field-level conflict review screen.
 
-### Known synchronization limitations
+### Known limitations
 
-- Synchronization runs while the app is open; it does not use background sync, push notifications, or Supabase Realtime.
-- Conflict handling is record-level, not field-level, and there is no administrator conflict-review screen.
-- Permanent deletion is intentionally unsupported, so deletion tombstones are not implemented.
-- The application supports one active organization per profile and does not provide organization switching.
-- Device clocks timestamp the initial local version. Pending-write protection prevents a pull from replacing it, while Supabase assigns the trusted timestamp when it is uploaded.
+- Sync runs while the app is open; it does not use background sync, push notifications, or Supabase Realtime.
+- The application supports one active organization per profile and no organization switching.
+- Invitation resend depends on Supabase Auth email delivery and rate limits.
+- Last-sign-in information is available only through the server-only Auth Admin API.
+- Device clocks timestamp an initial local version; pending-write protection preserves it until Supabase assigns the trusted server timestamp.
 
-## Database and security notes
+## PWA deployment behavior
 
-- Every product table carries `organization_id`.
-- Composite foreign keys ensure attendance and visitors cannot reference records from another organization.
-- RLS resolves the current organization through the authenticated user's active profile.
-- Authenticated users may select, insert, and update only records in their organization.
-- No permanent-delete policy is granted for Stage 1.5 people or service data.
-- The browser uses only the anon key. RLS remains the authorization boundary.
+- Navigations use network-first caching so online clients detect a new deployment.
+- The browser checks the service worker on registration, focus, reconnection, and hourly.
+- Activation removes only old Church Attendance shell caches.
+- Service-worker activation does not delete IndexedDB records, pending writes, or cursors.
+- Cross-origin Supabase authentication and synchronization requests are never cached.
+
+## Optional fictional seed data
+
+Set `NEXT_PUBLIC_ENABLE_DEMO_SEED=true` only in local development. When no active members exist, the app adds Jack Black, Chris Cummings, and Taylor Swift. Disable the flag to stop seeding; existing fictional seed rows remain ordinary member records.
 
 ## Project structure
 
 ```text
-app/                         Next.js routes, layout, and global styling
-components/auth/             session provider and protected-route guard
+app/                         Next.js pages and Admin API routes
+components/auth/             session and protected/Admin route guards
+components/dashboard/        dashboard
+components/people/           member directory
+components/services/         services, attendance, and visitors
+components/users/            Admin-only user management
 components/shell/            responsive navigation and sync status
-components/sync/             startup synchronization provider
-components/people/           member directory workflow
-components/services/         services, attendance, and visitor workflows
+components/sync/             startup and automatic synchronization
 components/pwa/              service-worker registration
-lib/domain.ts                shared types, IDs, names, and totals
+lib/auth/                    role permission helpers
 lib/repositories/            local-first domain repositories
-lib/storage/                 IndexedDB schema and data-change events
-lib/sync/                    separate upload, pull, serialization, and coordination services
-lib/supabase/                browser Supabase client
-lib/seed/                    optional fictional seed
-public/                      manifest, service worker, and icons
-supabase/migrations/         cloud schema, RLS, and synchronization timestamps
-tests/                       focused behavior, synchronization, and security tests
+lib/storage/                 IndexedDB schema and data events
+lib/sync/                    queue, upload, pull, conflict, and retry services
+lib/supabase/                browser client and server-only Admin authorization
+supabase/migrations/         schema, RLS, timestamps, and role enforcement
+tests/                       behavior, synchronization, security, and production checks
 ```
 
 ## Intentionally unfinished
 
-This stage does not include Excel export, reporting, charts, user administration, invitations, advanced conflict review, background sync, Supabase Realtime, push notifications, detailed person profiles, bulk operations, visitor conversion after a service, or multi-organization switching.
+This release does not include Excel export, reports, charts, advanced conflict review, background sync, Supabase Realtime, push notifications, detailed person profiles, bulk operations, visitor conversion after a service, or multi-organization switching.
 
 ## Two-device manual verification
 
-Use fictional data only, such as **Alex Meadow** and **Robin Field**.
+Use fictional data such as **Alex Meadow** and **Robin Field**.
 
-1. Apply both migrations and configure the same Supabase project in the app.
-2. Open Browser A, sign in, wait for **Sync complete**, add fictional member Alex Meadow, create a draft service, check Alex present, and wait for **Sync complete** again.
-3. Open a fresh private window or Browser B with no site data. Sign in as an authorized user in the same organization and wait for **Sync complete**.
-4. Confirm Alex, the service, and Alex's attendance are visible in Browser B and that the attendance total is one.
-5. In Browser B, go offline using browser developer tools. Add fictional member Robin Field or update the draft attendance. Confirm **Offline — using saved data** or **Sync pending**, then reload and verify the local change remains.
-6. Restore connectivity and use **Retry sync** if needed. Wait for **Sync complete**.
-7. Return to Browser A, focus or reload it, wait for **Sync complete**, and confirm Browser B's change appears exactly once.
-8. Uncheck and recheck one attendee, synchronize both browsers again, and confirm the attendance total remains correct and no duplicate attendance entry appears.
-9. Optionally create an authorized user in a second test organization. Confirm that user cannot see the first organization's fictional people, services, or attendance.
+1. Apply all three migrations and configure the same Supabase project.
+2. Open Browser A as Admin, wait for **Synced**, invite a fictional Attendance Taker, and complete that user's first sign-in online in Browser B.
+3. In Browser A, add Alex Meadow, create a draft service, check Alex present, and wait for **Synced**.
+4. In Browser B, wait for **Synced** and confirm Alex, the service, and attendance total of one.
+5. Take Browser B offline. Add Robin Field or change attendance. Confirm **Saved on this device** or **Waiting to sync**, close the browser, reopen it while still offline, and verify the change remains.
+6. Restore connectivity and wait for automatic **Syncing**, then **Synced**. Use **Sync now** only as a backup.
+7. Focus Browser A, wait for **Synced**, and confirm Browser B's change appears exactly once.
+8. Uncheck and recheck one attendee and synchronize both browsers; confirm no duplicate attendance row and the total is correct.
+9. As the Attendance Taker, confirm `/users` and `/settings` redirect to the dashboard and direct archive/delete requests are rejected.

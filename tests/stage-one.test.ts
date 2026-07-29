@@ -17,6 +17,7 @@ const user: UserContext = {
   userId: "10000000-0000-4000-8000-000000000001",
   organizationId: "20000000-0000-4000-8000-000000000001",
   email: "taker@example.test",
+  role: "attendance_taker",
 };
 
 beforeEach(async () => {

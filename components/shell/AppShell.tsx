@@ -4,31 +4,39 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { isAdmin } from "@/lib/auth/permissions";
 import { SyncBanner, SyncIndicator } from "./SyncIndicator";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", glyph: "D" },
   { href: "/people", label: "People", glyph: "P" },
   { href: "/services", label: "Services", glyph: "S" },
+];
+
+const adminNavigation = [
+  { href: "/users", label: "Users", glyph: "U" },
   { href: "/settings", label: "Settings", glyph: "⚙" },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
+  const visibleNavigation = isAdmin(user)
+    ? [...navigation, ...adminNavigation]
+    : navigation;
 
   return (
     <div className="app-layout">
       <aside className="sidebar">
         <div className="brand-block">
-          <span className="brand-mark" aria-hidden="true">CA</span>
+          <span className="brand-mark" aria-hidden="true">AL</span>
           <div>
             <strong>Abundant Life UPC</strong>
             <span>Attendance workspace</span>
           </div>
         </div>
         <nav aria-label="Main navigation">
-          {navigation.map((item) => (
+          {visibleNavigation.map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -42,8 +50,14 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="sidebar-footer">
           <SyncIndicator />
-          <span className="account-email">{user?.email}</span>
-          <button className="button subtle full" type="button" onClick={() => void signOut()}>
+          <span className="account-email">
+            {user?.email} · {user?.role === "admin" ? "Admin" : "Attendance Taker"}
+          </span>
+          <button
+            className="button subtle full"
+            type="button"
+            onClick={() => void signOut()}
+          >
             Log out
           </button>
         </div>
@@ -59,11 +73,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        {navigation.map((item) => (
+        {visibleNavigation.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={pathname === item.href ? "mobile-nav-link active" : "mobile-nav-link"}
+            className={
+              pathname === item.href
+                ? "mobile-nav-link active"
+                : "mobile-nav-link"
+            }
             aria-current={pathname === item.href ? "page" : undefined}
           >
             <span aria-hidden="true">{item.glyph}</span>

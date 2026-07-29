@@ -4,12 +4,13 @@ import type { SyncPhase } from "@/lib/domain";
 import { useSynchronization } from "@/components/sync/SyncProvider";
 
 const labels: Record<SyncPhase, string> = {
-  loading: "Loading church data",
-  downloading: "Downloading updates",
-  complete: "Sync complete",
-  pending: "Sync pending",
+  loading: "Syncing",
+  downloading: "Syncing",
+  complete: "Synced",
+  local: "Saved on this device",
+  pending: "Waiting to sync",
   error: "Sync error",
-  offline: "Offline — using saved data",
+  offline: "Offline",
 };
 
 export function SyncIndicator() {
@@ -33,15 +34,21 @@ export function SyncBanner() {
   const { phase, error, syncNow } = useSynchronization();
   if (phase === "complete") return null;
   return (
-    <div className={`sync-banner ${phase}`} role={phase === "error" ? "alert" : "status"}>
+    <div
+      className={`sync-banner ${phase}`}
+      role={phase === "error" ? "alert" : "status"}
+    >
       <span className="status-dot" aria-hidden="true" />
       <span>
         <strong>{labels[phase]}</strong>
         {phase === "error" && error ? <small>{error}</small> : null}
       </span>
-      {(phase === "error" || phase === "offline" || phase === "pending") && (
+      {(phase === "error" ||
+        phase === "offline" ||
+        phase === "local" ||
+        phase === "pending") && (
         <button type="button" onClick={() => void syncNow()}>
-          Try again
+          Sync now
         </button>
       )}
     </div>

@@ -23,7 +23,10 @@ describe("production deployment safeguards", () => {
     expect(environmentExample).toContain(
       "NEXT_PUBLIC_ENABLE_DEMO_SEED=false",
     );
-    expect(environmentExample).not.toMatch(/service[_-]?role/i);
+    expect(environmentExample).toContain(
+      "SUPABASE_SERVICE_ROLE_KEY=your-service-role-key",
+    );
+    expect(environmentExample).not.toMatch(/eyJ[A-Za-z0-9_-]{40,}/);
   });
 
   it("requires both development mode and the explicit seed flag", () => {

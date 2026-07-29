@@ -23,10 +23,13 @@ import {
   listActiveMembers,
   listServices,
   listServiceVisitors,
+  removeService,
   saveService,
+  setServiceArchived,
   setMemberAttendance,
 } from "@/lib/repositories/attendance-repository";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
+import { isAdmin } from "@/lib/auth/permissions";
 
 function localDate() {
   const date = new Date();
@@ -47,6 +50,7 @@ export function ServiceManager() {
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [visitorOpen, setVisitorOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [message, setMessage] = useState("");
   const handledDashboardIntent = useRef("");
 
@@ -135,7 +139,42 @@ export function ServiceManager() {
       <div className="page-stack">
         <div className="service-topline">
           <button className="button subtle" type="button" onClick={() => setActive(null)}>← All services</button>
-          <span className={`status-pill ${active.status}`}>{active.status}</span>
+          <div className="service-admin-actions">
+            <span className={`status-pill ${active.status}`}>{active.status}</span>
+            {isAdmin(user) && (
+              <>
+                <button className="button subtle" type="button" onClick={() => setEditOpen(true)}>Edit</button>
+                <button
+                  className="button danger-text"
+                  type="button"
+                  onClick={() => {
+                    if (!user) return;
+                    if (!confirm(`Archive ${serviceTitle(active)}?`)) return;
+                    void setServiceArchived(user, active.id, true).then(async () => {
+                      setActive(null);
+                      await refreshLists();
+                    });
+                  }}
+                >
+                  Archive
+                </button>
+                <button
+                  className="button danger-text"
+                  type="button"
+                  onClick={() => {
+                    if (!user) return;
+                    if (!confirm(`Remove ${serviceTitle(active)}? Attendance history will be preserved.`)) return;
+                    void removeService(user, active.id).then(async () => {
+                      setActive(null);
+                      await refreshLists();
+                    });
+                  }}
+                >
+                  Remove
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <div className="attendance-heading">
           <div>
@@ -204,6 +243,18 @@ export function ServiceManager() {
             }}
           />
         )}
+        {editOpen && (
+          <ServiceModal
+            existing={active}
+            onClose={() => setEditOpen(false)}
+            onSaved={async (service) => {
+              setEditOpen(false);
+              await refreshLists();
+              await openService(service);
+              setMessage("Service details updated.");
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -242,29 +293,35 @@ export function ServiceManager() {
           </section>
         )}
       </section>
-      {createOpen && <CreateServiceModal onClose={() => setCreateOpen(false)} onCreated={async (service) => { setCreateOpen(false); await refreshLists(); await openService(service); }} />}
+      {createOpen && <ServiceModal onClose={() => setCreateOpen(false)} onSaved={async (service) => { setCreateOpen(false); await refreshLists(); await openService(service); }} />}
     </div>
   );
 
-  function CreateServiceModal({ onClose, onCreated }: { onClose: () => void; onCreated: (service: ChurchService) => void }) {
-    const [date, setDate] = useState(localDate());
-    const [type, setType] = useState<ServiceType>("Sunday Morning");
-    const [customName, setCustomName] = useState("");
+  function ServiceModal({ onClose, onSaved, existing }: { onClose: () => void; onSaved: (service: ChurchService) => void; existing?: ChurchService }) {
+    const [date, setDate] = useState(existing?.serviceDate ?? localDate());
+    const [type, setType] = useState<ServiceType>(existing?.serviceType ?? "Sunday Morning");
+    const [customName, setCustomName] = useState(existing?.customName ?? "");
     async function submit(event: FormEvent) {
       event.preventDefault();
       if (!user) return;
-      const service = await saveService(user, { serviceDate: date, serviceType: type, customName, status: "draft" });
-      onCreated(service);
+      const service = await saveService(user, {
+        id: existing?.id,
+        serviceDate: date,
+        serviceType: type,
+        customName,
+        status: existing?.status ?? "draft",
+      });
+      onSaved(service);
     }
     return (
       <div className="modal-backdrop">
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-service-title">
-          <div className="modal-heading"><div><p className="eyebrow">New attendance list</p><h2 id="create-service-title">Create a service</h2></div><button className="icon-button" aria-label="Close" type="button" onClick={onClose}>×</button></div>
+          <div className="modal-heading"><div><p className="eyebrow">{existing ? "Service details" : "New attendance list"}</p><h2 id="create-service-title">{existing ? "Edit service" : "Create a service"}</h2></div><button className="icon-button" aria-label="Close" type="button" onClick={onClose}>×</button></div>
           <form className="form-stack" onSubmit={submit}>
             <label>Service date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label>
             <label>Service type<select value={type} onChange={(event) => setType(event.target.value as ServiceType)}>{SERVICE_TYPES.map((option) => <option key={option}>{option}</option>)}</select></label>
             {(type === "Special Service" || type === "Other") && <label>Custom service name <span className="optional">(optional)</span><input value={customName} onChange={(event) => setCustomName(event.target.value)} placeholder="e.g. Christmas Eve" /></label>}
-            <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose}>Cancel</button><button className="button primary">Create and take attendance</button></div>
+            <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose}>Cancel</button><button className="button primary">{existing ? "Save changes" : "Create and take attendance"}</button></div>
           </form>
         </section>
       </div>

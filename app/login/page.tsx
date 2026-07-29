@@ -67,6 +67,10 @@ export default function LoginPage() {
           </button>
         </form>
         <p className="login-help">Accounts are created by a church administrator.</p>
+        <p className="login-offline-note">
+          Your first sign-in on this device requires internet. After a successful
+          sign-in, this device can reopen the attendance workspace offline.
+        </p>
       </section>
     </main>
   );

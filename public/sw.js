@@ -1,11 +1,12 @@
 const CACHE_PREFIX = "church-attendance-shell-";
-const CACHE = `${CACHE_PREFIX}v2`;
+const CACHE = `${CACHE_PREFIX}v3`;
 const SHELL = [
   "/",
   "/login",
   "/dashboard",
   "/people",
   "/services",
+  "/users",
   "/settings",
   "/manifest.webmanifest",
   "/favicon.svg",

@@ -6,10 +6,14 @@ import type { Person } from "@/lib/domain";
 import {
   findDuplicateMember,
   listActiveMembers,
+  listMembers,
   markMemberInactive,
+  removeMember,
+  restoreMember,
   saveMember,
 } from "@/lib/repositories/attendance-repository";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
+import { isAdmin } from "@/lib/auth/permissions";
 
 interface FormState {
   id?: string;
@@ -27,9 +31,15 @@ export function PeopleDirectory() {
   const [duplicate, setDuplicate] = useState<Person | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
 
   const refresh = useCallback(async () => {
-    if (user) setPeople(await listActiveMembers(user.organizationId));
+    if (!user) return;
+    setPeople(
+      isAdmin(user)
+        ? await listMembers(user.organizationId)
+        : await listActiveMembers(user.organizationId),
+    );
   }, [user]);
 
   useEffect(() => {
@@ -43,10 +53,12 @@ export function PeopleDirectory() {
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
-    return people.filter((person) =>
-      person.displayName.toLocaleLowerCase().includes(normalized),
+    return people.filter(
+      (person) =>
+        (showArchived ? !person.isActive : person.isActive) &&
+        person.displayName.toLocaleLowerCase().includes(normalized),
     );
-  }, [people, query]);
+  }, [people, query, showArchived]);
 
   async function submit(event: FormEvent, allowDuplicate = false) {
     event.preventDefault();
@@ -73,6 +85,27 @@ export function PeopleDirectory() {
     if (!user || !confirm(`Mark ${person.displayName} inactive?`)) return;
     await markMemberInactive(user, person.id);
     setMessage(`${person.displayName} is now inactive.`);
+    await refresh();
+  }
+
+  async function restore(person: Person) {
+    if (!user) return;
+    await restoreMember(user, person.id);
+    setMessage(`${person.displayName} was restored.`);
+    await refresh();
+  }
+
+  async function remove(person: Person) {
+    if (
+      !user ||
+      !confirm(
+        `Remove ${person.displayName}? Their historical attendance will remain preserved.`,
+      )
+    ) {
+      return;
+    }
+    await removeMember(user, person.id);
+    setMessage(`${person.displayName} was removed from the directory.`);
     await refresh();
   }
 
@@ -103,7 +136,27 @@ export function PeopleDirectory() {
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
-          <span className="count-label">{filtered.length} active members</span>
+          {isAdmin(user) && (
+            <div className="directory-view-toggle" role="group" aria-label="Directory view">
+              <button
+                className={!showArchived ? "active" : ""}
+                type="button"
+                onClick={() => setShowArchived(false)}
+              >
+                Active
+              </button>
+              <button
+                className={showArchived ? "active" : ""}
+                type="button"
+                onClick={() => setShowArchived(true)}
+              >
+                Archived
+              </button>
+            </div>
+          )}
+          <span className="count-label">
+            {filtered.length} {showArchived ? "archived" : "active"} members
+          </span>
         </div>
 
         <div className="person-list">
@@ -130,9 +183,21 @@ export function PeopleDirectory() {
                 >
                   Edit
                 </button>
-                <button className="button danger-text" type="button" onClick={() => void deactivate(person)}>
-                  Mark inactive
-                </button>
+                {isAdmin(user) &&
+                  (person.isActive ? (
+                    <button className="button danger-text" type="button" onClick={() => void deactivate(person)}>
+                      Archive
+                    </button>
+                  ) : (
+                    <>
+                      <button className="button subtle" type="button" onClick={() => void restore(person)}>
+                        Restore
+                      </button>
+                      <button className="button danger-text" type="button" onClick={() => void remove(person)}>
+                        Remove
+                      </button>
+                    </>
+                  ))}
               </div>
             </article>
           ))}

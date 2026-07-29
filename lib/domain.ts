@@ -1,10 +1,12 @@
 export type PersonType = "member" | "visitor";
 export type ServiceStatus = "draft" | "completed";
+export type UserRole = "admin" | "attendance_taker";
 export type SyncState = "synced" | "local" | "pending" | "error";
 export type SyncPhase =
   | "loading"
   | "downloading"
   | "complete"
+  | "local"
   | "pending"
   | "error"
   | "offline";
@@ -53,6 +55,7 @@ export interface Person extends AuditedRecord {
   displayName: string;
   personType: PersonType;
   isActive: boolean;
+  deletedAt?: string;
 }
 
 export interface ChurchService extends AuditedRecord {
@@ -60,6 +63,8 @@ export interface ChurchService extends AuditedRecord {
   serviceType: ServiceType;
   customName?: string;
   status: ServiceStatus;
+  isArchived: boolean;
+  deletedAt?: string;
 }
 
 export interface AttendanceRecord extends AuditedRecord {
@@ -81,6 +86,7 @@ export interface UserContext {
   userId: string;
   organizationId: string;
   email: string;
+  role: UserRole;
 }
 
 export interface SyncQueueItem {

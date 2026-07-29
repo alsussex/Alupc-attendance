@@ -11,6 +11,8 @@ import {
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 import type { UserContext } from "@/lib/domain";
+import { subscribeToDataChanges } from "@/lib/storage/data-events";
+import { getDatabase } from "@/lib/storage/database";
 import { getSupabaseClient, hasSupabaseConfig } from "@/lib/supabase/client";
 
 interface AuthState {
@@ -26,6 +28,16 @@ const AuthContext = createContext<AuthState | null>(null);
 
 function profileCacheKey(userId: string) {
   return `church-attendance-profile:${userId}`;
+}
+
+function readCachedProfile(userId: string) {
+  const value = localStorage.getItem(profileCacheKey(userId));
+  if (!value) return null;
+  const cached = JSON.parse(value) as UserContext;
+  return {
+    ...cached,
+    role: cached.role === "admin" ? "admin" : "attendance_taker",
+  } satisfies UserContext;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -48,9 +60,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const authUser = nextSession.user;
-    const cached = localStorage.getItem(profileCacheKey(authUser.id));
+    const cached = readCachedProfile(authUser.id);
     if (!navigator.onLine && cached) {
-      setUser(JSON.parse(cached) as UserContext);
+      setUser(cached);
+      setError(null);
       setLoading(false);
       return;
     }
@@ -58,16 +71,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const supabase = getSupabaseClient();
     const { data, error: profileError } = await supabase
       .from("profiles")
-      .select("organization_id")
+      .select("organization_id, role, is_active")
       .eq("id", authUser.id)
       .single();
 
-    if (profileError || !data?.organization_id) {
-      if (cached) {
-        setUser(JSON.parse(cached) as UserContext);
+    if (profileError || !data?.organization_id || !data.is_active) {
+      const connectionFailure =
+        !navigator.onLine ||
+        /fetch|network|connection/i.test(profileError?.message ?? "");
+      if (cached && connectionFailure) {
+        setUser(cached);
+        setError(null);
       } else {
+        localStorage.removeItem(profileCacheKey(authUser.id));
+        setUser(null);
         setError(
-          "Your account is signed in but is not connected to a church organization.",
+          "Your account is disabled or is not connected to this church organization.",
         );
       }
       setLoading(false);
@@ -78,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       userId: authUser.id,
       organizationId: data.organization_id,
       email: authUser.email ?? "",
+      role: data.role === "admin" ? "admin" : "attendance_taker",
     };
     localStorage.setItem(profileCacheKey(authUser.id), JSON.stringify(nextUser));
     setUser(nextUser);
@@ -97,8 +117,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, [configured, loadProfile]);
 
+  useEffect(() => {
+    if (!user) return;
+
+    const refreshCachedRole = async () => {
+      const profile = await (await getDatabase()).get("profiles", user.userId);
+      if (!profile?.isActive) return;
+      const nextRole =
+        profile.role === "admin" ? "admin" : "attendance_taker";
+      setUser((current) => {
+        if (
+          !current ||
+          (current.role === nextRole &&
+            current.organizationId === profile.organizationId)
+        ) {
+          return current;
+        }
+        const nextUser = {
+          ...current,
+          role: nextRole,
+          organizationId: profile.organizationId,
+        } satisfies UserContext;
+        localStorage.setItem(
+          profileCacheKey(current.userId),
+          JSON.stringify(nextUser),
+        );
+        return nextUser;
+      });
+    };
+
+    const unsubscribe = subscribeToDataChanges(() => {
+      void refreshCachedRole();
+    });
+    return unsubscribe;
+  }, [user]);
+
+  useEffect(() => {
+    if (!session || !navigator.onLine) return;
+
+    const revalidateAccess = () => {
+      if (navigator.onLine) void loadProfile(session);
+    };
+    window.addEventListener("online", revalidateAccess);
+    window.addEventListener("focus", revalidateAccess);
+    return () => {
+      window.removeEventListener("online", revalidateAccess);
+      window.removeEventListener("focus", revalidateAccess);
+    };
+  }, [loadProfile, session]);
+
   const signIn = useCallback(
     async (email: string, password: string) => {
+      if (!navigator.onLine) {
+        const offlineError = new Error(
+          "Your first sign-in on a device requires an internet connection. Returning users can reopen the app offline.",
+        );
+        setError(offlineError.message);
+        throw offlineError;
+      }
       setLoading(true);
       setError(null);
       try {
