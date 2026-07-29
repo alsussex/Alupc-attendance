@@ -150,6 +150,47 @@ input::placeholder { color: #8a9994; }
 .service-card-copy { flex: 1; min-width: 0; display: grid; }
 .service-card-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .service-card-copy span { color: var(--muted); font-size: .8rem; }
+.service-directory-toolbar {
+  min-height: 76px;
+  padding: .8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.service-directory-toolbar .search-field { flex: 1; max-width: 620px; }
+.service-directory-filters { padding: .25rem; display: flex; border: 1px solid var(--line); border-radius: 13px; background: #f7f9f8; }
+.service-directory-filters button { min-height: 42px; padding: .55rem .9rem; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: .8rem; font-weight: 760; cursor: pointer; }
+.service-directory-filters button:hover { color: var(--ink); }
+.service-directory-filters button.active { background: white; color: var(--brand); box-shadow: 0 3px 10px rgb(36 73 63 / 10%); }
+.service-directory { display: grid; gap: 1rem; }
+.service-year-folder, .service-month-folder { overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 6px 20px rgb(28 41 37 / 4%); }
+.service-year-folder > summary, .service-month-folder > summary { min-height: 68px; padding: .9rem 1.2rem; display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: .65rem; cursor: pointer; list-style: none; }
+.service-year-folder > summary::-webkit-details-marker, .service-month-folder > summary::-webkit-details-marker { display: none; }
+.service-year-folder > summary:hover, .service-month-folder > summary:hover { background: #f8faf9; }
+.service-year-folder > summary strong { font-size: 1.25rem; }
+.service-year-folder > summary > span:last-child, .service-month-folder > summary > span:last-child { color: var(--muted); font-size: .78rem; font-weight: 720; }
+.folder-icon { color: var(--brand); transition: transform .18s ease; }
+details[open] > summary > .folder-icon { transform: rotate(90deg); }
+.service-month-list { padding: 0 1rem 1rem; display: grid; gap: .8rem; }
+.service-month-folder { border-radius: 14px; box-shadow: none; }
+.service-month-folder > summary { min-height: 58px; padding-block: .7rem; }
+.service-folder-rows { border-top: 1px solid var(--line); }
+.service-directory-row { width: 100%; min-height: 112px; padding: .9rem 1rem; display: grid; grid-template-columns: 64px minmax(210px, 1fr) minmax(140px, auto) 130px 20px; align-items: center; gap: 1rem; border: 0; border-bottom: 1px solid #edf1ef; background: white; color: var(--ink); text-align: left; cursor: pointer; }
+.service-directory-row:last-child { border-bottom: 0; }
+.service-directory-row:hover { background: #f9fbfa; }
+.service-directory-row:focus-visible { position: relative; z-index: 1; outline: 3px solid rgb(47 101 81 / 28%); outline-offset: -3px; }
+.service-directory-date { width: 58px; height: 68px; display: grid; place-content: center; border-radius: 12px; background: var(--brand-soft); color: var(--brand); text-align: center; line-height: 1; }
+.service-directory-date strong { font-size: 1.45rem; }
+.service-directory-date span { margin-top: .3rem; font-size: .68rem; font-weight: 800; text-transform: uppercase; }
+.service-directory-main, .service-directory-counts, .service-directory-state { min-width: 0; display: grid; gap: .18rem; }
+.service-directory-main > strong { overflow: hidden; font-size: 1rem; text-overflow: ellipsis; white-space: nowrap; }
+.service-directory-main > span, .service-directory-main small, .service-directory-counts span, .service-directory-counts small { color: var(--muted); font-size: .74rem; }
+.service-directory-counts { padding-left: 1rem; border-left: 1px solid var(--line); }
+.service-directory-counts strong { color: var(--brand); font-size: 1.35rem; }
+.service-directory-state { justify-items: start; }
+.pending-service-sync { color: #8a641f; font-size: .68rem; font-weight: 760; }
+.service-row-arrow { color: var(--muted); font-size: 1.3rem; }
 .status-pill { padding: .3rem .55rem; border-radius: 999px; font-size: .7rem; font-weight: 800; text-transform: capitalize; }
 .status-pill.draft { background: #fff4de; color: #795518; }
 .status-pill.completed { background: #e3f2e9; color: #286344; }
@@ -840,6 +881,10 @@ input::placeholder { color: #8a9994; }
   .attendance-metric:nth-child(4) { border-top: 1px solid var(--line); }
   .attendance-panel { grid-template-columns: 1fr; }
   .attendance-action-bar, .attendance-controls { grid-column: 1; }
+  .service-directory-row { grid-template-columns: 58px 1fr auto; }
+  .service-directory-counts { grid-column: 2; padding-left: 0; border-left: 0; }
+  .service-directory-state { grid-column: 3; grid-row: 1 / span 2; }
+  .service-row-arrow { display: none; }
 }
 
 @media (max-width: 680px) {
@@ -864,6 +909,16 @@ input::placeholder { color: #8a9994; }
   .service-grid { grid-template-columns: 1fr; }
   .service-card { gap: .7rem; }
   .service-card .status-pill { display: none; }
+  .service-directory-toolbar { align-items: stretch; flex-direction: column; }
+  .service-directory-toolbar .search-field { max-width: none; }
+  .service-directory-filters button { flex: 1; }
+  .service-year-folder > summary, .service-month-folder > summary { padding-inline: .8rem; }
+  .service-month-list { padding-inline: .5rem; }
+  .service-directory-row { min-height: 138px; padding: .8rem; grid-template-columns: 54px minmax(0, 1fr); gap: .65rem; }
+  .service-directory-date { width: 52px; height: 62px; }
+  .service-directory-main > strong { white-space: normal; }
+  .service-directory-counts { grid-column: 2; display: flex; align-items: baseline; flex-wrap: wrap; gap: .25rem .5rem; }
+  .service-directory-state { grid-column: 1 / -1; grid-row: auto; display: flex; align-items: center; justify-content: space-between; }
   .attendance-total { width: 100%; grid-template-columns: auto auto; align-items: baseline; justify-content: center; gap: .6rem; }
   .attendance-metrics { grid-template-columns: 1fr 1fr; }
   .attendance-metric { min-height: 110px; padding: 1rem; }

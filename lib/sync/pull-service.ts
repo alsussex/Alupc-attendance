@@ -152,7 +152,9 @@ export async function pullOrganizationData(
     "organizationId",
     organizationId,
   );
-  const pending = new Set(queue.map((item) => `${item.table}:${item.recordId}`));
+  const pending = new Map(
+    queue.map((item) => [`${item.table}:${item.recordId}`, item]),
+  );
   const result: PullResult = {
     downloaded: 0,
     merged: 0,
@@ -187,16 +189,53 @@ export async function pullOrganizationData(
         }
         const store = storeFor(table);
         const pendingKey = `${table}:${record.id}`;
-        if (pending.has(pendingKey)) {
+        const pendingMutation = pending.get(pendingKey);
+        if (pendingMutation) {
+          // Completion is a one-way lifecycle advancement unless an Admin
+          // deliberately reopens the current server version. If another
+          // device completed a service after this mutation's base version,
+          // retain all pending fields but prevent the stale payload from
+          // reverting the organization-wide service to Draft.
+          if (
+            table === "services" &&
+            "status" in record &&
+            record.status === "completed" &&
+            typeof record.version === "number" &&
+            record.version > (pendingMutation.baseVersion ?? 0)
+          ) {
+            const local = await database.get("services", record.id);
+            if (local?.status === "draft") {
+              await database.put("services", {
+                ...local,
+                status: "completed",
+                version: record.version,
+                updatedAt: record.updatedAt,
+                updatedBy:
+                  "updatedBy" in record && typeof record.updatedBy === "string"
+                    ? record.updatedBy
+                    : local.updatedBy,
+              });
+              await database.put("syncQueue", {
+                ...pendingMutation,
+                baseVersion: record.version,
+                payload: {
+                  ...pendingMutation.payload,
+                  status: "completed",
+                  version: record.version,
+                  updated_at: record.updatedAt,
+                },
+              });
+              result.merged += 1;
+            }
+          }
           result.skippedPending += 1;
-          continue;
+        } else {
+          // A queued write is the only trustworthy indication that a local
+          // record is newer. Without one, Supabase is authoritative because
+          // its trigger owns updated_at; a device clock must never outrank it.
+          await putLocalRecord(database, store, record);
+          result.merged += 1;
         }
-
-        // A queued write is the only trustworthy indication that a local record
-        // is newer. Without one, Supabase is authoritative because its trigger
-        // owns updated_at; a device clock must never outrank the server clock.
-        await putLocalRecord(database, store, record);
-        result.merged += 1;
         if (
           !newestUpdatedAt ||
           Date.parse(recordUpdatedAt(record)) > Date.parse(newestUpdatedAt)

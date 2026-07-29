@@ -26,7 +26,6 @@ import {
   getServiceAttendance,
   listActiveMembers,
   listMembers,
-  listServices,
   listServiceVisitors,
   removeServiceVisitor,
   removeService,
@@ -51,6 +50,13 @@ import {
   filterAttendanceVisitors,
   type AttendanceFilter,
 } from "@/lib/services/attendance-view";
+import {
+  filterServiceDirectory,
+  groupServiceDirectory,
+  loadOrganizationServiceDirectory,
+  type ServiceDirectoryFilter,
+  type ServiceDirectoryItem,
+} from "@/lib/services/service-directory";
 
 function localDate(timeZone: string) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -73,10 +79,25 @@ function displayServiceTime(value: string) {
   });
 }
 
+function storedFolderKeys(value: string | null, fallback: string[]) {
+  if (!value) return fallback;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === "string")
+      : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function ServiceManager() {
   const { user } = useAuth();
   const { syncNow } = useSynchronization();
   const [services, setServices] = useState<ChurchService[]>([]);
+  const [serviceDirectory, setServiceDirectory] = useState<
+    ServiceDirectoryItem[]
+  >([]);
   const [members, setMembers] = useState<Person[]>([]);
   const [settings, setSettings] = useState<ApplicationSettings>(
     DEFAULT_APPLICATION_SETTINGS,
@@ -97,19 +118,26 @@ export function ServiceManager() {
     "draft" | "completed" | null
   >(null);
   const [actionFeedback, setActionFeedback] = useState("");
+  const [serviceSearch, setServiceSearch] = useState("");
+  const [serviceFilter, setServiceFilter] =
+    useState<ServiceDirectoryFilter>("all");
+  const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const handledDashboardIntent = useRef("");
+  const initializedServiceFolders = useRef("");
   const selectedRef = useRef<Set<string>>(new Set());
 
   const refreshLists = useCallback(async () => {
     if (!user) return;
-    const [nextServices, settingsRecord] = await Promise.all([
-      listServices(user.organizationId),
+    const [directory, settingsRecord] = await Promise.all([
+      loadOrganizationServiceDirectory(user.organizationId),
       getOrganizationSettings(user.organizationId),
     ]);
     const nextMembers = settingsRecord.settings.showInactiveInAttendance
       ? await listMembers(user.organizationId)
       : await listActiveMembers(user.organizationId);
-    setServices(nextServices);
+    setServiceDirectory(directory);
+    setServices(directory.map((item) => item.service));
     setMembers(nextMembers);
     setSettings(settingsRecord.settings);
   }, [user]);
@@ -281,6 +309,74 @@ export function ServiceManager() {
     await setMemberAttendance(user, active.id, person.id, true);
     await refreshLists();
     await openService(active);
+  }
+
+  const visibleServiceDirectory = useMemo(
+    () =>
+      filterServiceDirectory(
+        serviceDirectory,
+        serviceFilter,
+        serviceSearch,
+      ),
+    [serviceDirectory, serviceFilter, serviceSearch],
+  );
+  const serviceGroups = useMemo(
+    () => groupServiceDirectory(visibleServiceDirectory),
+    [visibleServiceDirectory],
+  );
+
+  useEffect(() => {
+    if (!user || serviceGroups.length === 0) return;
+    const initializationKey = `${user.organizationId}:${serviceGroups[0].year}`;
+    if (initializedServiceFolders.current === initializationKey) return;
+    initializedServiceFolders.current = initializationKey;
+    const current = localDate(settings.timezone).slice(0, 7);
+    const storedYears = window.localStorage.getItem(
+      `service-folders:${user.organizationId}:years`,
+    );
+    const storedMonths = window.localStorage.getItem(
+      `service-folders:${user.organizationId}:months`,
+    );
+    setExpandedYears(
+      new Set(
+        storedFolderKeys(storedYears, [
+          serviceGroups.some((group) => group.year === current.slice(0, 4))
+            ? current.slice(0, 4)
+            : serviceGroups[0].year,
+        ]),
+      ),
+    );
+    setExpandedMonths(
+      new Set(
+        storedFolderKeys(
+          storedMonths,
+          serviceGroups.some((group) =>
+            group.months.some((month) => month.key === current),
+          )
+            ? [current]
+            : [serviceGroups[0].months[0].key],
+        ),
+      ),
+    );
+  }, [serviceGroups, settings.timezone, user]);
+
+  function toggleFolder(
+    type: "years" | "months",
+    key: string,
+    open: boolean,
+  ) {
+    if (!user) return;
+    const setter = type === "years" ? setExpandedYears : setExpandedMonths;
+    setter((current) => {
+      const next = new Set(current);
+      if (open) next.add(key);
+      else next.delete(key);
+      window.localStorage.setItem(
+        `service-folders:${user.organizationId}:${type}`,
+        JSON.stringify([...next]),
+      );
+      return next;
+    });
   }
 
   if (active) {
@@ -679,27 +775,166 @@ export function ServiceManager() {
         </div>
         <button className="button primary" type="button" onClick={() => setCreateOpen(true)}>＋ Create service</button>
       </div>
-      <section className="service-grid">
-        {services.map((service) => (
-          <button className="service-card" type="button" key={service.id} onClick={() => void openService(service)}>
-            <span className="service-date">
-              <strong>{formatChurchDate(service.serviceDate, settings, { day: "2-digit" })}</strong>
-              <span>{formatChurchDate(service.serviceDate, settings, { month: "short" })}</span>
-            </span>
-            <span className="service-card-copy">
-              <strong>{serviceTitle(service)}</strong>
+      <section className="panel service-directory-toolbar">
+        <label className="search-field">
+          <span className="sr-only">Search organization services</span>
+          <span aria-hidden="true">⌕</span>
+          <input
+            type="search"
+            value={serviceSearch}
+            placeholder="Search services, dates, months, or years"
+            onChange={(event) => setServiceSearch(event.target.value)}
+          />
+        </label>
+        <div className="service-directory-filters" role="group" aria-label="Filter services">
+          {(["all", "draft", "completed"] as const).map((filter) => (
+            <button
+              className={serviceFilter === filter ? "active" : ""}
+              type="button"
+              key={filter}
+              aria-pressed={serviceFilter === filter}
+              onClick={() => setServiceFilter(filter)}
+            >
+              {filter === "all"
+                ? "All"
+                : filter === "draft"
+                  ? "Draft"
+                  : "Completed"}
+            </button>
+          ))}
+        </div>
+      </section>
+      <section className="service-directory" aria-label="Organization services">
+        {serviceGroups.map((yearGroup) => (
+          <details
+            className="service-year-folder"
+            key={yearGroup.year}
+            open={
+              Boolean(serviceSearch) ||
+              serviceFilter !== "all" ||
+              expandedYears.has(yearGroup.year)
+            }
+            onToggle={(event) =>
+              toggleFolder("years", yearGroup.year, event.currentTarget.open)
+            }
+          >
+            <summary>
+              <span className="folder-icon" aria-hidden="true">▸</span>
+              <strong>{yearGroup.year}</strong>
               <span>
-                {formatChurchDate(service.serviceDate, settings, { weekday: "long", year: "numeric" })}
-                {service.serviceTime ? ` · ${displayServiceTime(service.serviceTime)}` : ""}
+                {yearGroup.serviceCount}{" "}
+                {yearGroup.serviceCount === 1 ? "service" : "services"}
               </span>
-            </span>
-            <span className={`status-pill ${service.status}`}>{service.status}</span>
-            <span aria-hidden="true">›</span>
-          </button>
+            </summary>
+            <div className="service-month-list">
+              {yearGroup.months.map((monthGroup) => (
+                <details
+                  className="service-month-folder"
+                  key={monthGroup.key}
+                  open={
+                    Boolean(serviceSearch) ||
+                    serviceFilter !== "all" ||
+                    expandedMonths.has(monthGroup.key)
+                  }
+                  onToggle={(event) =>
+                    toggleFolder(
+                      "months",
+                      monthGroup.key,
+                      event.currentTarget.open,
+                    )
+                  }
+                >
+                  <summary>
+                    <span className="folder-icon" aria-hidden="true">▸</span>
+                    <strong>{monthGroup.monthName}</strong>
+                    <span>
+                      {monthGroup.services.length}{" "}
+                      {monthGroup.services.length === 1
+                        ? "service"
+                        : "services"}
+                    </span>
+                  </summary>
+                  <div className="service-folder-rows">
+                    {monthGroup.services.map((item) => (
+                      <button
+                        className="service-directory-row"
+                        type="button"
+                        key={item.service.id}
+                        onClick={() => void openService(item.service)}
+                      >
+                        <span className="service-directory-date">
+                          <strong>
+                            {formatChurchDate(item.service.serviceDate, settings, {
+                              day: "2-digit",
+                            })}
+                          </strong>
+                          <span>
+                            {formatChurchDate(item.service.serviceDate, settings, {
+                              weekday: "short",
+                            })}
+                          </span>
+                        </span>
+                        <span className="service-directory-main">
+                          <strong>{serviceTitle(item.service)}</strong>
+                          <span>
+                            {formatChurchDate(item.service.serviceDate, settings, {
+                              year: "numeric",
+                            })}
+                            {item.service.serviceTime
+                              ? ` · ${displayServiceTime(item.service.serviceTime)}`
+                              : ""}
+                          </span>
+                          <small>
+                            Updated{" "}
+                            {new Date(item.service.updatedAt).toLocaleString()}
+                            {item.lastEditor
+                              ? ` by ${item.lastEditor}`
+                              : ""}
+                          </small>
+                        </span>
+                        <span className="service-directory-counts">
+                          <strong>{item.totalPresent}</strong>
+                          <span>Total present</span>
+                          <small>
+                            {item.membersPresent} members · {item.visitorsPresent} visitors
+                          </small>
+                        </span>
+                        <span className="service-directory-state">
+                          <span
+                            className={`status-pill ${item.service.status}`}
+                            aria-label={`Service status: ${item.service.status}`}
+                          >
+                            {item.service.status === "draft"
+                              ? "Draft"
+                              : "Completed"}
+                          </span>
+                          {item.pendingSync && (
+                            <small className="pending-service-sync">
+                              ● Waiting to sync
+                            </small>
+                          )}
+                        </span>
+                        <span className="service-row-arrow" aria-hidden="true">
+                          ›
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              ))}
+            </div>
+          </details>
         ))}
+        {services.length > 0 && visibleServiceDirectory.length === 0 && (
+          <section className="empty-panel full-width">
+            <span className="empty-icon" aria-hidden="true">⌕</span>
+            <h2>No services match</h2>
+            <p>Try another search or select a different status.</p>
+          </section>
+        )}
         {!services.length && (
           <section className="empty-panel full-width">
-            <span className="empty-icon" aria-hidden="true">＋</span>
+            <span className="empty-icon" aria-hidden="true">+</span>
             <h2>Create your first service</h2>
             <p>The active member list will be ready for attendance as soon as you create it.</p>
             <button className="button primary" type="button" onClick={() => setCreateOpen(true)}>Create service</button>
