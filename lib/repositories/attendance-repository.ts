@@ -21,6 +21,7 @@ import { enqueueChange } from "@/lib/sync/queue";
 import { toCloudRecord } from "@/lib/sync/serialization";
 
 const attendanceWriteChains = new Map<string, Promise<AttendanceRecord>>();
+const unnamedVisitorWriteChains = new Map<string, Promise<ChurchService>>();
 
 export async function listActiveMembers(organizationId: string) {
   return (await listMembers(organizationId)).filter(
@@ -216,6 +217,7 @@ export async function saveService(
     customName?: string;
     serviceTime?: string;
     status: ServiceStatus;
+    unnamedVisitorCount?: number;
   },
 ) {
   const database = await getDatabase();
@@ -230,6 +232,8 @@ export async function saveService(
     customName: input.customName?.trim() || undefined,
     serviceTime: input.serviceTime || undefined,
     status: input.status,
+    unnamedVisitorCount:
+      input.unnamedVisitorCount ?? existing?.unnamedVisitorCount ?? 0,
     isArchived: existing?.isArchived ?? false,
     deletedAt: existing?.deletedAt,
     createdAt: existing?.createdAt ?? timestamp,
@@ -246,6 +250,71 @@ export async function saveService(
   });
   announceDataChanged();
   return service;
+}
+
+export async function setUnnamedVisitorCount(
+  user: UserContext,
+  serviceId: string,
+  count: number,
+) {
+  const database = await getDatabase();
+  const service = await database.get("services", serviceId);
+  if (
+    !service ||
+    service.deletedAt ||
+    service.organizationId !== user.organizationId
+  ) {
+    throw new Error("Service not found");
+  }
+  const updated: ChurchService = {
+    ...service,
+    unnamedVisitorCount: Math.max(0, Math.min(10000, Math.trunc(count))),
+    updatedAt: nowIso(),
+    updatedBy: user.userId,
+  };
+  await database.put("services", updated);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "services",
+    recordId: updated.id,
+    payload: toCloudRecord(updated),
+  });
+  announceDataChanged();
+  return updated;
+}
+
+export function adjustUnnamedVisitorCount(
+  user: UserContext,
+  serviceId: string,
+  change: number,
+) {
+  const previous = unnamedVisitorWriteChains.get(serviceId);
+  const write = (previous?.catch(() => undefined) ?? Promise.resolve()).then(
+    async () => {
+      const database = await getDatabase();
+      const service = await database.get("services", serviceId);
+      if (
+        !service ||
+        service.deletedAt ||
+        service.organizationId !== user.organizationId
+      ) {
+        throw new Error("Service not found");
+      }
+      return setUnnamedVisitorCount(
+        user,
+        serviceId,
+        (service.unnamedVisitorCount ?? 0) + change,
+      );
+    },
+  );
+  unnamedVisitorWriteChains.set(serviceId, write);
+  const cleanUp = () => {
+    if (unnamedVisitorWriteChains.get(serviceId) === write) {
+      unnamedVisitorWriteChains.delete(serviceId);
+    }
+  };
+  void write.then(cleanUp, cleanUp);
+  return write;
 }
 
 export async function setServiceArchived(

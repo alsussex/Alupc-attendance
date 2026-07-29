@@ -150,7 +150,7 @@ export function summarizeOrganizationServices(
           visitor.serviceId === service.id &&
           !visitor.deletedAt &&
           !visitor.savedAsMember,
-      ).length;
+      ).length + (service.unnamedVisitorCount ?? 0);
       return {
         service,
         membersPresent,

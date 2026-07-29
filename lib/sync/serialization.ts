@@ -136,6 +136,10 @@ export function fromCloudRecord(
       customName: optionalString(row, "custom_name"),
       serviceTime: optionalString(row, "service_time")?.slice(0, 5),
       status: requiredString(row, "status") as ChurchService["status"],
+      unnamedVisitorCount:
+        typeof row.unnamed_visitor_count === "number"
+          ? row.unnamed_visitor_count
+          : 0,
       isArchived: optionalBoolean(row, "is_archived"),
       deletedAt: optionalString(row, "deleted_at"),
     };

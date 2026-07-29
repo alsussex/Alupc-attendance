@@ -379,6 +379,135 @@ details[open] > summary > .folder-icon { transform: rotate(90deg); }
 .duplicate-member-warning > span { font-size: .83rem; }
 .duplicate-member-warning > div { display: flex; flex-wrap: wrap; gap: .5rem; }
 .attendance-mobile-actions { display: none; }
+.attendance-people-workspace { overflow: visible; }
+.attendance-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  padding: .45rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .45rem;
+  border-bottom: 1px solid var(--line);
+  background: rgb(255 255 255 / 96%);
+  backdrop-filter: blur(12px);
+}
+.attendance-tabs [role="tab"] {
+  min-height: 62px;
+  padding: .65rem 1rem;
+  display: grid;
+  place-items: center;
+  gap: .12rem;
+  border: 1px solid transparent;
+  border-radius: 13px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.attendance-tabs [role="tab"] strong { font-size: 1rem; }
+.attendance-tabs [role="tab"] span { font-size: .72rem; font-weight: 720; }
+.attendance-tabs [role="tab"]:hover { background: #f4f7f5; color: var(--ink); }
+.attendance-tabs [role="tab"].active {
+  border-color: #9cc7ad;
+  background: #e9f6ee;
+  color: #176b36;
+  box-shadow: inset 0 -3px #188844;
+}
+.attendance-tabs [role="tab"]:focus-visible { outline: 3px solid rgb(47 101 81 / 28%); outline-offset: 2px; }
+.attendance-tab-panel { min-height: 320px; }
+.attendance-tab-toolbar { padding: .85rem 1rem; border-bottom: 1px solid var(--line); }
+.attendance-tab-toolbar .search-field { flex: 1; max-width: 620px; }
+.attendance-tab-toolbar .button { min-height: 50px; }
+.attendance-context-count { margin-left: auto; color: var(--muted); font-size: .78rem; font-weight: 720; }
+.member-card-grid, .visitor-card-grid {
+  padding: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  align-items: stretch;
+  gap: .8rem;
+}
+.attendance-person-card {
+  position: relative;
+  min-width: 0;
+  min-height: 116px;
+  padding: 1rem;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: .35rem .8rem;
+  overflow: hidden;
+  border: 2px solid #dbe5e0;
+  border-radius: 16px;
+  background: white;
+  cursor: pointer;
+  transition: background-color .16s ease, border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.attendance-person-card:hover { border-color: #9ebcaf; transform: translateY(-1px); }
+.attendance-person-card input { position: absolute; opacity: 0; pointer-events: none; }
+.attendance-person-card:focus-within { outline: 3px solid rgb(47 101 81 / 30%); outline-offset: 2px; }
+.attendance-person-card.selected {
+  border-color: #269650;
+  background: #def3e5;
+  box-shadow: inset 5px 0 #13873f, 0 5px 15px rgb(20 127 56 / 9%);
+}
+.attendance-card-check {
+  width: 48px;
+  height: 48px;
+  grid-row: 1 / span 2;
+  display: grid;
+  place-items: center;
+  border: 3px solid #b8c7c0;
+  border-radius: 13px;
+  color: white;
+  font-size: 1.45rem;
+  font-weight: 900;
+}
+.attendance-person-card.selected .attendance-card-check { border-color: #168b42; background: #168b42; }
+.attendance-card-name { min-width: 0; align-self: end; overflow-wrap: anywhere; font-size: 1.03rem; font-weight: 790; line-height: 1.2; }
+.attendance-card-state { align-self: start; color: var(--muted); font-size: .75rem; font-weight: 720; }
+.attendance-person-card.selected .attendance-card-state { color: #176b36; }
+.card-sync-pending { grid-column: 1 / -1; color: #87601b !important; font-size: .67rem !important; font-weight: 760; }
+.recently-added { animation: attendance-card-arrival 1.6s ease; }
+@keyframes attendance-card-arrival {
+  0%, 35% { box-shadow: 0 0 0 5px rgb(34 126 78 / 25%); }
+  100% { box-shadow: none; }
+}
+.unnamed-visitor-counter {
+  margin: 1rem;
+  padding: 1rem 1.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid #d9d0ef;
+  border-radius: 16px;
+  background: #faf8ff;
+}
+.unnamed-visitor-counter h2 { margin: 0; font-size: 1rem; }
+.unnamed-visitor-counter p { margin: .2rem 0 0; color: var(--muted); font-size: .76rem; }
+.visitor-stepper { display: grid; grid-template-columns: 52px 64px 52px; align-items: center; gap: .45rem; }
+.visitor-stepper button { width: 52px; height: 52px; border: 1px solid #bba9df; border-radius: 13px; background: white; color: #6938ba; font: inherit; font-size: 1.6rem; font-weight: 800; cursor: pointer; }
+.visitor-stepper button:hover:not(:disabled) { background: #eee7fb; }
+.visitor-stepper button:disabled { opacity: .42; cursor: default; }
+.visitor-stepper strong { text-align: center; font-size: 1.6rem; }
+.visitor-tab-summary { padding: .1rem 1rem .6rem; display: flex; align-items: baseline; gap: .6rem; }
+.visitor-tab-summary span { color: var(--muted); font-size: .75rem; }
+.visitor-card-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); padding-top: .4rem; }
+.visitor-person-card {
+  min-width: 0;
+  min-height: 126px;
+  padding: 1rem;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: .75rem;
+  border: 1px solid #ded5f2;
+  border-radius: 15px;
+  background: #f9f7ff;
+}
+.visitor-person-card .visitor-actions { grid-column: 1 / -1; justify-content: flex-end; }
+.visitor-person-card .visitor-actions .button { min-height: 44px; }
 .visitor-conflict-notice { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .visitor-conflict-notice > div { display: grid; gap: .2rem; }
 .visitor-conflict-notice span { font-size: .82rem; }
@@ -946,6 +1075,16 @@ details[open] > summary > .folder-icon { transform: rotate(90deg); }
   .attendance-metric.status strong { font-size: 1rem; }
   .attendance-quick-actions { display: grid; grid-template-columns: 1fr 1fr; }
   .attendance-quick-actions .button { width: 100%; }
+  .attendance-tabs { top: 55px; }
+  .attendance-tab-toolbar { align-items: stretch; flex-direction: column; }
+  .attendance-tab-toolbar .search-field { max-width: none; }
+  .attendance-tab-toolbar .button { width: 100%; }
+  .attendance-context-count { margin-left: 0; text-align: center; }
+  .member-card-grid, .visitor-card-grid { padding: .7rem; gap: .65rem; }
+  .attendance-person-card { min-height: 108px; padding: .8rem; }
+  .unnamed-visitor-counter { margin: .7rem; align-items: stretch; flex-direction: column; }
+  .visitor-stepper { justify-content: center; }
+  .visitor-tab-summary { align-items: flex-start; flex-direction: column; gap: .1rem; }
   .attendance-row { min-height: 86px; margin: .45rem; padding: .7rem; grid-template-columns: 0 50px 42px 1fr; gap: .65rem; }
   .attendance-row .avatar { display: grid; width: 42px; height: 42px; }
   .attendance-check { width: 50px; height: 50px; }

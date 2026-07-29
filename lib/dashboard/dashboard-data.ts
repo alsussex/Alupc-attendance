@@ -53,8 +53,11 @@ function summarizeService(
     status: service.status,
     attendanceTotal:
       presentMembers.size +
-      serviceVisitors.filter((visitor) => !visitor.savedAsMember).length,
-    visitorCount: serviceVisitors.length,
+      serviceVisitors.filter((visitor) => !visitor.savedAsMember).length +
+      (service.unnamedVisitorCount ?? 0),
+    visitorCount:
+      serviceVisitors.filter((visitor) => !visitor.savedAsMember).length +
+      (service.unnamedVisitorCount ?? 0),
   };
 }
 

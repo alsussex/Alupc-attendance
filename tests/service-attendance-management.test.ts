@@ -158,15 +158,13 @@ describe("attendance-taking view", () => {
     );
     const styles = readFileSync(resolve("app/globals.css"), "utf8");
 
-    expect(source).toContain(
-      'checked ? "attendance-row selected" : "attendance-row"',
-    );
+    expect(source).toContain('"attendance-person-card"');
     expect(source).toContain("Total Present");
     expect(source).toContain("+ Add Member");
     expect(source).toContain("+ Add Visitor");
-    expect(styles).toContain(".attendance-row.selected");
-    expect(styles).toContain("background: #e4f6e9");
-    expect(styles).toContain("min-height: 92px");
+    expect(styles).toContain(".attendance-person-card.selected");
+    expect(styles).toContain("background: #def3e5");
+    expect(styles).toContain("min-height: 116px");
   });
 
   it("adds a member offline, marks them present, and queues both records", async () => {

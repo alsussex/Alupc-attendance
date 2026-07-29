@@ -23,6 +23,7 @@ import {
 } from "@/lib/domain";
 import {
   addServiceVisitor,
+  adjustUnnamedVisitorCount,
   editServiceVisitor,
   getServiceAttendance,
   listActiveMembers,
@@ -62,6 +63,9 @@ import {
   listVisitorConflicts,
   resolveVisitorConflict,
 } from "@/lib/sync/visitor-conflicts";
+import { getPendingChanges } from "@/lib/sync/queue";
+
+type AttendanceTab = "members" | "visitors";
 
 function localDate(timeZone: string) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -110,7 +114,10 @@ export function ServiceManager() {
   const [active, setActive] = useState<ChurchService | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visitors, setVisitors] = useState<ServiceVisitor[]>([]);
-  const [search, setSearch] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [visitorSearch, setVisitorSearch] = useState("");
+  const [attendanceTab, setAttendanceTab] =
+    useState<AttendanceTab>("members");
   const [attendanceFilter, setAttendanceFilter] =
     useState<AttendanceFilter>("all");
   const [createOpen, setCreateOpen] = useState(false);
@@ -131,16 +138,29 @@ export function ServiceManager() {
     useState<ServiceDirectoryFilter>("all");
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
+  const [pendingRecordKeys, setPendingRecordKeys] = useState<Set<string>>(
+    new Set(),
+  );
+  const [recentMemberId, setRecentMemberId] = useState("");
+  const [recentVisitorId, setRecentVisitorId] = useState("");
   const handledDashboardIntent = useRef("");
   const initializedServiceFolders = useRef("");
   const selectedRef = useRef<Set<string>>(new Set());
+  const activeRef = useRef<ChurchService | null>(null);
+  const tabScrollPositions = useRef<Record<AttendanceTab, number>>({
+    members: 0,
+    visitors: 0,
+  });
+  const memberTabRef = useRef<HTMLButtonElement>(null);
+  const visitorTabRef = useRef<HTMLButtonElement>(null);
 
   const refreshLists = useCallback(async () => {
     if (!user) return;
-    const [directory, settingsRecord, conflicts] = await Promise.all([
+    const [directory, settingsRecord, conflicts, pending] = await Promise.all([
       loadOrganizationServiceDirectory(user.organizationId),
       getOrganizationSettings(user.organizationId),
       listVisitorConflicts(user.organizationId),
+      getPendingChanges(user.organizationId),
     ]);
     const nextMembers = settingsRecord.settings.showInactiveInAttendance
       ? await listMembers(user.organizationId)
@@ -150,32 +170,56 @@ export function ServiceManager() {
     setMembers(nextMembers);
     setSettings(settingsRecord.settings);
     setVisitorConflicts(conflicts);
+    setPendingRecordKeys(
+      new Set(pending.map((item) => `${item.table}:${item.recordId}`)),
+    );
+    return directory;
   }, [user]);
 
+  const openService = useCallback(
+    async (
+      service: ChurchService,
+      options: { resetView?: boolean } = {},
+    ) => {
+      const [attendance, nextVisitors] = await Promise.all([
+        getServiceAttendance(service.id),
+        listServiceVisitors(service.id),
+      ]);
+      activeRef.current = service;
+      setActive(service);
+      const nextSelected = new Set(
+        attendance.filter((item) => item.present).map((item) => item.personId),
+      );
+      selectedRef.current = nextSelected;
+      setSelected(nextSelected);
+      setVisitors(nextVisitors);
+      if (options.resetView !== false) {
+        setMemberSearch("");
+        setVisitorSearch("");
+        setAttendanceFilter("all");
+        setAttendanceTab("members");
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
-    const timer = window.setTimeout(() => void refreshLists(), 0);
-    const unsubscribe = subscribeToDataChanges(() => void refreshLists());
+    const refresh = () => {
+      void refreshLists().then((directory) => {
+        if (!directory || !activeRef.current) return;
+        const current = directory.find(
+          (item) => item.service.id === activeRef.current?.id,
+        )?.service;
+        if (current) void openService(current, { resetView: false });
+      });
+    };
+    const timer = window.setTimeout(refresh, 0);
+    const unsubscribe = subscribeToDataChanges(refresh);
     return () => {
       window.clearTimeout(timer);
       unsubscribe();
     };
-  }, [refreshLists]);
-
-  const openService = useCallback(async (service: ChurchService) => {
-    const [attendance, nextVisitors] = await Promise.all([
-      getServiceAttendance(service.id),
-      listServiceVisitors(service.id),
-    ]);
-    setActive(service);
-    const nextSelected = new Set(
-      attendance.filter((item) => item.present).map((item) => item.personId),
-    );
-    selectedRef.current = nextSelected;
-    setSelected(nextSelected);
-    setVisitors(nextVisitors);
-    setSearch("");
-    setAttendanceFilter("all");
-  }, []);
+  }, [openService, refreshLists]);
 
   useEffect(() => {
     const query = window.location.search;
@@ -193,9 +237,21 @@ export function ServiceManager() {
     if (!requestedService) return;
     handledDashboardIntent.current = query;
     void openService(requestedService).then(() => {
-      if (parameters.get("visitor") === "1") setVisitorOpen(true);
+      if (parameters.get("visitor") === "1") {
+        setAttendanceTab("visitors");
+        setVisitorOpen(true);
+      }
     });
   }, [openService, services]);
+
+  useEffect(() => {
+    if (!recentMemberId && !recentVisitorId) return;
+    const timer = window.setTimeout(() => {
+      setRecentMemberId("");
+      setRecentVisitorId("");
+    }, 1800);
+    return () => window.clearTimeout(timer);
+  }, [recentMemberId, recentVisitorId]);
 
   async function toggleMember(personId: string) {
     if (!user || !active) return;
@@ -263,6 +319,7 @@ export function ServiceManager() {
         if (conflicts.length > 0) return;
       }
       const updated = await saveService(user, { ...active, status });
+      activeRef.current = updated;
       setActive(updated);
       await refreshLists();
       const outcome = await syncNow();
@@ -277,9 +334,15 @@ export function ServiceManager() {
       sortAttendanceMembers(members, settings.attendanceSort),
       selected,
       attendanceFilter,
-      search,
+      memberSearch,
     );
-  }, [attendanceFilter, members, search, selected, settings.attendanceSort]);
+  }, [
+    attendanceFilter,
+    memberSearch,
+    members,
+    selected,
+    settings.attendanceSort,
+  ]);
 
   const memberCounts = useMemo(
     () => attendanceCounts(members, selected),
@@ -292,14 +355,49 @@ export function ServiceManager() {
         selected,
         visitors,
         settings.includeVisitorsInTotal,
+        active?.unnamedVisitorCount ?? 0,
       ),
-    [selected, settings.includeVisitorsInTotal, visitors],
+    [
+      active?.unnamedVisitorCount,
+      selected,
+      settings.includeVisitorsInTotal,
+      visitors,
+    ],
   );
 
   const filteredVisitors = useMemo(
-    () => filterAttendanceVisitors(visitors, attendanceFilter, search),
-    [attendanceFilter, search, visitors],
+    () => filterAttendanceVisitors(visitors, "all", visitorSearch),
+    [visitorSearch, visitors],
   );
+
+  function selectAttendanceTab(tab: AttendanceTab, focus = false) {
+    if (tab === attendanceTab) return;
+    tabScrollPositions.current[attendanceTab] = window.scrollY;
+    setAttendanceTab(tab);
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: tabScrollPositions.current[tab] });
+      if (focus) {
+        (tab === "members" ? memberTabRef : visitorTabRef).current?.focus();
+      }
+    });
+  }
+
+  async function changeUnnamedVisitorCount(change: number) {
+    if (!user || !active) return;
+    const updated = await adjustUnnamedVisitorCount(user, active.id, change);
+    activeRef.current = updated;
+    setActive(updated);
+    await refreshLists();
+  }
+
+  function highlightCard(id: string) {
+    window.setTimeout(() => {
+      document.getElementById(id)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 50);
+  }
 
   async function createQuickMember(
     firstName: string,
@@ -315,8 +413,11 @@ export function ServiceManager() {
     if (match && !allowDuplicate) return match;
     const member = await saveMember(user, { firstName, lastName });
     await setMemberAttendance(user, active.id, member.id, true);
+    setAttendanceTab("members");
+    setRecentMemberId(member.id);
     await refreshLists();
-    await openService(active);
+    await openService(active, { resetView: false });
+    highlightCard(`member-card-${member.id}`);
     return undefined;
   }
 
@@ -331,8 +432,11 @@ export function ServiceManager() {
       await restoreMember(user, person.id);
     }
     await setMemberAttendance(user, active.id, person.id, true);
+    setAttendanceTab("members");
+    setRecentMemberId(person.id);
     await refreshLists();
-    await openService(active);
+    await openService(active, { resetView: false });
+    highlightCard(`member-card-${person.id}`);
   }
 
   const visibleServiceDirectory = useMemo(
@@ -408,12 +512,24 @@ export function ServiceManager() {
         (item) => item.conflict?.serviceId === active.id,
       )
     : [];
+  const namedVisitorCount = visitors.filter(
+    (visitor) => !visitor.deletedAt && !visitor.savedAsMember,
+  ).length;
 
   if (active) {
     return (
       <div className="attendance-workspace">
         <div className="service-topline attendance-service-header">
-          <button className="button subtle" type="button" onClick={() => setActive(null)}>← All services</button>
+          <button
+            className="button subtle"
+            type="button"
+            onClick={() => {
+              activeRef.current = null;
+              setActive(null);
+            }}
+          >
+            ← All services
+          </button>
           <div className="service-admin-actions">
             <span className={`status-pill ${active.status}`}>{active.status}</span>
             {active.status === "completed" ? (
@@ -461,6 +577,7 @@ export function ServiceManager() {
                       !confirm(`Archive ${serviceTitle(active)}?`)
                     ) return;
                     void setServiceArchived(user, active.id, true).then(async () => {
+                      activeRef.current = null;
                       setActive(null);
                       await refreshLists();
                     });
@@ -475,6 +592,7 @@ export function ServiceManager() {
                     if (!user) return;
                     if (!confirm(`Remove ${serviceTitle(active)}? Attendance history will be preserved.`)) return;
                     void removeService(user, active.id).then(async () => {
+                      activeRef.current = null;
                       setActive(null);
                       await refreshLists();
                     });
@@ -508,7 +626,7 @@ export function ServiceManager() {
               <strong>{presentCounts.members}</strong>
             </article>
             <article className="attendance-metric visitors">
-              <span>Visitors Present</span>
+              <span>Visitors</span>
               <strong>{presentCounts.visitors}</strong>
             </article>
             <article className="attendance-metric status">
@@ -548,186 +666,324 @@ export function ServiceManager() {
             )}
           </div>
         ))}
-        <section className="panel attendance-panel">
-          <div className="panel-toolbar attendance-action-bar">
-            <label className="search-field attendance-search">
-              <span className="sr-only">Search members and visitors</span>
-              <span aria-hidden="true">⌕</span>
-              <input
-                type="search"
-                placeholder="Search members and visitors"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </label>
-            <div className="attendance-quick-actions">
-              <button
-                className="button secondary"
-                type="button"
-                onClick={() => setMemberOpen(true)}
-              >
-                + Add Member
-              </button>
-              <button
-                className="button primary"
-                type="button"
-                onClick={() => setVisitorOpen(true)}
-              >
-                + Add Visitor
-              </button>
-            </div>
-          </div>
-          <div className="attendance-controls">
-            <div
-              className="attendance-filters"
-              role="group"
-              aria-label="Filter attendance list"
-            >
-              {(["all", "present", "absent"] as const).map((filter) => (
-                <button
-                  className={
-                    attendanceFilter === filter
-                      ? "attendance-filter active"
-                      : "attendance-filter"
-                  }
-                  type="button"
-                  key={filter}
-                  aria-pressed={attendanceFilter === filter}
-                  onClick={() => setAttendanceFilter(filter)}
-                >
-                  {filter === "all"
-                    ? "All"
-                    : filter === "present"
-                      ? `Present (${memberCounts.present})`
-                      : "Absent"}
-                </button>
-              ))}
-            </div>
+        <section className="panel attendance-people-workspace">
+          <div
+            className="attendance-tabs"
+            role="tablist"
+            aria-label="Attendance people"
+          >
             <button
-              className="button subtle mark-absent-button"
+              ref={memberTabRef}
+              id="attendance-members-tab"
+              role="tab"
               type="button"
-              disabled={memberCounts.present === 0}
-              onClick={() => void markAllAbsent()}
+              aria-selected={attendanceTab === "members"}
+              aria-controls="attendance-members-panel"
+              tabIndex={attendanceTab === "members" ? 0 : -1}
+              className={attendanceTab === "members" ? "active" : ""}
+              onClick={() => selectAttendanceTab("members")}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowRight") return;
+                event.preventDefault();
+                selectAttendanceTab("visitors", true);
+              }}
             >
-              Mark all absent
+              <strong>Members</strong>
+              <span>{presentCounts.members} present</span>
+            </button>
+            <button
+              ref={visitorTabRef}
+              id="attendance-visitors-tab"
+              role="tab"
+              type="button"
+              aria-selected={attendanceTab === "visitors"}
+              aria-controls="attendance-visitors-panel"
+              tabIndex={attendanceTab === "visitors" ? 0 : -1}
+              className={attendanceTab === "visitors" ? "active" : ""}
+              onClick={() => selectAttendanceTab("visitors")}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft") return;
+                event.preventDefault();
+                selectAttendanceTab("members", true);
+              }}
+            >
+              <strong>{settings.visitorLabel}s</strong>
+              <span>{presentCounts.visitors}</span>
             </button>
           </div>
-          <div className="attendance-list">
-            <div className="attendance-column-heading">
-              <h2>Members</h2>
-              <span>{presentCounts.members} present</span>
-            </div>
-            {filteredMembers.map((member) => {
-              const checked = selected.has(member.id);
-              return (
-                <label
-                  className={checked ? "attendance-row selected" : "attendance-row"}
-                  key={member.id}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checked}
-                    aria-label={`${member.displayName} present`}
-                    onChange={() => void toggleMember(member.id)}
-                  />
-                  <span className="attendance-check" aria-hidden="true">
-                    {checked ? "✓" : ""}
-                  </span>
-                  <span className="avatar">
-                    {member.firstName[0]}
-                    {member.lastName[0]}
-                  </span>
-                  <span className="attendance-name">
-                    <HighlightedText text={member.displayName} query={search} />
-                    <small>{checked ? "Present" : "Tap to mark present"}</small>
-                  </span>
-                </label>
-              );
-            })}
-            {filteredMembers.length === 0 && (
-              <div className="attendance-empty">
-                <strong>No members match this view.</strong>
-                <span>Try another filter or clear the search.</span>
-              </div>
-            )}
-          </div>
-          {attendanceFilter !== "absent" && (
+
+          {attendanceTab === "members" && (
             <div
-              className={
-                settings.showVisitorsSeparately
-                  ? "visitor-summary"
-                  : "visitor-summary integrated"
-              }
+              id="attendance-members-panel"
+              role="tabpanel"
+              aria-labelledby="attendance-members-tab"
+              className="attendance-tab-panel"
             >
-              {settings.showVisitorsSeparately && (
-                <div className="attendance-column-heading">
-                  <h2>{settings.visitorLabel}s</h2>
-                  <span>{presentCounts.visitors} present</span>
+              <div className="panel-toolbar attendance-tab-toolbar">
+                <label className="search-field">
+                  <span className="sr-only">Search members</span>
+                  <span aria-hidden="true">⌕</span>
+                  <input
+                    type="search"
+                    placeholder="Search members"
+                    value={memberSearch}
+                    onChange={(event) => setMemberSearch(event.target.value)}
+                  />
+                </label>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => setMemberOpen(true)}
+                >
+                  + Add Member
+                </button>
+              </div>
+              <div className="attendance-controls">
+                <div
+                  className="attendance-filters"
+                  role="group"
+                  aria-label="Filter members"
+                >
+                  {(["all", "present", "absent"] as const).map((filter) => (
+                    <button
+                      className={
+                        attendanceFilter === filter
+                          ? "attendance-filter active"
+                          : "attendance-filter"
+                      }
+                      type="button"
+                      key={filter}
+                      aria-pressed={attendanceFilter === filter}
+                      onClick={() => setAttendanceFilter(filter)}
+                    >
+                      {filter === "all"
+                        ? `All (${memberCounts.total})`
+                        : filter === "present"
+                          ? `Present (${memberCounts.present})`
+                          : `Absent (${memberCounts.absent})`}
+                    </button>
+                  ))}
+                </div>
+                <span className="attendance-context-count">
+                  {memberCounts.present} of {memberCounts.total} members present
+                </span>
+                <button
+                  className="button subtle mark-absent-button"
+                  type="button"
+                  disabled={memberCounts.present === 0}
+                  onClick={() => void markAllAbsent()}
+                >
+                  Mark all absent
+                </button>
+              </div>
+              <div className="member-card-grid">
+                {filteredMembers.map((member) => {
+                  const checked = selected.has(member.id);
+                  const pending =
+                    pendingRecordKeys.has(`people:${member.id}`) ||
+                    pendingRecordKeys.has(
+                      `service_attendance:${active.id}:${member.id}`,
+                    );
+                  return (
+                    <label
+                      id={`member-card-${member.id}`}
+                      className={[
+                        "attendance-person-card",
+                        checked ? "selected" : "",
+                        recentMemberId === member.id ? "recently-added" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      key={member.id}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        aria-label={`${member.displayName}, ${
+                          checked ? "present" : "absent"
+                        }`}
+                        onChange={() => void toggleMember(member.id)}
+                      />
+                      <span className="attendance-card-check" aria-hidden="true">
+                        {checked ? "✓" : ""}
+                      </span>
+                      <span className="attendance-card-name">
+                        <HighlightedText
+                          text={member.displayName}
+                          query={memberSearch}
+                        />
+                      </span>
+                      <span className="attendance-card-state">
+                        {checked ? "Present" : "Mark Present"}
+                      </span>
+                      {pending && (
+                        <span className="card-sync-pending">
+                          ● Waiting to sync
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+              {filteredMembers.length === 0 && (
+                <div className="attendance-empty">
+                  <strong>No members match this view.</strong>
+                  <span>Try another filter or clear the search.</span>
                 </div>
               )}
-              {filteredVisitors.map((visitor) => (
-                <div className="visitor-row visitor-attendance-row" key={visitor.id}>
-                  <span className="visitor-present-check" aria-hidden="true">
-                    ✓
-                  </span>
-                  <span className="visitor-avatar" aria-hidden="true">
-                    {visitor.firstName[0] || "V"}
-                    {visitor.lastName[0] || ""}
-                  </span>
-                  <span className="visitor-name">
-                    <strong>
-                      <HighlightedText
-                        text={visitor.displayName}
-                        query={search}
-                      />
-                    </strong>
-                    <small>{visitor.savedAsMember ? "Saved as member" : "This service only"}</small>
-                    {settings.allowVisitorNotes && visitor.notes && (
-                      <small>{visitor.notes}</small>
-                    )}
-                  </span>
-                  <span className="visitor-actions">
-                    <button
-                      className="button subtle"
-                      type="button"
-                      onClick={() => setEditingVisitor(visitor)}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="button danger-text"
-                      type="button"
-                      onClick={() => {
-                        if (!user) return;
-                        if (
-                          settings.confirmVisitorRemoval &&
-                          !confirm(
-                            "Remove this visitor from the service? This will remove their attendance entry from this service.",
-                          )
-                        ) {
-                          return;
-                        }
-                        void removeServiceVisitor(user, visitor.id).then(() =>
-                          openService(active),
-                        );
-                      }}
-                    >
-                      Remove
-                    </button>
-                  </span>
+            </div>
+          )}
+
+          {attendanceTab === "visitors" && (
+            <div
+              id="attendance-visitors-panel"
+              role="tabpanel"
+              aria-labelledby="attendance-visitors-tab"
+              className="attendance-tab-panel"
+            >
+              <div className="panel-toolbar attendance-tab-toolbar">
+                <label className="search-field">
+                  <span className="sr-only">Search named visitors</span>
+                  <span aria-hidden="true">⌕</span>
+                  <input
+                    type="search"
+                    placeholder={`Search ${settings.visitorLabel.toLocaleLowerCase()}s`}
+                    value={visitorSearch}
+                    onChange={(event) => setVisitorSearch(event.target.value)}
+                  />
+                </label>
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => setVisitorOpen(true)}
+                >
+                  + Add Visitor
+                </button>
+              </div>
+              <section className="unnamed-visitor-counter">
+                <div>
+                  <h2>Unnamed Visitors</h2>
+                  <p>People attending whose names were not recorded.</p>
                 </div>
-              ))}
+                <div
+                  className="visitor-stepper"
+                  role="group"
+                  aria-label="Unnamed visitor count"
+                >
+                  <button
+                    type="button"
+                    aria-label="Remove one unnamed visitor"
+                    disabled={(active.unnamedVisitorCount ?? 0) === 0}
+                    onClick={() => void changeUnnamedVisitorCount(-1)}
+                  >
+                    −
+                  </button>
+                  <strong aria-live="polite">
+                    {active.unnamedVisitorCount ?? 0}
+                  </strong>
+                  <button
+                    type="button"
+                    aria-label="Add one unnamed visitor"
+                    onClick={() => void changeUnnamedVisitorCount(1)}
+                  >
+                    +
+                  </button>
+                </div>
+              </section>
+              <div className="visitor-tab-summary">
+                <strong>{presentCounts.visitors} visitors</strong>
+                <span>
+                  {namedVisitorCount} named + {active.unnamedVisitorCount ?? 0}{" "}
+                  unnamed
+                </span>
+              </div>
+              <div className="visitor-card-grid">
+                {filteredVisitors.map((visitor) => (
+                  <article
+                    id={`visitor-card-${visitor.id}`}
+                    className={[
+                      "visitor-person-card",
+                      recentVisitorId === visitor.id ? "recently-added" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    key={visitor.id}
+                  >
+                    <span className="visitor-present-check" aria-hidden="true">
+                      ✓
+                    </span>
+                    <span className="visitor-name">
+                      <strong>
+                        <HighlightedText
+                          text={visitor.displayName}
+                          query={visitorSearch}
+                        />
+                      </strong>
+                      <small>
+                        {visitor.savedAsMember
+                          ? "Also saved as member"
+                          : "Present this service"}
+                      </small>
+                      {settings.allowVisitorNotes && visitor.notes && (
+                        <small>{visitor.notes}</small>
+                      )}
+                      {pendingRecordKeys.has(
+                        `service_visitors:${visitor.id}`,
+                      ) && (
+                        <small className="card-sync-pending">
+                          ● Waiting to sync
+                        </small>
+                      )}
+                    </span>
+                    <span className="visitor-actions">
+                      <button
+                        className="button subtle"
+                        type="button"
+                        aria-label={`Edit ${visitor.displayName}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setEditingVisitor(visitor);
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="button danger-text"
+                        type="button"
+                        aria-label={`Remove ${visitor.displayName}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (!user) return;
+                          if (
+                            settings.confirmVisitorRemoval &&
+                            !confirm(
+                              "Remove this visitor from the service? This will remove their attendance entry from this service.",
+                            )
+                          ) {
+                            return;
+                          }
+                          void removeServiceVisitor(user, visitor.id).then(() =>
+                            openService(active, { resetView: false }),
+                          );
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </span>
+                  </article>
+                ))}
+              </div>
               {filteredVisitors.length === 0 && (
                 <div className="attendance-empty">
                   <strong>
-                    {search
+                    {visitorSearch
                       ? `No ${settings.visitorLabel.toLocaleLowerCase()}s match your search.`
-                      : `No ${settings.visitorLabel.toLocaleLowerCase()}s yet.`}
+                      : `No named ${settings.visitorLabel.toLocaleLowerCase()}s yet.`}
                   </strong>
                   <span>
-                    {search
+                    {visitorSearch
                       ? "Try another name or clear the search."
-                      : "Use Add Visitor when someone new attends."}
+                      : "Use Add Visitor when a name is available."}
                   </span>
                 </div>
               )}
@@ -793,7 +1049,7 @@ export function ServiceManager() {
               setReviewingConflict(null);
               await syncNow();
               await refreshLists();
-              await openService(active);
+              await openService(active, { resetView: false });
             }}
           />
         )}
@@ -803,10 +1059,17 @@ export function ServiceManager() {
             onClose={() => setVisitorOpen(false)}
             onSave={async (input) => {
               if (!user) return;
-              await addServiceVisitor(user, active.id, input);
+              const { visitor } = await addServiceVisitor(
+                user,
+                active.id,
+                input,
+              );
+              setAttendanceTab("visitors");
+              setRecentVisitorId(visitor.id);
               setVisitorOpen(false);
-              await openService(active);
+              await openService(active, { resetView: false });
               await refreshLists();
+              highlightCard(`visitor-card-${visitor.id}`);
             }}
           />
         )}
@@ -819,7 +1082,7 @@ export function ServiceManager() {
               if (!user) return;
               await editServiceVisitor(user, editingVisitor.id, input);
               setEditingVisitor(null);
-              await openService(active);
+              await openService(active, { resetView: false });
             }}
           />
         )}

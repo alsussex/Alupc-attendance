@@ -67,6 +67,7 @@ export interface ChurchService extends AuditedRecord {
   customName?: string;
   serviceTime?: string;
   status: ServiceStatus;
+  unnamedVisitorCount?: number;
   isArchived: boolean;
   deletedAt?: string;
 }

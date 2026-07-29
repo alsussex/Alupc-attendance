@@ -40,14 +40,14 @@ export function attendancePresentCounts(
   presentMemberIds: ReadonlySet<string>,
   visitors: ServiceVisitor[],
   includeVisitors = true,
+  unnamedVisitorCount = 0,
 ) {
-  const visitorCount = includeVisitors
-    ? visitors.filter(
-        (visitor) => !visitor.deletedAt && !visitor.savedAsMember,
-      ).length
-    : 0;
+  const visitorCount =
+    visitors.filter(
+      (visitor) => !visitor.deletedAt && !visitor.savedAsMember,
+    ).length + Math.max(0, unnamedVisitorCount);
   return {
-    total: presentMemberIds.size + visitorCount,
+    total: presentMemberIds.size + (includeVisitors ? visitorCount : 0),
     members: presentMemberIds.size,
     visitors: visitorCount,
   };

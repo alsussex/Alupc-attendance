@@ -35,6 +35,7 @@ Requirements: Node.js 22.13 or newer, npm, and a Supabase project.
    - `supabase/migrations/202607290007_allow_privileged_dashboard_administration.sql`
    - `supabase/migrations/202607290008_application_settings.sql`
    - `supabase/migrations/202607290009_bidirectional_reconciliation.sql`
+   - `supabase/migrations/202607290010_unnamed_visitor_count.sql`
 
 4. Create the first user and organization using the steps below.
 5. Put the project URL, browser-safe anon key, and server-only service-role key in `.env.local`. The service-role key must never have a `NEXT_PUBLIC_` prefix.
@@ -113,7 +114,7 @@ The default Vercel domain is sufficient. Use the exact stable production domain 
 
 ## Private Vercel deployment checklist
 
-1. Confirm all nine migrations were applied in filename order.
+1. Confirm all ten migrations were applied in filename order.
 2. Confirm the first Admin and organization profile exist.
 3. Confirm `.env.example` contains placeholders and `.env.local` is untracked.
 4. Import the existing `alsussex/Alupc-attendance` repository and select `main`.
@@ -198,6 +199,11 @@ locally writable synchronized table. It also enables the synchronized tables in
 the Supabase Realtime publication with organization-filtered subscriptions.
 Realtime accelerates detection; incremental polling remains the durable fallback
 for missed websocket events and direct Table Editor or SQL Editor changes.
+
+Migration `202607290010_unnamed_visitor_count.sql` adds a constrained unnamed
+visitor count to each service. The count uses the same local-first service
+record, UUID, version checks, mutation queue, RLS, and realtime reconciliation;
+it does not create placeholder visitor records.
 
 Supabase continues refreshing tokens automatically. The authentication provider
 also handles `SIGNED_IN`, `TOKEN_REFRESHED`, and `SIGNED_OUT` explicitly,
