@@ -23,7 +23,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="brand-block">
           <span className="brand-mark" aria-hidden="true">CA</span>
           <div>
-            <strong>Church Attendance</strong>
+            <strong>Abundant Life UPC</strong>
             <span>Attendance workspace</span>
           </div>
         </div>
@@ -50,7 +50,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
       <div className="content-column">
         <header className="topbar">
-          <div className="mobile-brand">Church Attendance</div>
+          <div className="mobile-brand">Abundant Life UPC</div>
           <SyncIndicator />
         </header>
         <main className="page-content">

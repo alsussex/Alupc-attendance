@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   SERVICE_TYPES,
@@ -41,6 +48,7 @@ export function ServiceManager() {
   const [createOpen, setCreateOpen] = useState(false);
   const [visitorOpen, setVisitorOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const handledDashboardIntent = useRef("");
 
   const refreshLists = useCallback(async () => {
     if (!user) return;
@@ -61,7 +69,7 @@ export function ServiceManager() {
     };
   }, [refreshLists]);
 
-  async function openService(service: ChurchService) {
+  const openService = useCallback(async (service: ChurchService) => {
     const [attendance, nextVisitors] = await Promise.all([
       getServiceAttendance(service.id),
       listServiceVisitors(service.id),
@@ -70,7 +78,27 @@ export function ServiceManager() {
     setSelected(new Set(attendance.filter((item) => item.present).map((item) => item.personId)));
     setVisitors(nextVisitors);
     setSearch("");
-  }
+  }, []);
+
+  useEffect(() => {
+    const query = window.location.search;
+    if (!query || handledDashboardIntent.current === query) return;
+    const parameters = new URLSearchParams(query);
+    if (parameters.get("new") === "1") {
+      handledDashboardIntent.current = query;
+      setCreateOpen(true);
+      return;
+    }
+    const serviceId = parameters.get("service");
+    const requestedService = services.find(
+      (service) => service.id === serviceId,
+    );
+    if (!requestedService) return;
+    handledDashboardIntent.current = query;
+    void openService(requestedService).then(() => {
+      if (parameters.get("visitor") === "1") setVisitorOpen(true);
+    });
+  }, [openService, services]);
 
   async function toggleMember(personId: string) {
     if (!user || !active) return;
