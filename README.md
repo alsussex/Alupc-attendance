@@ -278,6 +278,15 @@ The prominent sync bar appears only when useful:
   browser did not receive the first successful response.
 - Stable UUID upserts prevent duplicate people, services, and visitors.
 - Attendance is canonicalized by service/person; the unique `(organization_id, service_id, person_id)` constraint prevents duplicates.
+- Attendance conflicts compare the meaningful `present` value, not
+  `version`, `updated_at`, or mutation-receipt metadata. If Supabase already
+  contains the queued checkbox state, the device adopts the server version and
+  removes the mutation as satisfied. If only server metadata changed, the
+  local edit is safely rebased onto the current server version.
+- A genuinely different attendance state without a trustworthy shared base is
+  retained once as `conflict`. Automatic runs continue syncing other records
+  but do not attempt that mutation again, so its attempt counter cannot loop
+  indefinitely. A new deliberate checkbox edit replaces and requeues it.
 - Queue entries retain errors and attempt counts. Failed pulls retain the prior cursor. Work is never silently discarded.
 - Member and service removal uses synchronized tombstone fields, preserving historical references and allowing other devices to hide removed rows.
 - Removing a service visitor uses a `deleted_at` tombstone. This removes only the service entry; a linked permanent member and their historical records remain intact.

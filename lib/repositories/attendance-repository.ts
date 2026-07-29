@@ -407,6 +407,7 @@ export function setMemberAttendance(
         table: "service_attendance",
         recordId: id,
         payload: toCloudRecord(record),
+        basePayload: existing ? toCloudRecord(existing) : undefined,
       });
       announceDataChanged();
       return record;

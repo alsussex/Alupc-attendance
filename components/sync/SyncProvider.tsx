@@ -25,7 +25,7 @@ import type { SyncTrigger } from "@/lib/sync/upload-service";
 import { subscribeToRemoteOrganizationChanges } from "@/lib/sync/remote-change-listener";
 
 export interface SyncAttemptOutcome {
-  status: "synced" | "pending" | "offline" | "error";
+  status: "synced" | "pending" | "offline" | "error" | "blocked";
   pendingCount: number;
 }
 
@@ -134,8 +134,16 @@ export function SyncProvider({ children }: { children: ReactNode }) {
                 : "Some changes could not sync. They are safely saved on this device.",
             );
             setPhase("error");
-            setConsecutiveFailures((current) => current + 1);
-            return { status: "error", pendingCount: count };
+            const blocked =
+              result.upload.blockedConflicts ===
+              result.upload.errors.length;
+            if (!blocked) {
+              setConsecutiveFailures((current) => current + 1);
+            }
+            return {
+              status: blocked ? "blocked" : "error",
+              pendingCount: count,
+            };
           }
           if (count === 0) break;
         }

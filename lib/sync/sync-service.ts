@@ -95,7 +95,7 @@ async function runSynchronization(
     options.onPhase?.("offline");
     await storeStatus(user, "offline");
     return {
-      upload: { uploaded: 0, errors: [] },
+      upload: { uploaded: 0, errors: [], blockedConflicts: 0 },
       pull: { downloaded: 0, merged: 0, skippedPending: 0, skippedOlder: 0 },
     };
   }

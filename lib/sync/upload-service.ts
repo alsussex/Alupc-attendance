@@ -4,6 +4,7 @@ import type { SyncQueueItem, VisitorSyncConflict } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
 import { announceDataChanged } from "@/lib/storage/data-events";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { reconcileAttendanceMutation } from "@/lib/sync/attendance-conflicts";
 import { reconcileVisitorMutation } from "@/lib/sync/visitor-conflicts";
 
 export interface UploadTarget {
@@ -30,6 +31,7 @@ export interface UploadReceipt {
 export interface UploadResult {
   uploaded: number;
   errors: string[];
+  blockedConflicts: number;
 }
 
 export type SyncTrigger =
@@ -92,6 +94,15 @@ export class VisitorSynchronizationConflictError extends SynchronizationConflict
       `${conflict.visitorName} has changes from another device. Review them before finishing this service.`,
     );
     this.name = "VisitorSynchronizationConflictError";
+  }
+}
+
+export class AttendanceSynchronizationConflictError extends SynchronizationConflictError {
+  constructor(recordId: string) {
+    super(
+      `Attendance ${recordId} has a different checkbox state on another device. The local change remains safely queued for review.`,
+    );
+    this.name = "AttendanceSynchronizationConflictError";
   }
 }
 
@@ -166,7 +177,11 @@ export function createSupabaseUploadTarget(): UploadTarget {
       const currentQuery = applyIdentity(
         client
           .from(tableName)
-          .select("version,updated_at,created_at,last_mutation_id"),
+          .select(
+            table === "service_attendance"
+              ? "version,updated_at,created_at,last_mutation_id,present"
+              : "version,updated_at,created_at,last_mutation_id",
+          ),
       );
       const { data: current, error: currentError } =
         await currentQuery.maybeSingle();
@@ -180,6 +195,55 @@ export function createSupabaseUploadTarget(): UploadTarget {
             updatedAt:
               typeof current.updated_at === "string"
                 ? current.updated_at
+                : undefined,
+          };
+        }
+        if (table === "service_attendance") {
+          const reconciliation = reconcileAttendanceMutation(
+            mutationPayload,
+            context.basePayload,
+            current,
+          );
+          if (reconciliation.kind === "satisfied") {
+            return {
+              version: Number(current.version),
+              updatedAt:
+                typeof current.updated_at === "string"
+                  ? current.updated_at
+                  : undefined,
+            };
+          }
+          if (reconciliation.kind === "conflict") {
+            throw new AttendanceSynchronizationConflictError(
+              context.recordId,
+            );
+          }
+          const { data: attendanceData, error: attendanceError } =
+            await applyIdentity(
+              client.from(tableName).update({
+                ...mutationPayload,
+                last_mutation_id: context.mutationToken,
+              }),
+            )
+              .eq("version", current.version)
+              .select("version,updated_at,last_mutation_id")
+              .maybeSingle();
+          if (attendanceError) {
+            throw new SupabaseUploadError(
+              attendanceError.message,
+              attendanceError.code,
+            );
+          }
+          if (!attendanceData) {
+            throw new AttendanceSynchronizationConflictError(
+              context.recordId,
+            );
+          }
+          return {
+            version: Number(attendanceData.version),
+            updatedAt:
+              typeof attendanceData.updated_at === "string"
+                ? attendanceData.updated_at
                 : undefined,
           };
         }
@@ -314,7 +378,11 @@ export async function uploadPendingChanges(
         uploadRank(a) - uploadRank(b) ||
         a.createdAt.localeCompare(b.createdAt),
     );
-  const result: UploadResult = { uploaded: 0, errors: [] };
+  const result: UploadResult = {
+    uploaded: 0,
+    errors: [],
+    blockedConflicts: 0,
+  };
   const servicesWithVisitorConflicts = new Set(
     queue
       .filter(
@@ -327,9 +395,12 @@ export async function uploadPendingChanges(
   );
 
   for (const item of queue) {
-    if (item.status === "conflict" && item.conflict) {
+    if (item.status === "conflict") {
+      result.blockedConflicts += 1;
       result.errors.push(
-        `${item.table}:${item.recordId}: ${item.conflict.visitorName} has changes from another device. Review them before finishing this service.`,
+        item.conflict
+          ? `${item.table}:${item.recordId}: ${item.conflict.visitorName} has changes from another device. Review them before finishing this service.`
+          : `${item.table}:${item.recordId}: ${item.lastError ?? "This change conflicts with a newer server record and requires review."}`,
       );
       continue;
     }
@@ -338,6 +409,7 @@ export async function uploadPendingChanges(
       item.payload.status === "completed" &&
       servicesWithVisitorConflicts.has(item.recordId)
     ) {
+      result.blockedConflicts += 1;
       result.errors.push(
         `services:${item.recordId}: A visitor conflict must be reviewed before this service can be completed.`,
       );
@@ -386,11 +458,31 @@ export async function uploadPendingChanges(
         current?.status === "processing" &&
         current.updatedAt === processing.updatedAt
       ) {
+        if (receipt && item.table === "service_attendance") {
+          const localAttendance = await database.get(
+            "attendance",
+            item.recordId,
+          );
+          if (localAttendance) {
+            await database.put("attendance", {
+              ...localAttendance,
+              version: receipt.version,
+              updatedAt: receipt.updatedAt ?? localAttendance.updatedAt,
+            });
+          }
+        }
         await database.delete("syncQueue", item.id);
       } else if (current && receipt) {
         await database.put("syncQueue", {
           ...current,
           baseVersion: receipt.version,
+          basePayload: {
+            ...item.payload,
+            version: receipt.version,
+            ...(receipt.updatedAt
+              ? { updated_at: receipt.updatedAt }
+              : {}),
+          },
           payload: {
             ...current.payload,
             version: receipt.version,
@@ -419,7 +511,8 @@ export async function uploadPendingChanges(
         await database.put("syncQueue", {
           ...processing,
           status:
-            caught instanceof VisitorSynchronizationConflictError
+            caught instanceof VisitorSynchronizationConflictError ||
+            caught instanceof AttendanceSynchronizationConflictError
               ? "conflict"
               : "error",
           lastError: diagnostic,
@@ -430,6 +523,13 @@ export async function uploadPendingChanges(
           updatedAt: new Date().toISOString(),
         });
         announceDataChanged();
+      }
+      if (
+        mutationIsStillCurrent &&
+        (caught instanceof AttendanceSynchronizationConflictError ||
+          caught instanceof VisitorSynchronizationConflictError)
+      ) {
+        result.blockedConflicts += 1;
       }
       if (
         mutationIsStillCurrent &&
