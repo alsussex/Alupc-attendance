@@ -19,9 +19,10 @@ import {
   registerAutomaticSync,
   syncRetryDelay,
   synchronizeNow,
-  synchronizeOrganization,
+  synchronizeWithSessionRecovery,
 } from "@/lib/sync/sync-service";
 import type { SyncTrigger } from "@/lib/sync/upload-service";
+import { subscribeToRemoteOrganizationChanges } from "@/lib/sync/remote-change-listener";
 
 export interface SyncAttemptOutcome {
   status: "synced" | "pending" | "offline" | "error";
@@ -51,7 +52,7 @@ const PENDING_VISIBILITY_DELAY_MS = 2_000;
 const RECOVERY_CONFIRMATION_MS = 2_500;
 
 export function SyncProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, refreshAccess, authRevision } = useAuth();
   const [phase, setPhase] = useState<SyncPhase>("loading");
   const [error, setError] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -70,6 +71,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const activeAttemptCount = useRef(0);
   const manualAttempt = useRef<Promise<SyncAttemptOutcome> | null>(null);
   const manualConfirmationTimer = useRef<number | undefined>(undefined);
+  const observedAuthRevision = useRef(0);
 
   const attemptSynchronization = useCallback(
     async (
@@ -77,7 +79,28 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       trigger: SyncTrigger = "automatic",
     ): Promise<SyncAttemptOutcome> => {
       if (!user) return { status: "error", pendingCount: 0 };
-      let count = await getQueueCount(user.organizationId);
+      let activeUser = user;
+      if (trigger !== "automatic") {
+        const refreshed = await refreshAccess();
+        if (!refreshed) {
+          const preserved = await getQueueCount(user.organizationId);
+          setPendingCount(preserved);
+          setError("Sign-in needs attention. Saved changes remain on this device.");
+          setPhase("error");
+          return { status: "error", pendingCount: preserved };
+        }
+        if (
+          refreshed.userId !== user.userId ||
+          refreshed.organizationId !== user.organizationId
+        ) {
+          return {
+            status: "pending",
+            pendingCount: await getQueueCount(user.organizationId),
+          };
+        }
+        activeUser = refreshed;
+      }
+      let count = await getQueueCount(activeUser.organizationId);
       setPendingCount(count);
       if (!navigator.onLine) {
         setPhase(count > 0 ? "local" : "offline");
@@ -92,16 +115,24 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         for (let cycle = 0; cycle < cycles; cycle += 1) {
           const result =
             trigger === "manual"
-              ? await synchronizeNow(user, { onPhase: setPhase })
-              : await synchronizeOrganization(user, {
+              ? await synchronizeNow(activeUser, {
+                  onPhase: setPhase,
+                  recoverAccess: refreshAccess,
+                })
+              : await synchronizeWithSessionRecovery(activeUser, {
                   onPhase: setPhase,
                   trigger,
+                  recoverAccess: refreshAccess,
                 });
-          count = await getQueueCount(user.organizationId);
+          count = await getQueueCount(activeUser.organizationId);
           setPendingCount(count);
           if (result.upload.errors.length) {
             const message = result.upload.errors.join("\n");
-            setError(message);
+            setError(
+              activeUser.role === "admin"
+                ? message
+                : "Some changes could not sync. They are safely saved on this device.",
+            );
             setPhase("error");
             setConsecutiveFailures((current) => current + 1);
             return { status: "error", pendingCount: count };
@@ -119,7 +150,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         setPhase("complete");
         return { status: "synced", pendingCount: 0 };
       } catch (caught) {
-        count = await getQueueCount(user.organizationId);
+        count = await getQueueCount(activeUser.organizationId);
         setPendingCount(count);
         if (!navigator.onLine) {
           setPhase(count > 0 ? "local" : "offline");
@@ -127,7 +158,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           return { status: "offline", pendingCount: count };
         }
         setError(
-          caught instanceof Error ? caught.message : "Synchronization failed.",
+          activeUser.role === "admin" && caught instanceof Error
+            ? caught.message
+            : "Some changes could not sync. They are safely saved on this device.",
         );
         setPhase("error");
         setConsecutiveFailures((current) => current + 1);
@@ -137,7 +170,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         if (activeAttemptCount.current === 0) setIsSyncing(false);
       }
     },
-    [user],
+    [refreshAccess, user],
   );
 
   const syncNow = useCallback(
@@ -171,11 +204,22 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   );
 
   useEffect(() => {
+    if (!user || authRevision <= observedAuthRevision.current) return;
+    observedAuthRevision.current = authRevision;
+    const timer = window.setTimeout(
+      () => void attemptSynchronization(false, "automatic"),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, [attemptSynchronization, authRevision, user]);
+
+  useEffect(() => {
     if (!user) return;
     let retryTimer: number | undefined;
     let mutationTimer: number | undefined;
     let pendingVisibilityTimer: number | undefined;
     let recoveryTimer: number | undefined;
+    let remoteTimer: number | undefined;
     let failedAttempts = 0;
     let stopped = false;
     let recovering = false;
@@ -267,6 +311,16 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       runAutomaticSync,
       { listenOnline: false },
     );
+    const stopRemoteChanges = subscribeToRemoteOrganizationChanges(
+      user,
+      () => {
+        clearTimer(remoteTimer);
+        remoteTimer = window.setTimeout(
+          () => void runAutomaticSync("remote"),
+          MUTATION_DEBOUNCE_MS,
+        );
+      },
+    );
     const stopMutationListener = subscribeToQueuedMutations(() => {
       void getQueueCount(user.organizationId).then((count) => {
         setPendingCount(count);
@@ -315,10 +369,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       clearTimer(mutationTimer);
       clearTimer(pendingVisibilityTimer);
       clearTimer(recoveryTimer);
+      clearTimer(remoteTimer);
       if (manualConfirmationTimer.current) {
         window.clearTimeout(manualConfirmationTimer.current);
       }
       stopAutomaticSync();
+      stopRemoteChanges();
       stopMutationListener();
       window.removeEventListener("offline", offline);
       window.removeEventListener("online", online);

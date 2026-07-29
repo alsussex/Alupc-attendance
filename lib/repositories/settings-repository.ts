@@ -61,6 +61,7 @@ export async function saveOrganizationSettings(
   const record: OrganizationSettings = {
     id: user.organizationId,
     organizationId: user.organizationId,
+    version: existing?.version,
     settings: mergeApplicationSettings(settings),
     createdAt: existing?.createdAt ?? timestamp,
     updatedAt: timestamp,

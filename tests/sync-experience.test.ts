@@ -215,7 +215,7 @@ describe("offline and retry visibility", () => {
     expect(repeatedFailure?.message).toContain("Automatic retry will continue");
   });
 
-  it("automatically triggers on reconnect, focus, and the scheduled interval", async () => {
+  it("automatically triggers on reconnect, focus, and each 30-second interval", async () => {
     vi.useFakeTimers();
     const synchronize = vi.fn(async () => undefined);
     const stop = registerAutomaticSync(user, synchronize);
@@ -224,7 +224,11 @@ describe("offline and retry visibility", () => {
     window.dispatchEvent(new Event("focus"));
     await vi.advanceTimersByTimeAsync(60_000);
 
-    expect(synchronize).toHaveBeenCalledTimes(3);
+    expect(synchronize).toHaveBeenCalledTimes(4);
+    expect(synchronize).toHaveBeenNthCalledWith(1, "online");
+    expect(synchronize).toHaveBeenNthCalledWith(2, "focus");
+    expect(synchronize).toHaveBeenNthCalledWith(3, "scheduled");
+    expect(synchronize).toHaveBeenNthCalledWith(4, "scheduled");
     stop();
   });
 });

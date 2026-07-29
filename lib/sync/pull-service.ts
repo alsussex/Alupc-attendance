@@ -5,6 +5,7 @@ import {
   attendanceId,
   type PullTable,
   type SyncCursor,
+  type UserContext,
 } from "@/lib/domain";
 import {
   getDatabase,
@@ -57,8 +58,8 @@ function storeFor(table: PullTable): LocalStore {
   return table;
 }
 
-function cursorId(organizationId: string, table: PullTable) {
-  return `${organizationId}:${table}`;
+function cursorId(userId: string, organizationId: string, table: PullTable) {
+  return `${userId}:${organizationId}:${table}`;
 }
 
 function recordUpdatedAt(record: LocalPullRecord) {
@@ -121,7 +122,11 @@ export function createSupabasePullSource(): PullSource {
           : query.eq("organization_id", organizationId);
       if (updatedAt) query = query.gte("updated_at", updatedAt);
       const { data, error } = await query.range(offset, offset + limit - 1);
-      if (error) throw new Error(`${table}: ${error.message}`);
+      if (error) {
+        throw new Error(
+          `${table}: ${error.code ? `${error.code}: ` : ""}${error.message}`,
+        );
+      }
       const rows = (data ?? []) as Record<string, unknown>[];
       return { rows, hasMore: rows.length === limit };
     },
@@ -129,9 +134,18 @@ export function createSupabasePullSource(): PullSource {
 }
 
 export async function pullOrganizationData(
-  organizationId: string,
+  userOrOrganization: UserContext | string,
   source: PullSource = createSupabasePullSource(),
+  options: { fullSnapshot?: boolean } = {},
 ): Promise<PullResult> {
+  const organizationId =
+    typeof userOrOrganization === "string"
+      ? userOrOrganization
+      : userOrOrganization.organizationId;
+  const userId =
+    typeof userOrOrganization === "string"
+      ? "legacy"
+      : userOrOrganization.userId;
   const database = await getDatabase();
   const queue = await database.getAllFromIndex(
     "syncQueue",
@@ -147,18 +161,20 @@ export async function pullOrganizationData(
   };
 
   for (const table of PULL_TABLES) {
+    const scopedCursorId = cursorId(userId, organizationId, table);
     const existingCursor = await database.get(
       "syncCursors",
-      cursorId(organizationId, table),
+      scopedCursorId,
     );
+    const cursor = options.fullSnapshot ? undefined : existingCursor;
     let offset = 0;
-    let newestUpdatedAt = existingCursor?.updatedAt;
+    let newestUpdatedAt = cursor?.updatedAt;
 
     while (true) {
       const page = await source.fetchPage(
         table,
         organizationId,
-        existingCursor?.updatedAt,
+        cursor?.updatedAt,
         offset,
         PAGE_SIZE,
       );
@@ -195,7 +211,8 @@ export async function pullOrganizationData(
 
     if (newestUpdatedAt) {
       const cursor: SyncCursor = {
-        id: cursorId(organizationId, table),
+        id: scopedCursorId,
+        userId,
         organizationId,
         table,
         updatedAt: newestUpdatedAt,

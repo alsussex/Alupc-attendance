@@ -58,6 +58,8 @@ function auditFields(row: Record<string, unknown>) {
   return {
     id: requiredString(row, "id"),
     organizationId: requiredString(row, "organization_id"),
+    version:
+      typeof row.version === "number" ? row.version : undefined,
     createdAt: requiredString(row, "created_at"),
     updatedAt: requiredString(row, "updated_at"),
     createdBy: requiredString(row, "created_by"),
@@ -74,6 +76,8 @@ export function fromCloudRecord(
       id: requiredString(row, "id"),
       name: requiredString(row, "name"),
       slug: requiredString(row, "slug"),
+      version:
+        typeof row.version === "number" ? row.version : undefined,
       createdBy: optionalString(row, "created_by"),
       createdAt: requiredString(row, "created_at"),
       updatedAt: requiredString(row, "updated_at"),

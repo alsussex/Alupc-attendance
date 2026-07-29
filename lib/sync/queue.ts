@@ -17,10 +17,16 @@ export async function enqueueChange(
     await database.getAllFromIndex("syncQueue", "recordId", input.recordId)
   ).find((item) => item.table === input.table);
   const timestamp = nowIso();
+  const payloadVersion =
+    typeof input.payload.version === "number"
+      ? input.payload.version
+      : undefined;
   const item: SyncQueueItem = existing
     ? {
         ...existing,
         payload: input.payload,
+        baseVersion: existing.baseVersion ?? payloadVersion,
+        mutationToken: createId(),
         status: "pending",
         lastError: undefined,
         updatedAt: timestamp,
@@ -29,6 +35,8 @@ export async function enqueueChange(
         id: createId(),
         ...input,
         operation: "upsert",
+        baseVersion: payloadVersion,
+        mutationToken: createId(),
         status: "pending",
         attempts: 0,
         createdAt: timestamp,

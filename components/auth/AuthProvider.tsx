@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -22,6 +23,9 @@ interface AuthState {
   error: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  refreshAccess: () => Promise<UserContext | null>;
+  sessionNeedsAttention: boolean;
+  authRevision: number;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -33,11 +37,17 @@ function profileCacheKey(userId: string) {
 function readCachedProfile(userId: string) {
   const value = localStorage.getItem(profileCacheKey(userId));
   if (!value) return null;
-  const cached = JSON.parse(value) as UserContext;
-  return {
-    ...cached,
-    role: cached.role === "admin" ? "admin" : "attendance_taker",
-  } satisfies UserContext;
+  try {
+    const cached = JSON.parse(value) as UserContext;
+    if (!cached.organizationId || cached.userId !== userId) return null;
+    return {
+      ...cached,
+      role: cached.role === "admin" ? "admin" : "attendance_taker",
+    } satisfies UserContext;
+  } catch {
+    localStorage.removeItem(profileCacheKey(userId));
+    return null;
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -50,13 +60,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ? null
       : "Supabase is not configured. Copy .env.example to .env.local and add your project values.",
   );
+  const [sessionNeedsAttention, setSessionNeedsAttention] = useState(false);
+  const [authRevision, setAuthRevision] = useState(0);
+  const refreshPromise = useRef<Promise<UserContext | null> | null>(null);
 
-  const loadProfile = useCallback(async (nextSession: Session | null) => {
+  const loadProfile = useCallback(async (
+    nextSession: Session | null,
+  ): Promise<UserContext | null> => {
     setSession(nextSession);
     if (!nextSession) {
       setUser(null);
+      setError(null);
+      setSessionNeedsAttention(false);
       setLoading(false);
-      return;
+      return null;
     }
 
     const authUser = nextSession.user;
@@ -64,33 +81,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!navigator.onLine && cached) {
       setUser(cached);
       setError(null);
+      setSessionNeedsAttention(false);
       setLoading(false);
-      return;
+      return cached;
     }
 
     const supabase = getSupabaseClient();
     const { data, error: profileError } = await supabase
       .from("profiles")
-      .select("organization_id, role, is_active")
+      .select("organization_id, display_name, role, is_active, created_at, updated_at")
       .eq("id", authUser.id)
       .single();
 
-    if (profileError || !data?.organization_id || !data.is_active) {
+    const { data: organization, error: organizationError } = data?.organization_id
+      ? await supabase
+          .from("organizations")
+          .select("id, name, slug, created_by, created_at, updated_at, version")
+          .eq("id", data.organization_id)
+          .single()
+      : { data: null, error: null };
+
+    if (
+      profileError ||
+      organizationError ||
+      !data?.organization_id ||
+      !data.is_active ||
+      !organization
+    ) {
       const connectionFailure =
         !navigator.onLine ||
-        /fetch|network|connection/i.test(profileError?.message ?? "");
+        /fetch|network|connection|timeout/i.test(
+          `${profileError?.message ?? ""} ${organizationError?.message ?? ""}`,
+        );
       if (cached && connectionFailure) {
         setUser(cached);
         setError(null);
+        setSessionNeedsAttention(false);
+        setLoading(false);
+        return cached;
       } else {
         localStorage.removeItem(profileCacheKey(authUser.id));
         setUser(null);
+        setSessionNeedsAttention(true);
         setError(
           "Your account is disabled or is not connected to this church organization.",
         );
       }
       setLoading(false);
-      return;
+      return null;
     }
 
     const nextUser: UserContext = {
@@ -99,20 +137,123 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: authUser.email ?? "",
       role: data.role === "admin" ? "admin" : "attendance_taker",
     };
+    const database = await getDatabase();
+    await Promise.all([
+      database.put("profiles", {
+        id: authUser.id,
+        organizationId: data.organization_id,
+        displayName: data.display_name ?? undefined,
+        role: nextUser.role,
+        isActive: data.is_active,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      }),
+      database.put("organizations", {
+        id: organization.id,
+        name: organization.name,
+        slug: organization.slug,
+        version:
+          typeof organization.version === "number"
+            ? organization.version
+            : undefined,
+        createdBy: organization.created_by ?? undefined,
+        createdAt: organization.created_at,
+        updatedAt: organization.updated_at,
+      }),
+    ]);
     localStorage.setItem(profileCacheKey(authUser.id), JSON.stringify(nextUser));
-    setUser(nextUser);
+    setUser((current) =>
+      current &&
+      current.userId === nextUser.userId &&
+      current.organizationId === nextUser.organizationId &&
+      current.email === nextUser.email &&
+      current.role === nextUser.role
+        ? current
+        : nextUser,
+    );
     setError(null);
+    setSessionNeedsAttention(false);
     setLoading(false);
+    return nextUser;
   }, []);
+
+  const refreshAccess = useCallback(() => {
+    if (refreshPromise.current) return refreshPromise.current;
+    const refresh = (async () => {
+      if (!navigator.onLine) {
+        if (session) return readCachedProfile(session.user.id);
+        return null;
+      }
+      const { data, error: refreshError } =
+        await getSupabaseClient().auth.refreshSession();
+      if (refreshError || !data.session) {
+        setSessionNeedsAttention(true);
+        const temporary =
+          !navigator.onLine ||
+          /fetch|network|connection|timeout/i.test(
+            refreshError?.message ?? "",
+          );
+        if (temporary) {
+          setError(
+            "Your sign-in could not be refreshed yet. Saved work remains on this device and recovery will retry automatically.",
+          );
+        } else {
+          setUser(null);
+          setError("Your sign-in needs attention. Please sign in again.");
+        }
+        return null;
+      }
+      return loadProfile(data.session);
+    })().finally(() => {
+      refreshPromise.current = null;
+    });
+    refreshPromise.current = refresh;
+    return refresh;
+  }, [loadProfile, session]);
 
   useEffect(() => {
     if (!configured) return;
     const supabase = getSupabaseClient();
-    void supabase.auth.getSession().then(({ data }) => loadProfile(data.session));
+    void supabase.auth.getSession().then(async ({ data }) => {
+      if (!data.session || !navigator.onLine) {
+        await loadProfile(data.session);
+        return;
+      }
+      const { data: refreshed, error: refreshError } =
+        await supabase.auth.refreshSession();
+      if (
+        refreshError &&
+        !/fetch|network|connection|timeout/i.test(refreshError.message)
+      ) {
+        setSession(data.session);
+        setUser(null);
+        setSessionNeedsAttention(true);
+        setError("Your sign-in needs attention. Please sign in again.");
+        setLoading(false);
+        return;
+      }
+      await loadProfile(
+        !refreshError && refreshed.session
+          ? refreshed.session
+          : data.session,
+      );
+    });
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      void loadProfile(nextSession);
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "SIGNED_OUT") {
+        void loadProfile(null);
+        return;
+      }
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        window.setTimeout(
+          () =>
+            void loadProfile(nextSession).then(() =>
+              setAuthRevision((current) => current + 1),
+            ),
+          0,
+        );
+      }
     });
     return () => subscription.unsubscribe();
   }, [configured, loadProfile]);
@@ -122,7 +263,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const refreshCachedRole = async () => {
       const profile = await (await getDatabase()).get("profiles", user.userId);
-      if (!profile?.isActive) return;
+      if (profile && !profile.isActive) {
+        localStorage.removeItem(profileCacheKey(user.userId));
+        setUser(null);
+        setSessionNeedsAttention(true);
+        setError("Your church access has been disabled.");
+        return;
+      }
+      if (!profile) return;
       const nextRole =
         profile.role === "admin" ? "admin" : "attendance_taker";
       setUser((current) => {
@@ -156,7 +304,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session || !navigator.onLine) return;
 
     const revalidateAccess = () => {
-      if (navigator.onLine) void loadProfile(session);
+      if (navigator.onLine) void refreshAccess();
     };
     window.addEventListener("online", revalidateAccess);
     window.addEventListener("focus", revalidateAccess);
@@ -164,7 +312,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.removeEventListener("online", revalidateAccess);
       window.removeEventListener("focus", revalidateAccess);
     };
-  }, [loadProfile, session]);
+  }, [refreshAccess, session]);
 
   const signIn = useCallback(
     async (email: string, password: string) => {
@@ -198,12 +346,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await getSupabaseClient().auth.signOut({ scope: "local" });
     setUser(null);
     setSession(null);
+    setError(null);
+    setSessionNeedsAttention(false);
     setLoading(false);
   }, []);
 
   const value = useMemo(
-    () => ({ loading, session, user, error, signIn, signOut }),
-    [loading, session, user, error, signIn, signOut],
+    () => ({
+      loading,
+      session,
+      user,
+      error,
+      signIn,
+      signOut,
+      refreshAccess,
+      sessionNeedsAttention,
+      authRevision,
+    }),
+    [
+      loading,
+      session,
+      user,
+      error,
+      signIn,
+      signOut,
+      refreshAccess,
+      sessionNeedsAttention,
+      authRevision,
+    ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

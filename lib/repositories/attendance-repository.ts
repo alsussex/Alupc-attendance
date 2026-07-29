@@ -87,6 +87,7 @@ export async function saveMember(
   const person: Person = {
     id: input.id ?? createId(),
     organizationId: user.organizationId,
+    version: existing?.version,
     firstName: input.firstName.trim(),
     lastName: input.lastName.trim(),
     displayName: makeDisplayName(input.firstName, input.lastName),
@@ -223,6 +224,7 @@ export async function saveService(
   const service: ChurchService = {
     id: input.id ?? createId(),
     organizationId: user.organizationId,
+    version: existing?.version,
     serviceDate: input.serviceDate,
     serviceType: input.serviceType,
     customName: input.customName?.trim() || undefined,
@@ -321,6 +323,7 @@ export function setMemberAttendance(
       const record: AttendanceRecord = {
         id,
         organizationId: user.organizationId,
+        version: existing?.version,
         serviceId,
         personId,
         present,

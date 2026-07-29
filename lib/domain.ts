@@ -24,6 +24,7 @@ export type ServiceType = string;
 export interface AuditedRecord {
   id: string;
   organizationId: string;
+  version?: number;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -34,6 +35,7 @@ export interface Organization {
   id: string;
   name: string;
   slug: string;
+  version?: number;
   createdBy?: string;
   createdAt: string;
   updatedAt: string;
@@ -142,7 +144,9 @@ export interface SyncQueueItem {
     | "service_visitors";
   operation: "upsert";
   recordId: string;
-  payload: Record<string, unknown>;
+    payload: Record<string, unknown>;
+    baseVersion?: number;
+    mutationToken?: string;
   status: "pending" | "processing" | "error";
   attempts: number;
   lastError?: string;
@@ -217,6 +221,7 @@ export const DEFAULT_APPLICATION_SETTINGS: ApplicationSettings = {
 
 export interface SyncCursor {
   id: string;
+  userId?: string;
   organizationId: string;
   table: PullTable;
   updatedAt: string;
@@ -225,6 +230,7 @@ export interface SyncCursor {
 
 export interface SyncStatusRecord {
   id: string;
+  userId?: string;
   organizationId: string;
   phase: SyncPhase;
   lastAttemptAt: string;

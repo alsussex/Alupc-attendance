@@ -13,6 +13,7 @@ import {
   type ApplicationSettings,
   type Organization,
   type ServiceTypeSetting,
+  type SyncQueueItem,
 } from "@/lib/domain";
 import {
   getOrganization,
@@ -79,7 +80,7 @@ function displayTime(value?: string) {
 }
 
 export function SettingsCenter() {
-  const { user, session, signOut } = useAuth();
+  const { user, session, signOut, refreshAccess } = useAuth();
   const synchronization = useSynchronization();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [organization, setOrganization] = useState<Organization | null>(null);
@@ -91,6 +92,7 @@ export function SettingsCenter() {
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [lastSuccessfulSync, setLastSuccessfulSync] = useState<string>();
+  const [syncDiagnostics, setSyncDiagnostics] = useState<SyncQueueItem[]>([]);
   const [displayName, setDisplayName] = useState("");
   const [online, setOnline] = useState(
     () => typeof navigator === "undefined" || navigator.onLine,
@@ -104,8 +106,17 @@ export function SettingsCenter() {
 
   const refreshDeviceStatus = useCallback(async () => {
     if (!user) return;
-    const status = await getStoredSyncStatus(user.organizationId);
+    const database = await getDatabase();
+    const [status, queue] = await Promise.all([
+      getStoredSyncStatus(user.organizationId, user.userId),
+      database.getAllFromIndex(
+        "syncQueue",
+        "organizationId",
+        user.organizationId,
+      ),
+    ]);
     setLastSuccessfulSync(status?.lastSuccessfulSyncAt);
+    setSyncDiagnostics(queue.filter((item) => item.status === "error"));
   }, [user]);
 
   const load = useCallback(async () => {
@@ -525,6 +536,7 @@ export function SettingsCenter() {
               syncPhase={synchronization.phase}
               online={online}
               offlineReady={offlineReady}
+              diagnostics={syncDiagnostics}
               onSync={async () => {
                 setFeedback("Syncing…");
                 const outcome = await synchronization.syncNow();
@@ -540,6 +552,11 @@ export function SettingsCenter() {
                   setError("Refresh is unavailable while local changes are waiting to sync.");
                   return;
                 }
+                const refreshedUser = await refreshAccess();
+                if (!refreshedUser) {
+                  setError("Your sign-in needs attention before local sync state can be repaired.");
+                  return;
+                }
                 const database = await getDatabase();
                 const cursors = await database.getAllFromIndex(
                   "syncCursors",
@@ -547,12 +564,17 @@ export function SettingsCenter() {
                   user?.organizationId ?? "",
                 );
                 await Promise.all(
-                  cursors.map((cursor) =>
-                    database.delete("syncCursors", cursor.id),
-                  ),
+                  cursors
+                    .filter(
+                      (cursor) =>
+                        !cursor.userId || cursor.userId === user?.userId,
+                    )
+                    .map((cursor) =>
+                      database.delete("syncCursors", cursor.id),
+                    ),
                 );
                 await synchronization.syncNow();
-                setFeedback("Church data refreshed from the server.");
+                setFeedback("Local sync state repaired from the server.");
               }}
               onClear={async () => {
                 const warning =
@@ -959,6 +981,7 @@ function DeviceSyncSection({
   syncPhase,
   online,
   offlineReady,
+  diagnostics,
   onSync,
   onRefresh,
   onClear,
@@ -969,6 +992,7 @@ function DeviceSyncSection({
   syncPhase: string;
   online: boolean;
   offlineReady: boolean;
+  diagnostics: SyncQueueItem[];
   onSync: () => Promise<void>;
   onRefresh: () => Promise<void>;
   onClear: () => Promise<void>;
@@ -995,9 +1019,20 @@ function DeviceSyncSection({
             {isSyncing ? "Syncing…" : pendingCount ? "Retry synchronization" : "Sync now"}
           </button>
           <button className="button secondary" type="button" disabled={isSyncing || pendingCount > 0 || !online} onClick={() => void onRefresh()}>
-            Refresh from server
+            Repair local sync state
           </button>
         </div>
+        {diagnostics.length > 0 && (
+          <div className="settings-subsection" aria-label="Synchronization diagnostics">
+            <h3>Admin diagnostics</h3>
+            {diagnostics.map((item) => (
+              <p className="muted" key={item.id}>
+                Upload · {item.table} · {item.recordId} · attempt {item.attempts}
+                {item.lastError ? ` · ${item.lastError}` : ""}
+              </p>
+            ))}
+          </div>
+        )}
       </section>
       <section className="panel settings-card danger-zone">
         <p className="eyebrow">This device only</p>
