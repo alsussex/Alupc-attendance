@@ -19,6 +19,7 @@ import {
   type Person,
   type ServiceType,
   type ServiceVisitor,
+  type SyncQueueItem,
 } from "@/lib/domain";
 import {
   addServiceVisitor,
@@ -57,6 +58,10 @@ import {
   type ServiceDirectoryFilter,
   type ServiceDirectoryItem,
 } from "@/lib/services/service-directory";
+import {
+  listVisitorConflicts,
+  resolveVisitorConflict,
+} from "@/lib/sync/visitor-conflicts";
 
 function localDate(timeZone: string) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -118,6 +123,9 @@ export function ServiceManager() {
     "draft" | "completed" | null
   >(null);
   const [actionFeedback, setActionFeedback] = useState("");
+  const [visitorConflicts, setVisitorConflicts] = useState<SyncQueueItem[]>([]);
+  const [reviewingConflict, setReviewingConflict] =
+    useState<SyncQueueItem | null>(null);
   const [serviceSearch, setServiceSearch] = useState("");
   const [serviceFilter, setServiceFilter] =
     useState<ServiceDirectoryFilter>("all");
@@ -129,9 +137,10 @@ export function ServiceManager() {
 
   const refreshLists = useCallback(async () => {
     if (!user) return;
-    const [directory, settingsRecord] = await Promise.all([
+    const [directory, settingsRecord, conflicts] = await Promise.all([
       loadOrganizationServiceDirectory(user.organizationId),
       getOrganizationSettings(user.organizationId),
+      listVisitorConflicts(user.organizationId),
     ]);
     const nextMembers = settingsRecord.settings.showInactiveInAttendance
       ? await listMembers(user.organizationId)
@@ -140,6 +149,7 @@ export function ServiceManager() {
     setServices(directory.map((item) => item.service));
     setMembers(nextMembers);
     setSettings(settingsRecord.settings);
+    setVisitorConflicts(conflicts);
   }, [user]);
 
   useEffect(() => {
@@ -238,6 +248,20 @@ export function ServiceManager() {
     setServiceAction(status);
     setActionFeedback("");
     try {
+      if (status === "completed" && navigator.onLine) {
+        await syncNow();
+        const conflicts = await listVisitorConflicts(
+          user.organizationId,
+          active.id,
+        );
+        setVisitorConflicts((current) => [
+          ...current.filter(
+            (item) => item.conflict?.serviceId !== active.id,
+          ),
+          ...conflicts,
+        ]);
+        if (conflicts.length > 0) return;
+      }
       const updated = await saveService(user, { ...active, status });
       setActive(updated);
       await refreshLists();
@@ -379,6 +403,12 @@ export function ServiceManager() {
     });
   }
 
+  const activeVisitorConflicts = active
+    ? visitorConflicts.filter(
+        (item) => item.conflict?.serviceId === active.id,
+      )
+    : [];
+
   if (active) {
     return (
       <div className="attendance-workspace">
@@ -494,6 +524,30 @@ export function ServiceManager() {
             {actionFeedback}
           </div>
         )}
+        {activeVisitorConflicts.map((item) => (
+          <div className="notice warning visitor-conflict-notice" key={item.id}>
+            <div>
+              <strong>
+                {item.conflict?.visitorName ?? "A visitor"} has changes from
+                another device.
+              </strong>
+              <span>
+                {isAdmin(user)
+                  ? "Review them before finishing this service."
+                  : "An administrator needs to review them before this service can be finished."}
+              </span>
+            </div>
+            {isAdmin(user) && (
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => setReviewingConflict(item)}
+              >
+                Review Conflict
+              </button>
+            )}
+          </div>
+        ))}
         <section className="panel attendance-panel">
           <div className="panel-toolbar attendance-action-bar">
             <label className="search-field attendance-search">
@@ -722,6 +776,25 @@ export function ServiceManager() {
             onClose={() => setMemberOpen(false)}
             onCreate={createQuickMember}
             onUseExisting={useExistingQuickMember}
+          />
+        )}
+        {reviewingConflict?.conflict && isAdmin(user) && (
+          <VisitorConflictDialog
+            item={reviewingConflict}
+            onClose={() => setReviewingConflict(null)}
+            onResolve={async (strategy, manual) => {
+              if (!user) return;
+              await resolveVisitorConflict(
+                user.organizationId,
+                reviewingConflict.id,
+                strategy,
+                manual,
+              );
+              setReviewingConflict(null);
+              await syncNow();
+              await refreshLists();
+              await openService(active);
+            }}
           />
         )}
         {visitorOpen && (
@@ -1002,6 +1075,210 @@ export function ServiceManager() {
       </div>
     );
   }
+}
+
+const VISITOR_CONFLICT_LABELS: Record<string, string> = {
+  first_name: "First name",
+  last_name: "Last name",
+  display_name: "Display name",
+  notes: "Notes",
+  deleted_at: "Removed from service",
+  service_id: "Service",
+  saved_as_member: "Saved as member",
+  member_person_id: "Linked member",
+};
+
+function conflictValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return "Not set";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
+function VisitorConflictDialog({
+  item,
+  onClose,
+  onResolve,
+}: {
+  item: SyncQueueItem;
+  onClose: () => void;
+  onResolve: (
+    strategy: "local" | "server" | "manual",
+    manual?: { firstName: string; lastName: string; notes?: string },
+  ) => Promise<void>;
+}) {
+  const conflict = item.conflict!;
+  const [manualOpen, setManualOpen] = useState(false);
+  const [firstName, setFirstName] = useState(
+    String(item.payload.first_name ?? ""),
+  );
+  const [lastName, setLastName] = useState(
+    String(item.payload.last_name ?? ""),
+  );
+  const [notes, setNotes] = useState(String(item.payload.notes ?? ""));
+  const [saving, setSaving] = useState(false);
+
+  async function resolve(
+    strategy: "local" | "server" | "manual",
+    manual?: { firstName: string; lastName: string; notes?: string },
+  ) {
+    setSaving(true);
+    try {
+      await onResolve(strategy, manual);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <section
+        className="modal visitor-conflict-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="visitor-conflict-title"
+      >
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">Synchronization review</p>
+            <h2 id="visitor-conflict-title">{conflict.visitorName}</h2>
+          </div>
+          <button
+            className="icon-button"
+            aria-label="Close"
+            type="button"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        <p>
+          This visitor was changed on this device and on another device. Choose
+          which information should be kept.
+        </p>
+        <div className="visitor-conflict-fields">
+          {conflict.fields.map((field) => (
+            <section key={field.field}>
+              <h3>{VISITOR_CONFLICT_LABELS[field.field] ?? field.field}</h3>
+              <div>
+                <span>
+                  <small>This device</small>
+                  <strong>{conflictValue(field.localValue)}</strong>
+                </span>
+                <span>
+                  <small>Server</small>
+                  <strong>{conflictValue(field.serverValue)}</strong>
+                </span>
+              </div>
+            </section>
+          ))}
+        </div>
+        <p className="form-note">
+          Local update:{" "}
+          {conflict.localUpdatedAt
+            ? new Date(conflict.localUpdatedAt).toLocaleString()
+            : "Unknown"}
+          {" · "}Server update:{" "}
+          {conflict.serverUpdatedAt
+            ? new Date(conflict.serverUpdatedAt).toLocaleString()
+            : "Unknown"}
+        </p>
+        <details className="visitor-conflict-diagnostics">
+          <summary>Technical details</summary>
+          <dl>
+            <div>
+              <dt>Visitor record</dt>
+              <dd>{conflict.visitorId}</dd>
+            </div>
+            <div>
+              <dt>Service record</dt>
+              <dd>{conflict.serviceId}</dd>
+            </div>
+            <div>
+              <dt>Organization</dt>
+              <dd>{conflict.organizationId}</dd>
+            </div>
+            <div>
+              <dt>Versions</dt>
+              <dd>
+                This device {conflict.localVersion ?? "unknown"} · Server{" "}
+                {conflict.serverVersion ?? "unknown"}
+              </dd>
+            </div>
+            <div>
+              <dt>Last editors</dt>
+              <dd>
+                This device {conflict.localUpdatedBy ?? "unknown"} · Server{" "}
+                {conflict.serverUpdatedBy ?? "unknown"}
+              </dd>
+            </div>
+          </dl>
+        </details>
+        {manualOpen && (
+          <div className="form-stack visitor-conflict-manual">
+            <div className="form-grid">
+              <label>
+                First name
+                <input
+                  value={firstName}
+                  onChange={(event) => setFirstName(event.target.value)}
+                />
+              </label>
+              <label>
+                Last name
+                <input
+                  value={lastName}
+                  onChange={(event) => setLastName(event.target.value)}
+                />
+              </label>
+            </div>
+            <label>
+              Notes
+              <textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+              />
+            </label>
+            <button
+              className="button primary"
+              type="button"
+              disabled={saving}
+              onClick={() =>
+                void resolve("manual", { firstName, lastName, notes })
+              }
+            >
+              {saving ? "Resolving…" : "Save merged visitor"}
+            </button>
+          </div>
+        )}
+        <div className="modal-actions visitor-conflict-actions">
+          <button
+            className="button subtle"
+            type="button"
+            disabled={saving}
+            onClick={() => void resolve("server")}
+          >
+            Keep Server
+          </button>
+          <button
+            className="button secondary"
+            type="button"
+            disabled={saving}
+            onClick={() => setManualOpen((current) => !current)}
+          >
+            Merge Manually
+          </button>
+          <button
+            className="button primary"
+            type="button"
+            disabled={saving}
+            onClick={() => void resolve("local")}
+          >
+            Keep Local
+          </button>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {

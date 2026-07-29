@@ -450,6 +450,7 @@ export async function editServiceVisitor(
     table: "service_visitors",
     recordId: updated.id,
     payload: toCloudRecord(updated),
+    basePayload: toCloudRecord(visitor),
   });
   announceDataChanged();
   return updated;
@@ -478,6 +479,7 @@ export async function removeServiceVisitor(user: UserContext, id: string) {
     table: "service_visitors",
     recordId: updated.id,
     payload: toCloudRecord(updated),
+    basePayload: toCloudRecord(visitor),
   });
   if (visitor.memberPersonId) {
     await setMemberAttendance(

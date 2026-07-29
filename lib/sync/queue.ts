@@ -10,7 +10,7 @@ export async function enqueueChange(
   input: Pick<
     SyncQueueItem,
     "organizationId" | "table" | "recordId" | "payload"
-  >,
+  > & { basePayload?: Record<string, unknown> },
 ) {
   const database = await getDatabase();
   const existing = (
@@ -25,10 +25,12 @@ export async function enqueueChange(
     ? {
         ...existing,
         payload: input.payload,
+        basePayload: existing.basePayload ?? input.basePayload,
         baseVersion: existing.baseVersion ?? payloadVersion,
         mutationToken: createId(),
         status: "pending",
         lastError: undefined,
+        conflict: undefined,
         updatedAt: timestamp,
       }
     : {
@@ -83,6 +85,7 @@ export async function recoverRetryableMutations(
       ...record,
       status: "pending",
       lastError: undefined,
+      conflict: undefined,
       updatedAt: nowIso(),
     });
     recovered += 1;

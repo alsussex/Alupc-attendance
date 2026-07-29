@@ -379,6 +379,25 @@ details[open] > summary > .folder-icon { transform: rotate(90deg); }
 .duplicate-member-warning > span { font-size: .83rem; }
 .duplicate-member-warning > div { display: flex; flex-wrap: wrap; gap: .5rem; }
 .attendance-mobile-actions { display: none; }
+.visitor-conflict-notice { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.visitor-conflict-notice > div { display: grid; gap: .2rem; }
+.visitor-conflict-notice span { font-size: .82rem; }
+.visitor-conflict-dialog { width: min(720px, 100%); }
+.visitor-conflict-fields { display: grid; gap: .7rem; }
+.visitor-conflict-fields section { padding: .8rem 1rem; border: 1px solid var(--line); border-radius: 13px; }
+.visitor-conflict-fields h3 { margin: 0 0 .5rem; font-size: .85rem; }
+.visitor-conflict-fields section > div { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+.visitor-conflict-fields span { min-width: 0; display: grid; gap: .15rem; }
+.visitor-conflict-fields small { color: var(--muted); font-size: .7rem; font-weight: 720; }
+.visitor-conflict-fields strong { overflow-wrap: anywhere; }
+.visitor-conflict-manual { padding: 1rem; border: 1px solid var(--line); border-radius: 14px; background: #f8faf9; }
+.visitor-conflict-actions { flex-wrap: wrap; }
+.visitor-conflict-diagnostics { padding: .75rem 1rem; border-radius: 12px; background: #f4f7f5; color: var(--muted); font-size: .75rem; }
+.visitor-conflict-diagnostics summary { color: var(--ink); font-weight: 760; cursor: pointer; }
+.visitor-conflict-diagnostics dl { margin: .7rem 0 0; display: grid; gap: .45rem; }
+.visitor-conflict-diagnostics dl div { display: grid; grid-template-columns: 105px 1fr; gap: .5rem; }
+.visitor-conflict-diagnostics dt { font-weight: 720; }
+.visitor-conflict-diagnostics dd { margin: 0; overflow-wrap: anywhere; }
 
 .dashboard { display: grid; gap: 2rem; }
 .dashboard-welcome {
@@ -936,6 +955,10 @@ details[open] > summary > .folder-icon { transform: rotate(90deg); }
   .visitor-attendance-row { min-height: 100px; display: grid; grid-template-columns: 46px 40px 1fr; }
   .visitor-attendance-row .visitor-actions { grid-column: 1 / -1; }
   .visitor-actions .button { flex: 1; }
+  .visitor-conflict-notice { align-items: stretch; flex-direction: column; }
+  .visitor-conflict-notice .button { width: 100%; }
+  .visitor-conflict-fields section > div { grid-template-columns: 1fr; }
+  .visitor-conflict-actions .button { flex: 1 1 100%; }
   .attendance-mobile-actions { display: flex; }
   .sticky-actions { bottom: .65rem; align-items: stretch; flex-direction: column; }
   .sticky-actions > span { display: none; }

@@ -1,8 +1,9 @@
 "use client";
 
-import type { SyncQueueItem } from "@/lib/domain";
+import type { SyncQueueItem, VisitorSyncConflict } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { reconcileVisitorMutation } from "@/lib/sync/visitor-conflicts";
 
 export interface UploadTarget {
   upsert(
@@ -13,6 +14,7 @@ export interface UploadTarget {
       organizationId: string;
       recordId: string;
       expectedVersion?: number;
+      basePayload?: Record<string, unknown>;
       mutationToken: string;
       legacyMutation?: boolean;
     },
@@ -83,6 +85,15 @@ export class SynchronizationConflictError extends Error {
   }
 }
 
+export class VisitorSynchronizationConflictError extends SynchronizationConflictError {
+  constructor(readonly conflict: VisitorSyncConflict) {
+    super(
+      `${conflict.visitorName} has changes from another device. Review them before finishing this service.`,
+    );
+    this.name = "VisitorSynchronizationConflictError";
+  }
+}
+
 const UPLOAD_ORDER: SyncQueueItem["table"][] = [
   "organizations",
   "organization_settings",
@@ -91,6 +102,17 @@ const UPLOAD_ORDER: SyncQueueItem["table"][] = [
   "service_attendance",
   "service_visitors",
 ];
+
+function uploadRank(item: SyncQueueItem) {
+  if (
+    item.table === "services" &&
+    item.payload.status === "completed" &&
+    typeof item.baseVersion === "number"
+  ) {
+    return UPLOAD_ORDER.length;
+  }
+  return UPLOAD_ORDER.indexOf(item.table);
+}
 
 export function createSupabaseUploadTarget(): UploadTarget {
   return {
@@ -157,6 +179,54 @@ export function createSupabaseUploadTarget(): UploadTarget {
             updatedAt:
               typeof current.updated_at === "string"
                 ? current.updated_at
+                : undefined,
+          };
+        }
+        if (table === "service_visitors") {
+          const reconciliation = reconcileVisitorMutation(
+            mutationPayload,
+            context.basePayload,
+            current,
+          );
+          if (reconciliation.kind === "satisfied") {
+            return {
+              version: Number(current.version),
+              updatedAt:
+                typeof current.updated_at === "string"
+                  ? current.updated_at
+                  : undefined,
+            };
+          }
+          if (reconciliation.kind === "conflict") {
+            throw new VisitorSynchronizationConflictError(
+              reconciliation.conflict,
+            );
+          }
+          const { data: mergedData, error: mergedError } = await applyIdentity(
+            client.from(tableName).update({
+              ...reconciliation.payload,
+              last_mutation_id: context.mutationToken,
+            }),
+          )
+            .eq("version", current.version)
+            .select("version,updated_at,last_mutation_id")
+            .maybeSingle();
+          if (mergedError) {
+            throw new SupabaseUploadError(
+              mergedError.message,
+              mergedError.code,
+            );
+          }
+          if (!mergedData) {
+            throw new SynchronizationConflictError(
+              `${table}:${context.recordId} changed while visitor fields were being merged. The merged change remains safely queued.`,
+            );
+          }
+          return {
+            version: Number(mergedData.version),
+            updatedAt:
+              typeof mergedData.updated_at === "string"
+                ? mergedData.updated_at
                 : undefined,
           };
         }
@@ -240,12 +310,38 @@ export async function uploadPendingChanges(
     .filter((item) => item.organizationId === organizationId)
     .sort(
       (a, b) =>
-        UPLOAD_ORDER.indexOf(a.table) - UPLOAD_ORDER.indexOf(b.table) ||
+        uploadRank(a) - uploadRank(b) ||
         a.createdAt.localeCompare(b.createdAt),
     );
   const result: UploadResult = { uploaded: 0, errors: [] };
+  const servicesWithVisitorConflicts = new Set(
+    queue
+      .filter(
+        (item) =>
+          item.table === "service_visitors" &&
+          item.status === "conflict" &&
+          item.conflict?.serviceId,
+      )
+      .map((item) => item.conflict!.serviceId),
+  );
 
   for (const item of queue) {
+    if (item.status === "conflict" && item.conflict) {
+      result.errors.push(
+        `${item.table}:${item.recordId}: ${item.conflict.visitorName} has changes from another device. Review them before finishing this service.`,
+      );
+      continue;
+    }
+    if (
+      item.table === "services" &&
+      item.payload.status === "completed" &&
+      servicesWithVisitorConflicts.has(item.recordId)
+    ) {
+      result.errors.push(
+        `services:${item.recordId}: A visitor conflict must be reviewed before this service can be completed.`,
+      );
+      continue;
+    }
     const processing = {
       ...item,
       status: "processing" as const,
@@ -274,6 +370,7 @@ export async function uploadPendingChanges(
             organizationId,
             recordId: item.recordId,
             expectedVersion: item.baseVersion,
+            basePayload: item.basePayload,
             mutationToken: item.mutationToken ?? item.id,
             legacyMutation:
               !item.mutationToken &&
@@ -311,12 +408,31 @@ export async function uploadPendingChanges(
           ? caught.code
           : undefined;
       const diagnostic = code ? `${code}: ${message}` : message;
-      await database.put("syncQueue", {
-        ...processing,
-        status: "error",
-        lastError: diagnostic,
-        updatedAt: new Date().toISOString(),
-      });
+      const current = await database.get("syncQueue", item.id);
+      const mutationIsStillCurrent =
+        current?.status === "processing" &&
+        current.updatedAt === processing.updatedAt;
+      if (mutationIsStillCurrent) {
+        await database.put("syncQueue", {
+          ...processing,
+          status:
+            caught instanceof VisitorSynchronizationConflictError
+              ? "conflict"
+              : "error",
+          lastError: diagnostic,
+          conflict:
+            caught instanceof VisitorSynchronizationConflictError
+              ? caught.conflict
+              : undefined,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+      if (
+        mutationIsStillCurrent &&
+        caught instanceof VisitorSynchronizationConflictError
+      ) {
+        servicesWithVisitorConflicts.add(caught.conflict.serviceId);
+      }
       if (process.env.NODE_ENV === "development") {
         console.error("[sync] mutation failed", {
           mutationId: item.id,

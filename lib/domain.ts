@@ -144,14 +144,38 @@ export interface SyncQueueItem {
     | "service_visitors";
   operation: "upsert";
   recordId: string;
-    payload: Record<string, unknown>;
-    baseVersion?: number;
-    mutationToken?: string;
-  status: "pending" | "processing" | "error";
+  payload: Record<string, unknown>;
+  basePayload?: Record<string, unknown>;
+  baseVersion?: number;
+  mutationToken?: string;
+  status: "pending" | "processing" | "error" | "conflict";
   attempts: number;
   lastError?: string;
+  conflict?: VisitorSyncConflict;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface VisitorConflictField {
+  field: string;
+  localValue: unknown;
+  serverValue: unknown;
+}
+
+export interface VisitorSyncConflict {
+  kind: "visitor";
+  visitorId: string;
+  serviceId: string;
+  organizationId: string;
+  visitorName: string;
+  localVersion?: number;
+  serverVersion?: number;
+  localUpdatedAt?: string;
+  serverUpdatedAt?: string;
+  localUpdatedBy?: string;
+  serverUpdatedBy?: string;
+  fields: VisitorConflictField[];
+  serverRecord: Record<string, unknown>;
 }
 
 export const PULL_TABLES = [
