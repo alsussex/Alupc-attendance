@@ -20,6 +20,7 @@ import {
   subscribeToRemoteOrganizationChanges,
 } from "@/lib/sync/remote-change-listener";
 import {
+  isAuthenticationSynchronizationError,
   synchronizeWithSessionRecovery,
 } from "@/lib/sync/sync-service";
 import type {
@@ -146,6 +147,21 @@ describe("session-aware synchronization recovery", () => {
     expect(recoverAccess).toHaveBeenCalledTimes(1);
     expect(result.upload.errors).toHaveLength(1);
     expect(await getPendingChanges(organizationId)).toHaveLength(1);
+  });
+
+  it("does not misclassify RLS authorization failures as expired authentication", () => {
+    expect(
+      isAuthenticationSynchronizationError(
+        "new row violates row-level security policy (42501)",
+      ),
+    ).toBe(false);
+    expect(
+      isAuthenticationSynchronizationError("403 permission denied"),
+    ).toBe(false);
+    expect(isAuthenticationSynchronizationError("JWT expired")).toBe(true);
+    expect(isAuthenticationSynchronizationError("401 invalid token")).toBe(
+      true,
+    );
   });
 
   it("contains explicit TOKEN_REFRESHED, SIGNED_IN, and SIGNED_OUT recovery", () => {

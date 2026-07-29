@@ -52,7 +52,7 @@ const PENDING_VISIBILITY_DELAY_MS = 2_000;
 const RECOVERY_CONFIRMATION_MS = 2_500;
 
 export function SyncProvider({ children }: { children: ReactNode }) {
-  const { user, refreshAccess, authRevision } = useAuth();
+  const { user, refreshAccess, recoverSession, authRevision } = useAuth();
   const [phase, setPhase] = useState<SyncPhase>("loading");
   const [error, setError] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
@@ -117,12 +117,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
             trigger === "manual"
               ? await synchronizeNow(activeUser, {
                   onPhase: setPhase,
-                  recoverAccess: refreshAccess,
+                  recoverAccess: recoverSession,
                 })
               : await synchronizeWithSessionRecovery(activeUser, {
                   onPhase: setPhase,
                   trigger,
-                  recoverAccess: refreshAccess,
+                  recoverAccess: recoverSession,
                 });
           count = await getQueueCount(activeUser.organizationId);
           setPendingCount(count);
@@ -178,7 +178,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         if (activeAttemptCount.current === 0) setIsSyncing(false);
       }
     },
-    [refreshAccess, user],
+    [recoverSession, refreshAccess, user],
   );
 
   const syncNow = useCallback(

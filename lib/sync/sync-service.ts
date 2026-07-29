@@ -158,7 +158,7 @@ export function isAuthenticationSynchronizationError(value: unknown) {
       : typeof value === "string"
         ? value
         : "";
-  return /(?:jwt|token|session|not authenticated|authentication|permission denied|row-level security|pgrst301|42501|401|403)/i.test(
+  return /(?:jwt.*(?:expired|invalid)|token.*(?:expired|invalid|missing)|session.*(?:expired|invalid|missing)|not authenticated|authentication required|pgrst301|\b401\b)/i.test(
     message,
   );
 }

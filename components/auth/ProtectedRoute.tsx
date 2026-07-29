@@ -8,6 +8,7 @@ import { canAccessProtectedRoute } from "@/lib/auth/guard";
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const {
     loading,
+    session,
     user,
     error,
     refreshAccess,
@@ -33,19 +34,25 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
       <main className="centered-state">
         {error ? (
           <>
-            <h1>We couldn’t open the app</h1>
+            <h1>
+              {sessionNeedsAttention
+                ? "Sign-in needs attention"
+                : session
+                  ? "Church data is temporarily unavailable"
+                  : "We couldn’t open the app"}
+            </h1>
             <p>{error}</p>
-            {sessionNeedsAttention && (
+            {session && !sessionNeedsAttention && (
               <button
                 className="button primary"
                 type="button"
                 onClick={() => void refreshAccess()}
               >
-                Repair sign-in
+                Retry church access
               </button>
             )}
             <a className="button secondary" href="/login">
-              Return to login
+              {sessionNeedsAttention ? "Sign in again" : "Return to login"}
             </a>
           </>
         ) : (

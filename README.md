@@ -225,6 +225,16 @@ An authentication-related upload or download failure gets one session/profile
 refresh and one retry. A failed refresh never removes IndexedDB mutations and
 does not recurse indefinitely.
 
+At startup, a healthy persisted session is restored without unnecessarily
+rotating its refresh token. Only an expired token or a confirmed authentication
+failure forces recovery. Profile and organization errors are treated as access
+loading failures rather than invalid sessions; a previously authorized device
+falls back to its IndexedDB profile and organization while remote access is
+retried three times with bounded delays. RLS authorization failures remain sync
+errors and do not trigger sign-in repair. Authentication diagnostics log the
+phase, error code/status, and safe account identifiers without logging access or
+refresh tokens.
+
 The complete reconciliation order is: recover queue locks, upload pending
 parents and children in dependency order, pull organization-scoped updates,
 merge records without pending local writes, notify the interface, and store
