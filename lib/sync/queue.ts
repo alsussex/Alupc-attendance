@@ -2,6 +2,9 @@
 
 import { createId, nowIso, type SyncQueueItem } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
+import { announceMutationQueued } from "@/lib/storage/data-events";
+
+export const STALE_PROCESSING_TIMEOUT_MS = 2 * 60 * 1_000;
 
 export async function enqueueChange(
   input: Pick<
@@ -32,6 +35,7 @@ export async function enqueueChange(
         updatedAt: timestamp,
       };
   await database.put("syncQueue", item);
+  announceMutationQueued();
   return item;
 }
 
@@ -46,4 +50,34 @@ export async function getPendingChanges(organizationId?: string) {
 
 export async function getQueueCount(organizationId?: string) {
   return (await getPendingChanges(organizationId)).length;
+}
+
+export async function recoverRetryableMutations(
+  organizationId: string,
+  options: { forceProcessing?: boolean; now?: number } = {},
+) {
+  const database = await getDatabase();
+  const records = await database.getAllFromIndex(
+    "syncQueue",
+    "organizationId",
+    organizationId,
+  );
+  const now = options.now ?? Date.now();
+  let recovered = 0;
+
+  for (const record of records) {
+    const processingIsStale =
+      record.status === "processing" &&
+      (options.forceProcessing === true ||
+        now - Date.parse(record.updatedAt) >= STALE_PROCESSING_TIMEOUT_MS);
+    if (record.status !== "error" && !processingIsStale) continue;
+    await database.put("syncQueue", {
+      ...record,
+      status: "pending",
+      lastError: undefined,
+      updatedAt: nowIso(),
+    });
+    recovered += 1;
+  }
+  return recovered;
 }

@@ -13,6 +13,7 @@ export function SyncIndicator() {
     <button
       className={`sync-indicator ${presentation.tone}`}
       type="button"
+      disabled={synchronization.isSyncing}
       onClick={() => void synchronization.syncNow()}
       aria-label={`${presentation.label}. Activate to synchronize now.`}
       title={
@@ -42,9 +43,10 @@ export function SyncBanner() {
       {presentation.showManualAction && (
         <button
           type="button"
+          disabled={synchronization.isSyncing}
           onClick={() => void synchronization.syncNow()}
         >
-          Sync now
+          {synchronization.isSyncing ? "Syncing…" : "Sync now"}
         </button>
       )}
     </div>

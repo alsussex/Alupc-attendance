@@ -17,6 +17,29 @@ export interface UploadResult {
   errors: string[];
 }
 
+export type SyncTrigger =
+  | "automatic"
+  | "manual"
+  | "startup"
+  | "focus"
+  | "online"
+  | "scheduled";
+
+interface UploadExecutionOptions {
+  trigger?: SyncTrigger;
+  timeoutMs?: number;
+}
+
+class SupabaseUploadError extends Error {
+  constructor(
+    message: string,
+    readonly code?: string,
+  ) {
+    super(message);
+    this.name = "SupabaseUploadError";
+  }
+}
+
 const UPLOAD_ORDER: SyncQueueItem["table"][] = [
   "people",
   "services",
@@ -30,14 +53,32 @@ export function createSupabaseUploadTarget(): UploadTarget {
       const { error } = await getSupabaseClient()
         .from(table)
         .upsert(payload, { onConflict });
-      if (error) throw new Error(error.message);
+      if (error) throw new SupabaseUploadError(error.message, error.code);
     },
   };
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("Synchronization request timed out.")),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function uploadPendingChanges(
   organizationId: string,
   target: UploadTarget = createSupabaseUploadTarget(),
+  options: UploadExecutionOptions = {},
 ): Promise<UploadResult> {
   const database = await getDatabase();
   const queue = (await database.getAll("syncQueue"))
@@ -57,15 +98,33 @@ export async function uploadPendingChanges(
       updatedAt: new Date().toISOString(),
     };
     await database.put("syncQueue", processing);
+    if (process.env.NODE_ENV === "development") {
+      console.info("[sync] mutation attempt", {
+        mutationId: item.id,
+        entityType: item.table,
+        operation: item.operation,
+        attempt: processing.attempts,
+        trigger: options.trigger ?? "automatic",
+      });
+    }
     try {
-      await target.upsert(
-        item.table,
-        item.payload,
-        item.table === "service_attendance"
-          ? "organization_id,service_id,person_id"
-          : "id",
+      await withTimeout(
+        target.upsert(
+          item.table,
+          item.payload,
+          item.table === "service_attendance"
+            ? "organization_id,service_id,person_id"
+            : "id",
+        ),
+        options.timeoutMs ?? 30_000,
       );
-      await database.delete("syncQueue", item.id);
+      const current = await database.get("syncQueue", item.id);
+      if (
+        current?.status === "processing" &&
+        current.updatedAt === processing.updatedAt
+      ) {
+        await database.delete("syncQueue", item.id);
+      }
       result.uploaded += 1;
     } catch (caught) {
       const message =
@@ -76,6 +135,18 @@ export async function uploadPendingChanges(
         lastError: message,
         updatedAt: new Date().toISOString(),
       });
+      if (process.env.NODE_ENV === "development") {
+        console.error("[sync] mutation failed", {
+          mutationId: item.id,
+          entityType: item.table,
+          operation: item.operation,
+          attempt: processing.attempts,
+          trigger: options.trigger ?? "automatic",
+          code:
+            caught instanceof SupabaseUploadError ? caught.code : undefined,
+          message,
+        });
+      }
       result.errors.push(`${item.table}:${item.recordId}: ${message}`);
     }
   }

@@ -561,6 +561,7 @@ input::placeholder { color: #8a9994; }
 .activity-empty p { max-width: 280px; margin: .3rem 0 0; color: var(--muted); font-size: .82rem; }
 
 .sync-indicator { min-height: 34px; padding: .35rem .65rem; display: flex; align-items: center; gap: .45rem; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--muted); font-size: .72rem; font-weight: 700; cursor: pointer; }
+.sync-indicator:disabled { cursor: wait; }
 .sidebar .sync-indicator { border-color: rgb(255 255 255 / 13%); background: rgb(255 255 255 / 7%); color: #c9d8d3; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4c9a70; }
 .sync-indicator.pending .status-dot { background: #d4a247; }

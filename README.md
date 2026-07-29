@@ -136,6 +136,7 @@ Screen -> repository -> IndexedDB transaction -> mutation queue
 - `lib/sync/queue.ts` coalesces repeated upserts for the same record.
 - Upload and pull remain separate, testable operations and run in dependency order.
 - Sync runs after login/startup, shortly after every local change, on reconnection/focus, periodically, and after capped exponential retry delays. Rapid mutations are coalesced per stable record ID before upload.
+- Queue insertion emits a dedicated mutation event, so automatic synchronization does not depend on a general UI refresh event. Startup, focus, reconnection, and manual sync also recover failed entries and processing entries stale for more than two minutes.
 - Client UUIDs remain stable locally and in Supabase.
 - Cache Storage holds only the application shell; IndexedDB holds church records and pending mutations. A service-worker update does not delete IndexedDB.
 
@@ -164,7 +165,7 @@ The prominent sync bar appears only when useful:
 - Briefly after recovery with **All changes synced**
 - After three consecutive online failures, while automatic retry continues
 
-**Sync now** remains a troubleshooting fallback. It is never required during normal attendance entry.
+**Sync now** remains a troubleshooting fallback. It immediately invokes the real upload/pull processor, bypasses scheduled retry delays, and safely resets failed or stale processing entries. It is never required during normal attendance entry.
 
 ### Conflict resolution and data safety
 

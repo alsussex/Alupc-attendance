@@ -10,9 +10,14 @@ import {
 } from "@/lib/sync/pull-service";
 import {
   uploadPendingChanges,
+  type SyncTrigger,
   type UploadResult,
   type UploadTarget,
 } from "@/lib/sync/upload-service";
+import {
+  getQueueCount,
+  recoverRetryableMutations,
+} from "@/lib/sync/queue";
 
 export interface SynchronizationResult {
   upload: UploadResult;
@@ -24,6 +29,8 @@ export interface SynchronizationOptions {
   uploadTarget?: UploadTarget;
   isOnline?: boolean;
   onPhase?: (phase: SyncPhase) => void;
+  trigger?: SyncTrigger;
+  forceRetry?: boolean;
 }
 
 const activeSyncs = new Map<string, Promise<SynchronizationResult>>();
@@ -77,9 +84,13 @@ async function runSynchronization(
 
   options.onPhase?.("loading");
   await storeStatus(user.organizationId, "loading");
+  await recoverRetryableMutations(user.organizationId, {
+    forceProcessing: options.forceRetry,
+  });
   const upload = await uploadPendingChanges(
     user.organizationId,
     options.uploadTarget,
+    { trigger: options.trigger },
   );
 
   options.onPhase?.("downloading");
@@ -120,18 +131,43 @@ export function synchronizeOrganization(
   return sync;
 }
 
+export async function synchronizeNow(
+  user: UserContext,
+  options: Omit<
+    SynchronizationOptions,
+    "trigger" | "forceRetry"
+  > = {},
+) {
+  let result = await synchronizeOrganization(user, {
+    ...options,
+    trigger: "manual",
+    forceRetry: true,
+  });
+  if (await getQueueCount(user.organizationId)) {
+    result = await synchronizeOrganization(user, {
+      ...options,
+      trigger: "manual",
+      forceRetry: true,
+    });
+  }
+  return result;
+}
+
 export function registerAutomaticSync(
   user: UserContext,
-  synchronize: () => Promise<unknown>,
+  synchronize: (trigger?: SyncTrigger) => Promise<unknown>,
   options: { listenOnline?: boolean } = {},
 ) {
-  const online = () => void synchronize();
-  const focus = () => void synchronize();
+  const online = () => void synchronize("online");
+  const focus = () => void synchronize("focus");
   if (options.listenOnline !== false) {
     window.addEventListener("online", online);
   }
   window.addEventListener("focus", focus);
-  const interval = window.setInterval(() => void synchronize(), 60_000);
+  const interval = window.setInterval(
+    () => void synchronize("scheduled"),
+    60_000,
+  );
   return () => {
     if (options.listenOnline !== false) {
       window.removeEventListener("online", online);

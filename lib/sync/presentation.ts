@@ -9,7 +9,11 @@ export interface SyncPresentationInput {
   consecutiveFailures: number;
   recoveryState: RecoveryState;
   recoveryCount: number;
-  recoveryPrefix: "Back online" | "Restoring saved changes";
+  recoveryPrefix:
+    | "Back online"
+    | "Restoring saved changes"
+    | "Saving changes"
+    | "Manual sync";
 }
 
 export function isOfflinePhase(phase: SyncPhase) {
@@ -22,6 +26,16 @@ export function syncIndicatorPresentation(input: SyncPresentationInput) {
   }
   if (input.consecutiveFailures >= 3) {
     return { label: "Sync issue", tone: "error" };
+  }
+  if (
+    input.recoveryState === "syncing" ||
+    input.phase === "loading" ||
+    input.phase === "downloading"
+  ) {
+    return { label: "Syncing", tone: "pending" };
+  }
+  if (input.recoveryState === "complete") {
+    return { label: "All changes synced", tone: "online" };
   }
   if (input.pendingVisible && input.pendingCount > 0) {
     return {
@@ -47,11 +61,15 @@ export function syncBannerPresentation(input: SyncPresentationInput) {
     return {
       tone: "error",
       message:
-        input.pendingCount > 0
-          ? `Sync needs attention — ${input.pendingCount} ${input.pendingCount === 1 ? "change remains" : "changes remain"} safely saved on this device. Automatic retry will continue.`
-          : "Sync needs attention. Automatic retry will continue.",
+        "Some changes could not sync. They are safely saved on this device. Automatic retry will continue.",
       showManualAction: true,
     };
+  }
+  if (
+    input.recoveryPrefix === "Saving changes" &&
+    input.recoveryState !== "idle"
+  ) {
+    return null;
   }
   if (input.recoveryState === "syncing") {
     const count = Math.max(input.recoveryCount, input.pendingCount);

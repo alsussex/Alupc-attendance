@@ -6,19 +6,22 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import type { SyncPhase } from "@/lib/domain";
-import { subscribeToDataChanges } from "@/lib/storage/data-events";
+import { subscribeToQueuedMutations } from "@/lib/storage/data-events";
 import { getQueueCount } from "@/lib/sync/queue";
 import type { RecoveryState } from "@/lib/sync/presentation";
 import {
   registerAutomaticSync,
   syncRetryDelay,
+  synchronizeNow,
   synchronizeOrganization,
 } from "@/lib/sync/sync-service";
+import type { SyncTrigger } from "@/lib/sync/upload-service";
 
 export interface SyncAttemptOutcome {
   status: "synced" | "pending" | "offline" | "error";
@@ -33,7 +36,12 @@ interface SyncContextValue {
   consecutiveFailures: number;
   recoveryState: RecoveryState;
   recoveryCount: number;
-  recoveryPrefix: "Back online" | "Restoring saved changes";
+  recoveryPrefix:
+    | "Back online"
+    | "Restoring saved changes"
+    | "Saving changes"
+    | "Manual sync";
+  isSyncing: boolean;
   syncNow: () => Promise<SyncAttemptOutcome>;
 }
 
@@ -53,11 +61,21 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     useState<RecoveryState>("idle");
   const [recoveryCount, setRecoveryCount] = useState(0);
   const [recoveryPrefix, setRecoveryPrefix] = useState<
-    "Back online" | "Restoring saved changes"
+    | "Back online"
+    | "Restoring saved changes"
+    | "Saving changes"
+    | "Manual sync"
   >("Back online");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const activeAttemptCount = useRef(0);
+  const manualAttempt = useRef<Promise<SyncAttemptOutcome> | null>(null);
+  const manualConfirmationTimer = useRef<number | undefined>(undefined);
 
   const attemptSynchronization = useCallback(
-    async (drainQueue = false): Promise<SyncAttemptOutcome> => {
+    async (
+      drainQueue = false,
+      trigger: SyncTrigger = "automatic",
+    ): Promise<SyncAttemptOutcome> => {
       if (!user) return { status: "error", pendingCount: 0 };
       let count = await getQueueCount(user.organizationId);
       setPendingCount(count);
@@ -67,12 +85,18 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         return { status: "offline", pendingCount: count };
       }
 
+      activeAttemptCount.current += 1;
+      setIsSyncing(true);
       try {
         const cycles = drainQueue ? 2 : 1;
         for (let cycle = 0; cycle < cycles; cycle += 1) {
-          const result = await synchronizeOrganization(user, {
-            onPhase: setPhase,
-          });
+          const result =
+            trigger === "manual"
+              ? await synchronizeNow(user, { onPhase: setPhase })
+              : await synchronizeOrganization(user, {
+                  onPhase: setPhase,
+                  trigger,
+                });
           count = await getQueueCount(user.organizationId);
           setPendingCount(count);
           if (result.upload.errors.length) {
@@ -108,13 +132,41 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         setPhase("error");
         setConsecutiveFailures((current) => current + 1);
         return { status: "error", pendingCount: count };
+      } finally {
+        activeAttemptCount.current -= 1;
+        if (activeAttemptCount.current === 0) setIsSyncing(false);
       }
     },
     [user],
   );
 
   const syncNow = useCallback(
-    () => attemptSynchronization(true),
+    () => {
+      if (manualAttempt.current) return manualAttempt.current;
+      if (manualConfirmationTimer.current) {
+        window.clearTimeout(manualConfirmationTimer.current);
+      }
+      setRecoveryPrefix("Manual sync");
+      setRecoveryState("syncing");
+      const attempt = attemptSynchronization(true, "manual")
+        .then((outcome) => {
+          if (outcome.status === "synced") {
+            setRecoveryState("complete");
+            manualConfirmationTimer.current = window.setTimeout(
+              () => setRecoveryState("idle"),
+              RECOVERY_CONFIRMATION_MS,
+            );
+          } else {
+            setRecoveryState("idle");
+          }
+          return outcome;
+        })
+        .finally(() => {
+          manualAttempt.current = null;
+        });
+      manualAttempt.current = attempt;
+      return attempt;
+    },
     [attemptSynchronization],
   );
 
@@ -152,9 +204,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       failedAttempts += 1;
     };
 
-    const runAutomaticSync = async () => {
+    const runAutomaticSync = async (
+      trigger: SyncTrigger = "automatic",
+    ) => {
       if (stopped || !navigator.onLine) return;
-      const outcome = await attemptSynchronization();
+      const outcome = await attemptSynchronization(false, trigger);
       if (stopped) return;
       if (outcome.status === "synced") {
         failedAttempts = 0;
@@ -167,18 +221,19 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       if (outcome.status === "pending") {
         clearTimer(mutationTimer);
         mutationTimer = window.setTimeout(
-          () => void runAutomaticSync(),
+          () => void runAutomaticSync("automatic"),
           MUTATION_DEBOUNCE_MS,
         );
         return;
       }
       if (outcome.status === "error") {
-        scheduleRetry(() => void runAutomaticSync());
+        scheduleRetry(() => void runAutomaticSync("automatic"));
       }
     };
 
     const startRecovery = async (
       prefix: "Back online" | "Restoring saved changes",
+      trigger: SyncTrigger,
     ) => {
       const count = await getQueueCount(user.organizationId);
       setPendingCount(count);
@@ -189,7 +244,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         setRecoveryCount(count);
         setRecoveryState("syncing");
       }
-      await runAutomaticSync();
+      await runAutomaticSync(trigger);
     };
 
     const initialize = async () => {
@@ -200,9 +255,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (count > 0) {
-        await startRecovery("Restoring saved changes");
+        await startRecovery("Restoring saved changes", "startup");
       } else {
-        await runAutomaticSync();
+        await runAutomaticSync("startup");
       }
     };
 
@@ -212,7 +267,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       runAutomaticSync,
       { listenOnline: false },
     );
-    const stopDataListener = subscribeToDataChanges(() => {
+    const stopMutationListener = subscribeToQueuedMutations(() => {
       void getQueueCount(user.organizationId).then((count) => {
         setPendingCount(count);
         if (count === 0) return;
@@ -229,8 +284,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         );
         clearTimer(retryTimer);
         clearTimer(mutationTimer);
+        recovering = true;
+        setRecoveryPrefix("Saving changes");
+        setRecoveryCount(count);
+        setRecoveryState("syncing");
         mutationTimer = window.setTimeout(
-          () => void runAutomaticSync(),
+          () => void runAutomaticSync("automatic"),
           MUTATION_DEBOUNCE_MS,
         );
       });
@@ -245,7 +304,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         setPhase(count > 0 ? "local" : "offline");
       });
     };
-    const online = () => void startRecovery("Back online");
+    const online = () => void startRecovery("Back online", "online");
     window.addEventListener("offline", offline);
     window.addEventListener("online", online);
 
@@ -256,8 +315,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       clearTimer(mutationTimer);
       clearTimer(pendingVisibilityTimer);
       clearTimer(recoveryTimer);
+      if (manualConfirmationTimer.current) {
+        window.clearTimeout(manualConfirmationTimer.current);
+      }
       stopAutomaticSync();
-      stopDataListener();
+      stopMutationListener();
       window.removeEventListener("offline", offline);
       window.removeEventListener("online", online);
     };
@@ -273,6 +335,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       recoveryState,
       recoveryCount,
       recoveryPrefix,
+      isSyncing,
       syncNow,
     }),
     [
@@ -284,6 +347,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       recoveryState,
       recoveryCount,
       recoveryPrefix,
+      isSyncing,
       syncNow,
     ],
   );
