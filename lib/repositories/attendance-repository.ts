@@ -38,6 +38,31 @@ export async function listMembers(organizationId: string) {
     .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
+export async function getLastAttendanceDates(organizationId: string) {
+  const database = await getDatabase();
+  const [records, services] = await Promise.all([
+    database.getAllFromIndex(
+      "attendance",
+      "organizationId",
+      organizationId,
+    ),
+    database.getAllFromIndex("services", "organizationId", organizationId),
+  ]);
+  const serviceDates = new Map(
+    services.map((service) => [service.id, service.serviceDate]),
+  );
+  const dates = new Map<string, string>();
+  for (const record of records) {
+    if (!record.present) continue;
+    const serviceDate = serviceDates.get(record.serviceId);
+    const current = dates.get(record.personId);
+    if (serviceDate && (!current || serviceDate > current)) {
+      dates.set(record.personId, serviceDate);
+    }
+  }
+  return dates;
+}
+
 export async function findDuplicateMember(
   organizationId: string,
   displayName: string,
@@ -65,6 +90,8 @@ export async function saveMember(
     displayName: makeDisplayName(input.firstName, input.lastName),
     personType: "member",
     isActive: existing?.isActive ?? true,
+    inactiveAt: existing?.inactiveAt,
+    deletedAt: existing?.deletedAt,
     createdAt: existing?.createdAt ?? timestamp,
     updatedAt: timestamp,
     createdBy: existing?.createdBy ?? user.userId,
@@ -88,7 +115,14 @@ export async function markMemberInactive(user: UserContext, id: string) {
   const database = await getDatabase();
   const person = await database.get("people", id);
   if (!person) throw new Error("Person not found");
-  const updated = { ...person, isActive: false, updatedAt: nowIso(), updatedBy: user.userId };
+  const timestamp = nowIso();
+  const updated = {
+    ...person,
+    isActive: false,
+    inactiveAt: person.inactiveAt ?? timestamp,
+    updatedAt: timestamp,
+    updatedBy: user.userId,
+  };
   await database.put("people", updated);
   await enqueueChange({
     organizationId: user.organizationId,
@@ -110,6 +144,7 @@ export async function restoreMember(user: UserContext, id: string) {
   const updated = {
     ...person,
     isActive: true,
+    inactiveAt: null,
     updatedAt: nowIso(),
     updatedBy: user.userId,
   };
@@ -135,6 +170,7 @@ export async function removeMember(user: UserContext, id: string) {
   const updated = {
     ...person,
     isActive: false,
+    inactiveAt: person.inactiveAt ?? timestamp,
     deletedAt: timestamp,
     updatedAt: timestamp,
     updatedBy: user.userId,

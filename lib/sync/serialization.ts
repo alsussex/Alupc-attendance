@@ -107,6 +107,7 @@ export function fromCloudRecord(
       displayName: requiredString(row, "display_name"),
       personType,
       isActive: requiredBoolean(row, "is_active"),
+      inactiveAt: optionalString(row, "inactive_at"),
       deletedAt: optionalString(row, "deleted_at"),
     };
   }

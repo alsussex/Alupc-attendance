@@ -55,6 +55,7 @@ export interface Person extends AuditedRecord {
   displayName: string;
   personType: PersonType;
   isActive: boolean;
+  inactiveAt?: string | null;
   deletedAt?: string;
 }
 

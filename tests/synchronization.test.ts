@@ -6,9 +6,12 @@ import {
   type UserContext,
 } from "@/lib/domain";
 import {
+  getLastAttendanceDates,
   getServiceAttendance,
   listActiveMembers,
   listServices,
+  markMemberInactive,
+  restoreMember,
   saveMember,
   saveService,
   setMemberAttendance,
@@ -32,6 +35,11 @@ const user: UserContext = {
   organizationId,
   email: "taker@example.test",
   role: "attendance_taker",
+};
+const administrator: UserContext = {
+  ...user,
+  email: "admin@example.test",
+  role: "admin",
 };
 const earlier = "2026-07-01T12:00:00.000Z";
 const later = "2026-07-02T12:00:00.000Z";
@@ -324,6 +332,53 @@ describe("multi-device upload and retry", () => {
       "Riley Green",
     );
     expect(await getServiceAttendance(service.id)).toHaveLength(1);
+  });
+
+  it("propagates an offline reactivation to another device without duplication", async () => {
+    const member = await saveMember(administrator, {
+      firstName: "Taylor",
+      lastName: "Meadow",
+    });
+    const service = await saveService(administrator, {
+      serviceDate: "2026-07-26",
+      serviceType: "Sunday Morning",
+      status: "completed",
+    });
+    await setMemberAttendance(administrator, service.id, member.id, true);
+    await markMemberInactive(administrator, member.id);
+    const cloud = new MemoryUploadTarget();
+    await uploadPendingChanges(organizationId, cloud);
+
+    await restoreMember(administrator, member.id);
+    expect(await getPendingChanges(organizationId)).toHaveLength(1);
+    await uploadPendingChanges(organizationId, cloud);
+
+    const cloudRows: Partial<Record<PullTable, Record<string, unknown>[]>> = {
+      people: [],
+      services: [],
+      service_attendance: [],
+    };
+    for (const [key, value] of cloud.rows) {
+      if (key.startsWith("people:")) cloudRows.people?.push(value);
+      if (key.startsWith("services:")) cloudRows.services?.push(value);
+      if (key.startsWith("service_attendance:")) {
+        cloudRows.service_attendance?.push(value);
+      }
+    }
+
+    await clearLocalDatabase();
+    await pullOrganizationData(
+      organizationId,
+      new MemoryPullSource(cloudRows),
+    );
+
+    const activeMembers = await listActiveMembers(organizationId);
+    expect(activeMembers).toHaveLength(1);
+    expect(activeMembers[0]).toMatchObject({ id: member.id, isActive: true });
+    expect(await getServiceAttendance(service.id)).toHaveLength(1);
+    expect((await getLastAttendanceDates(organizationId)).get(member.id)).toBe(
+      "2026-07-26",
+    );
   });
 
   it("uploads offline local changes after reconnection", async () => {

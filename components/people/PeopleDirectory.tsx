@@ -1,10 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { isAdmin } from "@/lib/auth/permissions";
 import type { Person } from "@/lib/domain";
 import {
+  DEFAULT_MEMBER_DIRECTORY_VIEW,
+  filterDirectoryMembers,
+  type MemberDirectoryView,
+} from "@/lib/people/member-directory";
+import {
   findDuplicateMember,
+  getLastAttendanceDates,
   listActiveMembers,
   listMembers,
   markMemberInactive,
@@ -13,7 +26,6 @@ import {
   saveMember,
 } from "@/lib/repositories/attendance-repository";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
-import { isAdmin } from "@/lib/auth/permissions";
 
 interface FormState {
   id?: string;
@@ -23,22 +35,45 @@ interface FormState {
 
 const emptyForm: FormState = { firstName: "", lastName: "" };
 
+function formatDate(value?: string | null) {
+  if (!value) return "Not available";
+  const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export function PeopleDirectory() {
   const { user } = useAuth();
   const [people, setPeople] = useState<Person[]>([]);
+  const [lastAttendance, setLastAttendance] = useState<Map<string, string>>(
+    new Map(),
+  );
   const [query, setQuery] = useState("");
+  const [view, setView] = useState<MemberDirectoryView>(
+    DEFAULT_MEMBER_DIRECTORY_VIEW,
+  );
   const [form, setForm] = useState<FormState | null>(null);
+  const [profile, setProfile] = useState<Person | null>(null);
+  const [reactivateTarget, setReactivateTarget] = useState<Person | null>(null);
   const [duplicate, setDuplicate] = useState<Person | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!user) return;
-    setPeople(
+    const [members, dates] = await Promise.all([
       isAdmin(user)
-        ? await listMembers(user.organizationId)
-        : await listActiveMembers(user.organizationId),
+        ? listMembers(user.organizationId)
+        : listActiveMembers(user.organizationId),
+      getLastAttendanceDates(user.organizationId),
+    ]);
+    setPeople(members);
+    setLastAttendance(dates);
+    setProfile((current) =>
+      current ? members.find((member) => member.id === current.id) ?? null : null,
     );
   }, [user]);
 
@@ -51,14 +86,13 @@ export function PeopleDirectory() {
     };
   }, [refresh]);
 
-  const filtered = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
-    return people.filter(
-      (person) =>
-        (showArchived ? !person.isActive : person.isActive) &&
-        person.displayName.toLocaleLowerCase().includes(normalized),
-    );
-  }, [people, query, showArchived]);
+  const effectiveView = isAdmin(user) ? view : "active";
+  const filtered = useMemo(
+    () => filterDirectoryMembers(people, effectiveView, query),
+    [effectiveView, people, query],
+  );
+
+  const inactiveCount = people.filter((person) => !person.isActive).length;
 
   async function submit(event: FormEvent, allowDuplicate = false) {
     event.preventDefault();
@@ -88,10 +122,17 @@ export function PeopleDirectory() {
     await refresh();
   }
 
-  async function restore(person: Person) {
-    if (!user) return;
-    await restoreMember(user, person.id);
-    setMessage(`${person.displayName} was restored.`);
+  async function reactivate() {
+    if (!user || !reactivateTarget) return;
+    const target = reactivateTarget;
+    setSaving(true);
+    await restoreMember(user, target.id);
+    setSaving(false);
+    setReactivateTarget(null);
+    setProfile(null);
+    setMessage(
+      `${target.displayName} is active and available for attendance again.`,
+    );
     await refresh();
   }
 
@@ -105,8 +146,18 @@ export function PeopleDirectory() {
       return;
     }
     await removeMember(user, person.id);
+    setProfile(null);
     setMessage(`${person.displayName} was removed from the directory.`);
     await refresh();
+  }
+
+  function edit(person: Person) {
+    setProfile(null);
+    setForm({
+      id: person.id,
+      firstName: person.firstName,
+      lastName: person.lastName,
+    });
   }
 
   return (
@@ -117,83 +168,137 @@ export function PeopleDirectory() {
           <h1>People</h1>
           <p>Active members appear automatically when you record a service.</p>
         </div>
-        <button className="button primary" type="button" onClick={() => setForm(emptyForm)}>
+        <button
+          className="button primary"
+          type="button"
+          onClick={() => setForm(emptyForm)}
+        >
           <span aria-hidden="true">＋</span> Add member
         </button>
       </div>
 
-      {message && <div className="notice success" role="status">{message}</div>}
+      {message && (
+        <div className="notice success" role="status">
+          {message}
+        </div>
+      )}
 
       <section className="panel">
+        {isAdmin(user) && (
+          <div
+            className="member-filter-tabs"
+            role="tablist"
+            aria-label="Filter church members"
+          >
+            {(
+              [
+                ["active", "Active Members"],
+                ["inactive", `Inactive Members (${inactiveCount})`],
+                ["all", "All Members"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                className={effectiveView === value ? "active" : ""}
+                type="button"
+                role="tab"
+                aria-selected={effectiveView === value}
+                onClick={() => setView(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="panel-toolbar">
           <label className="search-field">
-            <span className="sr-only">Search members</span>
+            <span className="sr-only">Search {effectiveView} members</span>
             <span aria-hidden="true">⌕</span>
             <input
               type="search"
-              placeholder="Search members by name"
+              placeholder={`Search ${effectiveView === "all" ? "" : `${effectiveView} `}members by name`}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
-          {isAdmin(user) && (
-            <div className="directory-view-toggle" role="group" aria-label="Directory view">
-              <button
-                className={!showArchived ? "active" : ""}
-                type="button"
-                onClick={() => setShowArchived(false)}
-              >
-                Active
-              </button>
-              <button
-                className={showArchived ? "active" : ""}
-                type="button"
-                onClick={() => setShowArchived(true)}
-              >
-                Archived
-              </button>
-            </div>
-          )}
           <span className="count-label">
-            {filtered.length} {showArchived ? "archived" : "active"} members
+            {filtered.length}{" "}
+            {effectiveView === "all" ? "total" : effectiveView} members
           </span>
         </div>
 
         <div className="person-list">
           {filtered.map((person) => (
-            <article className="person-row" key={person.id}>
+            <article
+              className={`person-row ${person.isActive ? "" : "inactive"}`}
+              key={person.id}
+            >
               <span className="avatar" aria-hidden="true">
-                {person.firstName[0]}{person.lastName[0]}
+                {person.firstName[0]}
+                {person.lastName[0]}
               </span>
               <div className="person-name">
                 <strong>{person.displayName}</strong>
-                <span>Member</span>
+                <span className="person-meta">
+                  <span
+                    className={
+                      person.isActive
+                        ? "member-status active"
+                        : "member-status inactive"
+                    }
+                  >
+                    {person.isActive ? "Active" : "Inactive"}
+                  </span>
+                  {!person.isActive && (
+                    <>
+                      <span>
+                        Last attendance:{" "}
+                        {formatDate(lastAttendance.get(person.id))}
+                      </span>
+                      <span>Inactive since: {formatDate(person.inactiveAt)}</span>
+                    </>
+                  )}
+                </span>
               </div>
               <div className="row-actions">
                 <button
                   className="button subtle"
                   type="button"
-                  onClick={() =>
-                    setForm({
-                      id: person.id,
-                      firstName: person.firstName,
-                      lastName: person.lastName,
-                    })
-                  }
+                  onClick={() => setProfile(person)}
+                >
+                  View profile
+                </button>
+                <button
+                  className="button subtle"
+                  type="button"
+                  onClick={() => edit(person)}
                 >
                   Edit
                 </button>
                 {isAdmin(user) &&
                   (person.isActive ? (
-                    <button className="button danger-text" type="button" onClick={() => void deactivate(person)}>
-                      Archive
+                    <button
+                      className="button danger-text"
+                      type="button"
+                      onClick={() => void deactivate(person)}
+                    >
+                      Make inactive
                     </button>
                   ) : (
                     <>
-                      <button className="button subtle" type="button" onClick={() => void restore(person)}>
-                        Restore
+                      <button
+                        className="button secondary"
+                        type="button"
+                        onClick={() => setReactivateTarget(person)}
+                      >
+                        Reactivate
                       </button>
-                      <button className="button danger-text" type="button" onClick={() => void remove(person)}>
+                      <button
+                        className="button danger-text"
+                        type="button"
+                        onClick={() => void remove(person)}
+                      >
                         Remove
                       </button>
                     </>
@@ -203,22 +308,105 @@ export function PeopleDirectory() {
           ))}
           {!filtered.length && (
             <div className="empty-list">
-              <h2>No members found</h2>
-              <p>{query ? "Try a different search." : "Add your first member to begin."}</p>
+              <h2>
+                {effectiveView === "inactive"
+                  ? "No inactive members"
+                  : "No members found"}
+              </h2>
+              <p>
+                {query
+                  ? "Try a different search."
+                  : effectiveView === "inactive"
+                    ? "Members made inactive will appear here."
+                    : "Add your first member to begin."}
+              </p>
             </div>
           )}
         </div>
       </section>
 
+      {profile && (
+        <MemberProfileModal
+          person={profile}
+          lastAttendanceDate={lastAttendance.get(profile.id)}
+          canManageLifecycle={isAdmin(user)}
+          onClose={() => setProfile(null)}
+          onEdit={() => edit(profile)}
+          onReactivate={() => {
+            setReactivateTarget(profile);
+            setProfile(null);
+          }}
+        />
+      )}
+
+      {reactivateTarget && (
+        <div className="modal-backdrop">
+          <section
+            className="modal confirmation-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="reactivate-title"
+            aria-describedby="reactivate-description"
+            onKeyDown={(event) => {
+              if (event.key === "Escape") setReactivateTarget(null);
+            }}
+          >
+            <div>
+              <p className="eyebrow">Member access</p>
+              <h2 id="reactivate-title">
+                Reactivate {reactivateTarget.displayName}?
+              </h2>
+              <p id="reactivate-description">
+                Reactivate this member? They will return to the active member
+                list and attendance screens.
+              </p>
+            </div>
+            <div className="modal-actions">
+              <button
+                className="button subtle"
+                type="button"
+                autoFocus
+                disabled={saving}
+                onClick={() => setReactivateTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="button primary"
+                type="button"
+                disabled={saving}
+                onClick={() => void reactivate()}
+              >
+                {saving ? "Reactivating…" : "Reactivate member"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {form && (
         <div className="modal-backdrop" role="presentation">
-          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="person-form-title">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="person-form-title"
+          >
             <div className="modal-heading">
               <div>
                 <p className="eyebrow">People directory</p>
-                <h2 id="person-form-title">{form.id ? "Edit member" : "Add a member"}</h2>
+                <h2 id="person-form-title">
+                  {form.id ? "Edit member" : "Add a member"}
+                </h2>
               </div>
-              <button className="icon-button" aria-label="Close" type="button" onClick={() => setForm(null)}>×</button>
+              <button
+                className="icon-button"
+                aria-label="Close"
+                type="button"
+                onClick={() => setForm(null)}
+              >
+                ×
+              </button>
             </div>
             <form className="form-stack" onSubmit={submit}>
               <div className="form-grid">
@@ -227,7 +415,9 @@ export function PeopleDirectory() {
                   <input
                     autoFocus
                     value={form.firstName}
-                    onChange={(event) => setForm({ ...form, firstName: event.target.value })}
+                    onChange={(event) =>
+                      setForm({ ...form, firstName: event.target.value })
+                    }
                     required
                   />
                 </label>
@@ -235,7 +425,9 @@ export function PeopleDirectory() {
                   Last name
                   <input
                     value={form.lastName}
-                    onChange={(event) => setForm({ ...form, lastName: event.target.value })}
+                    onChange={(event) =>
+                      setForm({ ...form, lastName: event.target.value })
+                    }
                     required
                   />
                 </label>
@@ -243,17 +435,34 @@ export function PeopleDirectory() {
               {duplicate && (
                 <div className="notice warning" role="alert">
                   <strong>A similar active member already exists.</strong>
-                  <span>{duplicate.displayName} is already in the directory. You may continue if these are different people.</span>
+                  <span>
+                    {duplicate.displayName} is already in the directory. You may
+                    continue if these are different people.
+                  </span>
                 </div>
               )}
               <div className="modal-actions">
-                <button className="button subtle" type="button" onClick={() => setForm(null)}>Cancel</button>
+                <button
+                  className="button subtle"
+                  type="button"
+                  onClick={() => setForm(null)}
+                >
+                  Cancel
+                </button>
                 <button className="button primary" disabled={saving}>
-                  {saving ? "Saving…" : duplicate ? "Add anyway" : "Save member"}
+                  {saving
+                    ? "Saving…"
+                    : duplicate
+                      ? "Add anyway"
+                      : "Save member"}
                 </button>
               </div>
               {duplicate && (
-                <button className="duplicate-confirm" type="button" onClick={(event) => void submit(event, true)}>
+                <button
+                  className="duplicate-confirm"
+                  type="button"
+                  onClick={(event) => void submit(event, true)}
+                >
                   Confirm and save this separate person
                 </button>
               )}
@@ -261,6 +470,92 @@ export function PeopleDirectory() {
           </section>
         </div>
       )}
+    </div>
+  );
+}
+
+function MemberProfileModal({
+  person,
+  lastAttendanceDate,
+  canManageLifecycle,
+  onClose,
+  onEdit,
+  onReactivate,
+}: {
+  person: Person;
+  lastAttendanceDate?: string;
+  canManageLifecycle: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onReactivate: () => void;
+}) {
+  return (
+    <div className="modal-backdrop">
+      <section
+        className="modal member-profile"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="member-profile-title"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onClose();
+        }}
+      >
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">Member profile</p>
+            <h2 id="member-profile-title">{person.displayName}</h2>
+          </div>
+          <button
+            className="icon-button"
+            aria-label="Close member profile"
+            type="button"
+            autoFocus
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        <dl className="member-profile-details">
+          <div>
+            <dt>Status</dt>
+            <dd>
+              <span
+                className={
+                  person.isActive
+                    ? "member-status active"
+                    : "member-status inactive"
+                }
+              >
+                {person.isActive ? "Active" : "Inactive"}
+              </span>
+            </dd>
+          </div>
+          <div>
+            <dt>Last attendance</dt>
+            <dd>{formatDate(lastAttendanceDate)}</dd>
+          </div>
+          {!person.isActive && (
+            <div>
+              <dt>Date made inactive</dt>
+              <dd>{formatDate(person.inactiveAt)}</dd>
+            </div>
+          )}
+        </dl>
+        <div className="modal-actions">
+          <button className="button subtle" type="button" onClick={onEdit}>
+            Edit details
+          </button>
+          {!person.isActive && canManageLifecycle && (
+            <button
+              className="button primary"
+              type="button"
+              onClick={onReactivate}
+            >
+              Reactivate member
+            </button>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
