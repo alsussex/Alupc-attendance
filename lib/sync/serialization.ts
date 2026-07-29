@@ -2,6 +2,7 @@ import type {
   AttendanceRecord,
   ChurchService,
   Organization,
+  OrganizationSettings,
   Person,
   Profile,
   PullTable,
@@ -10,6 +11,7 @@ import type {
 
 export type LocalPullRecord =
   | Organization
+  | OrganizationSettings
   | Profile
   | Person
   | ChurchService
@@ -95,6 +97,16 @@ export function fromCloudRecord(
   }
 
   const audited = auditFields(row);
+  if (table === "organization_settings") {
+    const settings = row.settings;
+    if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+      throw new Error("Cloud organization settings are invalid.");
+    }
+    return {
+      ...audited,
+      settings: settings as OrganizationSettings["settings"],
+    };
+  }
   if (table === "people") {
     const personType = requiredString(row, "person_type");
     if (personType !== "member" && personType !== "visitor") {
@@ -118,6 +130,7 @@ export function fromCloudRecord(
       serviceDate: requiredString(row, "service_date"),
       serviceType: requiredString(row, "service_type") as ChurchService["serviceType"],
       customName: optionalString(row, "custom_name"),
+      serviceTime: optionalString(row, "service_time")?.slice(0, 5),
       status: requiredString(row, "status") as ChurchService["status"],
       isArchived: optionalBoolean(row, "is_archived"),
       deletedAt: optionalString(row, "deleted_at"),
@@ -141,6 +154,7 @@ export function fromCloudRecord(
     displayName: requiredString(row, "display_name"),
     savedAsMember: requiredBoolean(row, "saved_as_member"),
     memberPersonId: optionalString(row, "member_person_id"),
+    notes: optionalString(row, "notes"),
     deletedAt: optionalString(row, "deleted_at"),
   };
 }

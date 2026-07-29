@@ -49,7 +49,7 @@ function formatDate(value?: string | null) {
   });
 }
 
-export function UserManagement() {
+export function UserManagement({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +123,7 @@ export function UserManagement() {
 
   return (
     <div className="page-stack">
-      <div className="page-heading with-action">
+      <div className={embedded ? "settings-embedded-heading" : "page-heading with-action"}>
         <div>
           <p className="eyebrow">Administrator</p>
           <h1>User Management</h1>

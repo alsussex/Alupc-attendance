@@ -5,6 +5,7 @@ import type {
   AttendanceRecord,
   ChurchService,
   Organization,
+  OrganizationSettings,
   Person,
   Profile,
   ServiceVisitor,
@@ -17,6 +18,11 @@ export interface AttendanceDatabase extends DBSchema {
   organizations: {
     key: string;
     value: Organization;
+  };
+  organizationSettings: {
+    key: string;
+    value: OrganizationSettings;
+    indexes: { organizationId: string };
   };
   profiles: {
     key: string;
@@ -64,7 +70,7 @@ let databasePromise: Promise<IDBPDatabase<AttendanceDatabase>> | null = null;
 
 export function getDatabase() {
   if (!databasePromise) {
-    databasePromise = openDB<AttendanceDatabase>("church-attendance", 2, {
+    databasePromise = openDB<AttendanceDatabase>("church-attendance", 3, {
       upgrade(database, oldVersion) {
         if (oldVersion < 1) {
           const people = database.createObjectStore("people", { keyPath: "id" });
@@ -104,6 +110,16 @@ export function getDatabase() {
           const status = database.createObjectStore("syncStatus", { keyPath: "id" });
           status.createIndex("organizationId", "organizationId");
         }
+        if (oldVersion < 3) {
+          const organizationSettings = database.createObjectStore(
+            "organizationSettings",
+            { keyPath: "id" },
+          );
+          organizationSettings.createIndex(
+            "organizationId",
+            "organizationId",
+          );
+        }
       },
     });
   }
@@ -122,6 +138,7 @@ export async function clearLocalDatabase() {
   const transaction = database.transaction(
     [
       "organizations",
+      "organizationSettings",
       "profiles",
       "people",
       "services",
@@ -135,6 +152,7 @@ export async function clearLocalDatabase() {
   );
   await Promise.all([
     transaction.objectStore("organizations").clear(),
+    transaction.objectStore("organizationSettings").clear(),
     transaction.objectStore("profiles").clear(),
     transaction.objectStore("people").clear(),
     transaction.objectStore("services").clear(),

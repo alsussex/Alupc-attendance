@@ -7,7 +7,8 @@ Offline-capable church attendance Progressive Web App for Abundant Life UPC. Aut
 - Supabase email/password login with persistent per-device sessions and no public registration
 - Admin and Attendance Taker roles enforced in the interface, server routes, database triggers, and RLS
 - Admin-only invitations, role changes, access suspension/restoration, resend, and pending-invitation cancellation
-- Responsive Dashboard, People, Services, Users, and Settings routes
+- Responsive Dashboard, People, Services, and Admin-only Settings center
+- Organization, service, attendance, visitor, device, security, and export settings
 - Active/inactive/all member views, member profiles, search, duplicate-name warning, and Admin lifecycle controls
 - Draft/completed services, searchable attendance checklist, live totals, and service visitors
 - Stable client-generated UUIDs and durable IndexedDB writes
@@ -31,6 +32,8 @@ Requirements: Node.js 22.13 or newer, npm, and a Supabase project.
    - `supabase/migrations/202607290004_inactive_member_metadata.sql`
    - `supabase/migrations/202607290005_fix_people_lifecycle_rls.sql`
    - `supabase/migrations/202607290006_service_visitor_lifecycle.sql`
+   - `supabase/migrations/202607290007_allow_privileged_dashboard_administration.sql`
+   - `supabase/migrations/202607290008_application_settings.sql`
 
 4. Create the first user and organization using the steps below.
 5. Put the project URL, browser-safe anon key, and server-only service-role key in `.env.local`. The service-role key must never have a `NEXT_PUBLIC_` prefix.
@@ -86,7 +89,7 @@ Interface checks improve clarity, but are not the security boundary. RLS limits 
 1. Apply `202607290003_user_roles_and_record_lifecycle.sql`.
 2. Add `SUPABASE_SERVICE_ROLE_KEY` to the local or Vercel server environment. Never prefix it with `NEXT_PUBLIC_`.
 3. Add the invitation redirect URLs listed below in Supabase.
-4. Sign in with the existing Admin account and open **Users**.
+4. Sign in with the existing Admin account and open **Settings > Users**.
 5. Select **Invite user**, enter the person's display name and email, choose **Attendance Taker**, and send the invitation.
 6. The invited person opens the email link while online, chooses a password, and completes their first sign-in online.
 7. Wait for **Synced** on the new device before testing offline use.
@@ -109,7 +112,7 @@ The default Vercel domain is sufficient. Use the exact stable production domain 
 
 ## Private Vercel deployment checklist
 
-1. Confirm all six migrations were applied in filename order.
+1. Confirm all eight migrations were applied in filename order.
 2. Confirm the first Admin and organization profile exist.
 3. Confirm `.env.example` contains placeholders and `.env.local` is untracked.
 4. Import the existing `alsussex/Alupc-attendance` repository and select `main`.
@@ -139,6 +142,40 @@ Screen -> repository -> IndexedDB transaction -> mutation queue
 - Queue insertion emits a dedicated mutation event, so automatic synchronization does not depend on a general UI refresh event. Startup, focus, reconnection, and manual sync also recover failed entries and processing entries stale for more than two minutes.
 - Client UUIDs remain stable locally and in Supabase.
 - Cache Storage holds only the application shell; IndexedDB holds church records and pending mutations. A service-worker update does not delete IndexedDB.
+
+## Application settings
+
+Admins open **Settings** from the main navigation. Attendance Takers do not see
+the entry, and the route guard redirects direct access. Settings are grouped into
+General, Services, Attendance, Visitors, Users, Data & Export, Device & Sync,
+and Security.
+
+Migration `202607290008_application_settings.sql` creates one
+`organization_settings` row per organization, adds optional service times and
+visitor notes, and applies organization-scoped RLS. Organization members may
+read workflow settings required by Services; only an active Admin may insert or
+update them. The migration also replaces the former fixed service-type check
+with bounded text validation so Admin-defined service types can synchronize.
+
+Organization-wide workflow settings save to IndexedDB first, use the
+organization UUID as their stable record ID, and enter the existing idempotent
+mutation queue. This makes attendance sorting, counters, inactive-member
+visibility, visitor behavior, and new-service defaults available offline after
+the first successful synchronization. New default service times apply only to
+new services; historical service rows are not rewritten.
+
+CSV exports are available for members, inactive members, services, attendance,
+and visitors. The JSON backup contains organization-scoped application records
+but excludes sessions, passwords, access/refresh tokens, invitation tokens,
+environment variables, and synchronization diagnostics. Import/restore and
+permanent organization deletion are explicitly unavailable in this release.
+
+User invitations and role management now live at **Settings > Users**. Invites,
+role changes, access changes, password reset, and global sign-out remain
+online-only security operations. **Device & Sync** can invoke the real sync
+processor, refresh cloud data only when no local writes are waiting, or clear
+this browser's data after explicit warnings. Clearing local data never deletes
+Supabase records.
 
 ### First sign-in and offline reopening
 
@@ -230,13 +267,13 @@ tests/                       behavior, synchronization, security, and production
 
 ## Intentionally unfinished
 
-This release does not include Excel export, reports, charts, advanced conflict review, background sync, Supabase Realtime, push notifications, detailed person profiles, bulk operations, visitor conversion after a service, or multi-organization switching.
+This release does not include Excel export, reports, charts, import/restore, permanent organization deletion, advanced conflict review, background sync, Supabase Realtime, push notifications, detailed person profiles, bulk operations, visitor conversion after a service, or multi-organization switching.
 
 ## Two-device manual verification
 
 Use fictional data such as **Alex Meadow** and **Robin Field**.
 
-1. Apply all six migrations and configure the same Supabase project.
+1. Apply all eight migrations and configure the same Supabase project.
 2. Open Browser A as Admin, wait for **Online**, invite a fictional Attendance Taker, and complete that user's first sign-in online in Browser B.
 3. In Browser A, add Alex Meadow, create a draft service, check Alex present, and allow background sync to complete.
 4. In Browser B, focus the app and confirm Alex, the service, and attendance total of one.
@@ -244,4 +281,4 @@ Use fictional data such as **Alex Meadow** and **Robin Field**.
 6. Restore connectivity and confirm **Back online — syncing…**, followed briefly by **All changes synced.** Use **Sync now** only as a backup.
 7. Focus Browser A and confirm Browser B's change appears exactly once.
 8. Uncheck and recheck one attendee and synchronize both browsers; confirm no duplicate attendance row and the total is correct.
-9. As the Attendance Taker, confirm `/users` and `/settings` redirect to the dashboard and direct archive/delete requests are rejected.
+9. As the Attendance Taker, confirm `/settings` redirects to the dashboard and direct archive/delete requests are rejected. `/users` is a legacy redirect into the protected Settings route.

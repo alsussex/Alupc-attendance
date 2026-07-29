@@ -21,6 +21,7 @@ const PAGE_SIZE = 500;
 
 type LocalStore =
   | "organizations"
+  | "organizationSettings"
   | "profiles"
   | "people"
   | "services"
@@ -52,6 +53,7 @@ export interface PullResult {
 function storeFor(table: PullTable): LocalStore {
   if (table === "service_attendance") return "attendance";
   if (table === "service_visitors") return "visitors";
+  if (table === "organization_settings") return "organizationSettings";
   return table;
 }
 
@@ -83,6 +85,11 @@ async function putLocalRecord(
       return database.put(
         "organizations",
         record as AttendanceDatabase["organizations"]["value"],
+      );
+    case "organizationSettings":
+      return database.put(
+        "organizationSettings",
+        record as AttendanceDatabase["organizationSettings"]["value"],
       );
     case "profiles":
       return database.put("profiles", record as AttendanceDatabase["profiles"]["value"]);

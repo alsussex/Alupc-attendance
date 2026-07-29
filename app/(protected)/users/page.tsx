@@ -1,10 +1,5 @@
-import { AdminOnly } from "@/components/auth/AdminOnly";
-import { UserManagement } from "@/components/users/UserManagement";
+import { redirect } from "next/navigation";
 
 export default function UsersPage() {
-  return (
-    <AdminOnly>
-      <UserManagement />
-    </AdminOnly>
-  );
+  redirect("/settings?section=users");
 }

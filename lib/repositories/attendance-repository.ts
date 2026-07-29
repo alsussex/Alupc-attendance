@@ -213,6 +213,7 @@ export async function saveService(
     serviceDate: string;
     serviceType: ServiceType;
     customName?: string;
+    serviceTime?: string;
     status: ServiceStatus;
   },
 ) {
@@ -225,6 +226,7 @@ export async function saveService(
     serviceDate: input.serviceDate,
     serviceType: input.serviceType,
     customName: input.customName?.trim() || undefined,
+    serviceTime: input.serviceTime || undefined,
     status: input.status,
     isArchived: existing?.isArchived ?? false,
     deletedAt: existing?.deletedAt,
@@ -351,13 +353,26 @@ export function setMemberAttendance(
 export async function addServiceVisitor(
   user: UserContext,
   serviceId: string,
-  input: { firstName: string; lastName: string; saveAsMember: boolean },
+  input: {
+    firstName: string;
+    lastName: string;
+    saveAsMember: boolean;
+    notes?: string;
+    fallbackName?: string;
+  },
 ) {
   const database = await getDatabase();
   const timestamp = nowIso();
+  const firstName =
+    input.firstName.trim() ||
+    (!input.lastName.trim() ? input.fallbackName?.trim() || "Visitor" : "");
+  const lastName = input.lastName.trim();
   let member: Person | undefined;
   if (input.saveAsMember) {
-    member = await saveMember(user, input);
+    if (!firstName || !lastName) {
+      throw new Error("A first and last name are required to save a member.");
+    }
+    member = await saveMember(user, { firstName, lastName });
     await setMemberAttendance(user, serviceId, member.id, true);
   }
 
@@ -365,11 +380,12 @@ export async function addServiceVisitor(
     id: createId(),
     organizationId: user.organizationId,
     serviceId,
-    firstName: input.firstName.trim(),
-    lastName: input.lastName.trim(),
-    displayName: makeDisplayName(input.firstName, input.lastName),
+    firstName,
+    lastName,
+    displayName: makeDisplayName(firstName, lastName),
     savedAsMember: input.saveAsMember,
     memberPersonId: member?.id,
+    notes: input.notes?.trim() || undefined,
     createdAt: timestamp,
     updatedAt: timestamp,
     createdBy: user.userId,
@@ -396,7 +412,12 @@ export async function listServiceVisitors(serviceId: string) {
 export async function editServiceVisitor(
   user: UserContext,
   id: string,
-  input: { firstName: string; lastName: string },
+  input: {
+    firstName: string;
+    lastName: string;
+    notes?: string;
+    fallbackName?: string;
+  },
 ) {
   const database = await getDatabase();
   const visitor = await database.get("visitors", id);
@@ -407,11 +428,16 @@ export async function editServiceVisitor(
   ) {
     throw new Error("Visitor not found");
   }
+  const firstName =
+    input.firstName.trim() ||
+    (!input.lastName.trim() ? input.fallbackName?.trim() || "Visitor" : "");
+  const lastName = input.lastName.trim();
   const updated: ServiceVisitor = {
     ...visitor,
-    firstName: input.firstName.trim(),
-    lastName: input.lastName.trim(),
-    displayName: makeDisplayName(input.firstName, input.lastName),
+    firstName,
+    lastName,
+    displayName: makeDisplayName(firstName, lastName),
+    notes: input.notes?.trim() || undefined,
     updatedAt: nowIso(),
     updatedBy: user.userId,
   };

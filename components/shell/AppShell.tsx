@@ -2,10 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { isAdmin } from "@/lib/auth/permissions";
 import { SyncBanner, SyncIndicator } from "./SyncIndicator";
+import {
+  getOrganization,
+  getOrganizationSettings,
+} from "@/lib/repositories/settings-repository";
+import { subscribeToDataChanges } from "@/lib/storage/data-events";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard", glyph: "D" },
@@ -13,14 +18,30 @@ const navigation = [
   { href: "/services", label: "Services", glyph: "S" },
 ];
 
-const adminNavigation = [
-  { href: "/users", label: "Users", glyph: "U" },
-  { href: "/settings", label: "Settings", glyph: "⚙" },
-];
+const adminNavigation = [{ href: "/settings", label: "Settings", glyph: "⚙" }];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
+  const [churchName, setChurchName] = useState("Abundant Life UPC");
+  const [shortName, setShortName] = useState("ALUPC");
+  const refreshBrand = useCallback(async () => {
+    if (!user) return;
+    const [organization, settings] = await Promise.all([
+      getOrganization(user.organizationId),
+      getOrganizationSettings(user.organizationId),
+    ]);
+    setChurchName(organization?.name ?? "Abundant Life UPC");
+    setShortName(settings.settings.shortName);
+  }, [user]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void refreshBrand(), 0);
+    const unsubscribe = subscribeToDataChanges(() => void refreshBrand());
+    return () => {
+      window.clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [refreshBrand]);
   const visibleNavigation = isAdmin(user)
     ? [...navigation, ...adminNavigation]
     : navigation;
@@ -29,9 +50,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="brand-block">
-          <span className="brand-mark" aria-hidden="true">AL</span>
+          <span className="brand-mark" aria-hidden="true">{shortName.slice(0, 2).toUpperCase()}</span>
           <div>
-            <strong>Abundant Life UPC</strong>
+            <strong>{churchName}</strong>
             <span>Attendance workspace</span>
           </div>
         </div>
@@ -40,8 +61,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link
               key={item.href}
               href={item.href}
-              className={pathname === item.href ? "nav-link active" : "nav-link"}
-              aria-current={pathname === item.href ? "page" : undefined}
+              className={pathname.startsWith(item.href) ? "nav-link active" : "nav-link"}
+              aria-current={pathname.startsWith(item.href) ? "page" : undefined}
             >
               <span className="nav-glyph" aria-hidden="true">{item.glyph}</span>
               {item.label}
@@ -64,7 +85,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
       <div className="content-column">
         <header className="topbar">
-          <div className="mobile-brand">Abundant Life UPC</div>
+          <div className="mobile-brand">{churchName}</div>
           <SyncIndicator />
         </header>
         <main className="page-content">
@@ -78,11 +99,11 @@ export function AppShell({ children }: { children: ReactNode }) {
             key={item.href}
             href={item.href}
             className={
-              pathname === item.href
+              pathname.startsWith(item.href)
                 ? "mobile-nav-link active"
                 : "mobile-nav-link"
             }
-            aria-current={pathname === item.href ? "page" : undefined}
+            aria-current={pathname.startsWith(item.href) ? "page" : undefined}
           >
             <span aria-hidden="true">{item.glyph}</span>
             {item.label}

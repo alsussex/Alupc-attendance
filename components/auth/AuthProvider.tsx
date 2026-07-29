@@ -195,7 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     setLoading(true);
-    await getSupabaseClient().auth.signOut();
+    await getSupabaseClient().auth.signOut({ scope: "local" });
     setUser(null);
     setSession(null);
     setLoading(false);

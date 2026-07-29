@@ -13,6 +13,8 @@ import { useSynchronization } from "@/components/sync/SyncProvider";
 import {
   SERVICE_TYPES,
   countAttendance,
+  DEFAULT_APPLICATION_SETTINGS,
+  type ApplicationSettings,
   type ChurchService,
   type Person,
   type ServiceType,
@@ -23,6 +25,7 @@ import {
   editServiceVisitor,
   getServiceAttendance,
   listActiveMembers,
+  listMembers,
   listServices,
   listServiceVisitors,
   removeServiceVisitor,
@@ -34,19 +37,36 @@ import {
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
 import { isAdmin } from "@/lib/auth/permissions";
 import { serviceSaveFeedback } from "@/lib/services/save-feedback";
+import { getOrganizationSettings } from "@/lib/repositories/settings-repository";
+import {
+  formatChurchDate,
+  sortAttendanceMembers,
+} from "@/lib/settings/settings";
 import {
   attendanceCounts,
   filterAttendanceMembers,
   type AttendanceFilter,
 } from "@/lib/services/attendance-view";
 
-function localDate() {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+function localDate(timeZone: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 function serviceTitle(service: ChurchService) {
   return service.customName || service.serviceType;
+}
+
+function displayServiceTime(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  return new Date(2026, 0, 1, hours, minutes).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 export function ServiceManager() {
@@ -54,6 +74,9 @@ export function ServiceManager() {
   const { syncNow } = useSynchronization();
   const [services, setServices] = useState<ChurchService[]>([]);
   const [members, setMembers] = useState<Person[]>([]);
+  const [settings, setSettings] = useState<ApplicationSettings>(
+    DEFAULT_APPLICATION_SETTINGS,
+  );
   const [active, setActive] = useState<ChurchService | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visitors, setVisitors] = useState<ServiceVisitor[]>([]);
@@ -74,12 +97,16 @@ export function ServiceManager() {
 
   const refreshLists = useCallback(async () => {
     if (!user) return;
-    const [nextServices, nextMembers] = await Promise.all([
+    const [nextServices, settingsRecord] = await Promise.all([
       listServices(user.organizationId),
-      listActiveMembers(user.organizationId),
+      getOrganizationSettings(user.organizationId),
     ]);
+    const nextMembers = settingsRecord.settings.showInactiveInAttendance
+      ? await listMembers(user.organizationId)
+      : await listActiveMembers(user.organizationId);
     setServices(nextServices);
     setMembers(nextMembers);
+    setSettings(settingsRecord.settings);
   }, [user]);
 
   useEffect(() => {
@@ -159,6 +186,22 @@ export function ServiceManager() {
 
   async function setStatus(status: "draft" | "completed") {
     if (!user || !active || serviceAction) return;
+    if (status === "draft" && active.status === "completed") {
+      if (!isAdmin(user) || !settings.allowAdminReopenCompleted) return;
+      if (!confirm("Reopen this completed service for editing?")) return;
+    }
+    if (status === "completed") {
+      const zeroWarning =
+        settings.warnZeroAttendance && total === 0
+          ? " No attendance has been recorded."
+          : "";
+      if (
+        (settings.confirmComplete || zeroWarning) &&
+        !confirm(`Finish this service?${zeroWarning}`)
+      ) {
+        return;
+      }
+    }
     setServiceAction(status);
     setActionFeedback("");
     try {
@@ -174,12 +217,12 @@ export function ServiceManager() {
 
   const filteredMembers = useMemo(() => {
     return filterAttendanceMembers(
-      members,
+      sortAttendanceMembers(members, settings.attendanceSort),
       selected,
       attendanceFilter,
       search,
     );
-  }, [attendanceFilter, members, search, selected]);
+  }, [attendanceFilter, members, search, selected, settings.attendanceSort]);
 
   const memberCounts = useMemo(
     () => attendanceCounts(members, selected),
@@ -188,7 +231,9 @@ export function ServiceManager() {
 
   const total = countAttendance(
     selected,
-    visitors.filter((visitor) => !visitor.savedAsMember).length,
+    settings.includeVisitorsInTotal
+      ? visitors.filter((visitor) => !visitor.savedAsMember).length
+      : 0,
   );
 
   if (active) {
@@ -206,7 +251,10 @@ export function ServiceManager() {
                   type="button"
                   onClick={() => {
                     if (!user) return;
-                    if (!confirm(`Archive ${serviceTitle(active)}?`)) return;
+                    if (
+                      settings.confirmArchive &&
+                      !confirm(`Archive ${serviceTitle(active)}?`)
+                    ) return;
                     void setServiceArchived(user, active.id, true).then(async () => {
                       setActive(null);
                       await refreshLists();
@@ -235,14 +283,19 @@ export function ServiceManager() {
         </div>
         <div className="attendance-heading">
           <div>
-            <p className="eyebrow">{new Date(`${active.serviceDate}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</p>
+            <p className="eyebrow">{formatChurchDate(active.serviceDate, settings)}</p>
             <h1>{serviceTitle(active)}</h1>
-            <p>Select every person who attended. Changes save to this device immediately.</p>
+            <p>
+              {active.serviceTime ? `${displayServiceTime(active.serviceTime)} · ` : ""}
+              Select every person who attended. Changes save to this device immediately.
+            </p>
           </div>
-          <div className="attendance-total" aria-live="polite">
-            <strong>{total}</strong>
-            <span>{total === 1 ? "person present" : "people present"}</span>
-          </div>
+          {settings.showAttendanceTotals && (
+            <div className="attendance-total" aria-live="polite">
+              <strong>{total}</strong>
+              <span>{total === 1 ? "person present" : "people present"}</span>
+            </div>
+          )}
         </div>
         {actionFeedback && (
           <div className="notice success" role="status">
@@ -293,11 +346,19 @@ export function ServiceManager() {
               Mark all absent
             </button>
           </div>
-          <div className="attendance-summary" aria-live="polite">
-            <strong>{memberCounts.present} present</strong>
-            <span>{memberCounts.absent} absent</span>
-            <span>{memberCounts.total} total</span>
-          </div>
+          {settings.showAttendanceTotals && (
+            <div className="attendance-summary" aria-live="polite">
+              {settings.showPresentCount && (
+                <strong>{memberCounts.present} present</strong>
+              )}
+              {settings.showAbsentCount && (
+                <span>{memberCounts.absent} absent</span>
+              )}
+              {settings.showTotalMemberCount && (
+                <span>{memberCounts.total} total</span>
+              )}
+            </div>
+          )}
           <div className="attendance-list">
             {filteredMembers.map((member) => {
               const checked = selected.has(member.id);
@@ -319,13 +380,24 @@ export function ServiceManager() {
             )}
           </div>
           {visitors.length > 0 && (
-            <div className="visitor-summary">
-              <h2>Visitors for this service</h2>
+            <div
+              className={
+                settings.showVisitorsSeparately
+                  ? "visitor-summary"
+                  : "visitor-summary integrated"
+              }
+            >
+              {settings.showVisitorsSeparately && (
+                <h2>{settings.visitorLabel}s for this service</h2>
+              )}
               {visitors.map((visitor) => (
                 <div className="visitor-row" key={visitor.id}>
                   <span className="visitor-name">
                     <strong>{visitor.displayName}</strong>
                     <small>{visitor.savedAsMember ? "Saved as member" : "This service only"}</small>
+                    {settings.allowVisitorNotes && visitor.notes && (
+                      <small>{visitor.notes}</small>
+                    )}
                   </span>
                   <span className="visitor-actions">
                     <button
@@ -341,6 +413,7 @@ export function ServiceManager() {
                       onClick={() => {
                         if (!user) return;
                         if (
+                          settings.confirmVisitorRemoval &&
                           !confirm(
                             "Remove this visitor from the service? This will remove their attendance entry from this service.",
                           )
@@ -363,26 +436,43 @@ export function ServiceManager() {
         <div className="sticky-actions">
           <span>{total} selected</span>
           <div>
-            <button
-              className="button subtle"
-              type="button"
-              disabled={serviceAction !== null}
-              onClick={() => void setStatus("draft")}
-            >
-              {serviceAction === "draft" ? "Saving…" : "Save Draft"}
-            </button>
-            <button
-              className="button primary"
-              type="button"
-              disabled={serviceAction !== null}
-              onClick={() => void setStatus("completed")}
-            >
-              {serviceAction === "completed" ? "Saving…" : "Finish Service"}
-            </button>
+            {active.status === "completed" ? (
+              isAdmin(user) &&
+              settings.allowAdminReopenCompleted && (
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={serviceAction !== null}
+                  onClick={() => void setStatus("draft")}
+                >
+                  {serviceAction === "draft" ? "Saving…" : "Reopen Service"}
+                </button>
+              )
+            ) : (
+              <>
+                <button
+                  className="button subtle"
+                  type="button"
+                  disabled={serviceAction !== null}
+                  onClick={() => void setStatus("draft")}
+                >
+                  {serviceAction === "draft" ? "Saving…" : "Save Draft"}
+                </button>
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={serviceAction !== null}
+                  onClick={() => void setStatus("completed")}
+                >
+                  {serviceAction === "completed" ? "Saving…" : "Finish Service"}
+                </button>
+              </>
+            )}
           </div>
         </div>
         {visitorOpen && (
           <VisitorModal
+            settings={settings}
             onClose={() => setVisitorOpen(false)}
             onSave={async (input) => {
               if (!user) return;
@@ -395,6 +485,7 @@ export function ServiceManager() {
         )}
         {editingVisitor && (
           <VisitorModal
+            settings={settings}
             existing={editingVisitor}
             onClose={() => setEditingVisitor(null)}
             onSave={async (input) => {
@@ -434,12 +525,15 @@ export function ServiceManager() {
         {services.map((service) => (
           <button className="service-card" type="button" key={service.id} onClick={() => void openService(service)}>
             <span className="service-date">
-              <strong>{new Date(`${service.serviceDate}T12:00:00`).toLocaleDateString(undefined, { day: "2-digit" })}</strong>
-              <span>{new Date(`${service.serviceDate}T12:00:00`).toLocaleDateString(undefined, { month: "short" })}</span>
+              <strong>{formatChurchDate(service.serviceDate, settings, { day: "2-digit" })}</strong>
+              <span>{formatChurchDate(service.serviceDate, settings, { month: "short" })}</span>
             </span>
             <span className="service-card-copy">
               <strong>{serviceTitle(service)}</strong>
-              <span>{new Date(`${service.serviceDate}T12:00:00`).toLocaleDateString(undefined, { weekday: "long", year: "numeric" })}</span>
+              <span>
+                {formatChurchDate(service.serviceDate, settings, { weekday: "long", year: "numeric" })}
+                {service.serviceTime ? ` · ${displayServiceTime(service.serviceTime)}` : ""}
+              </span>
             </span>
             <span className={`status-pill ${service.status}`}>{service.status}</span>
             <span aria-hidden="true">›</span>
@@ -454,13 +548,34 @@ export function ServiceManager() {
           </section>
         )}
       </section>
-      {createOpen && <ServiceModal onClose={() => setCreateOpen(false)} onSaved={async (service) => { setCreateOpen(false); await refreshLists(); await openService(service); }} />}
+      {createOpen && <ServiceModal settings={settings} onClose={() => setCreateOpen(false)} onSaved={async (service) => { setCreateOpen(false); await refreshLists(); await openService(service); }} />}
     </div>
   );
 
-  function ServiceModal({ onClose, onSaved, existing }: { onClose: () => void; onSaved: (service: ChurchService) => void; existing?: ChurchService }) {
-    const [date, setDate] = useState(existing?.serviceDate ?? localDate());
-    const [type, setType] = useState<ServiceType>(existing?.serviceType ?? "Sunday Morning");
+  function ServiceModal({ onClose, onSaved, existing, settings: modalSettings = settings }: { onClose: () => void; onSaved: (service: ChurchService) => void; existing?: ChurchService; settings?: ApplicationSettings }) {
+    const enabledTypes = modalSettings.serviceTypes.filter((item) => item.enabled);
+    const availableTypes =
+      existing && !enabledTypes.some((item) => item.name === existing.serviceType)
+        ? [
+            ...enabledTypes,
+            {
+              id: `historical-${existing.serviceType}`,
+              name: existing.serviceType,
+              enabled: false,
+              system: false,
+            },
+          ]
+        : enabledTypes;
+    const initialType = existing?.serviceType ?? availableTypes[0]?.name ?? SERVICE_TYPES[0];
+    const [date, setDate] = useState(
+      existing?.serviceDate ?? localDate(modalSettings.timezone),
+    );
+    const [type, setType] = useState<ServiceType>(initialType);
+    const [serviceTime, setServiceTime] = useState(
+      existing?.serviceTime ??
+        availableTypes.find((item) => item.name === initialType)?.defaultTime ??
+        "",
+    );
     const [customName, setCustomName] = useState(existing?.customName ?? "");
     async function submit(event: FormEvent) {
       event.preventDefault();
@@ -470,7 +585,8 @@ export function ServiceManager() {
         serviceDate: date,
         serviceType: type,
         customName,
-        status: existing?.status ?? "draft",
+        serviceTime,
+        status: existing?.status ?? modalSettings.defaultServiceStatus,
       });
       onSaved(service);
     }
@@ -480,8 +596,13 @@ export function ServiceManager() {
           <div className="modal-heading"><div><p className="eyebrow">{existing ? "Service details" : "New attendance list"}</p><h2 id="create-service-title">{existing ? "Edit service" : "Create a service"}</h2></div><button className="icon-button" aria-label="Close" type="button" onClick={onClose}>×</button></div>
           <form className="form-stack" onSubmit={submit}>
             <label>Service date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label>
-            <label>Service type<select value={type} onChange={(event) => setType(event.target.value as ServiceType)}>{SERVICE_TYPES.map((option) => <option key={option}>{option}</option>)}</select></label>
-            {(type === "Special Service" || type === "Other") && <label>Custom service name <span className="optional">(optional)</span><input value={customName} onChange={(event) => setCustomName(event.target.value)} placeholder="e.g. Christmas Eve" /></label>}
+            <label>Service type<select value={type} onChange={(event) => {
+              const nextType = event.target.value;
+              setType(nextType);
+              setServiceTime(availableTypes.find((item) => item.name === nextType)?.defaultTime ?? "");
+            }}>{availableTypes.map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}</select></label>
+            <label>Service time <span className="optional">(optional)</span><input type="time" value={serviceTime} onChange={(event) => setServiceTime(event.target.value)} /></label>
+            {(availableTypes.find((item) => item.name === type)?.id === "special-service" || type === "Other") && <label>Custom service name <span className="optional">(optional)</span><input value={customName} onChange={(event) => setCustomName(event.target.value)} placeholder="e.g. Christmas Eve" /></label>}
             <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose}>Cancel</button><button className="button primary">{existing ? "Save changes" : "Create and take attendance"}</button></div>
           </form>
         </section>
@@ -494,33 +615,55 @@ function VisitorModal({
   onClose,
   onSave,
   existing,
+  settings,
 }: {
   onClose: () => void;
   onSave: (input: {
     firstName: string;
     lastName: string;
     saveAsMember: boolean;
+    notes?: string;
+    fallbackName?: string;
   }) => void;
   existing?: ServiceVisitor;
+  settings: ApplicationSettings;
 }) {
   const [firstName, setFirstName] = useState(existing?.firstName ?? "");
   const [lastName, setLastName] = useState(existing?.lastName ?? "");
   const [saveAsMember, setSaveAsMember] = useState(
     existing?.savedAsMember ?? false,
   );
+  const [notes, setNotes] = useState(existing?.notes ?? "");
   function submit(event: FormEvent) {
     event.preventDefault();
-    onSave({ firstName, lastName, saveAsMember });
+    onSave({
+      firstName,
+      lastName,
+      saveAsMember,
+      notes,
+      fallbackName: settings.visitorLabel,
+    });
   }
   return (
     <div className="modal-backdrop">
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="visitor-title">
-        <div className="modal-heading"><div><p className="eyebrow">This service</p><h2 id="visitor-title">{existing ? "Edit visitor" : "Add a visitor"}</h2></div><button className="icon-button" aria-label="Close" type="button" onClick={onClose}>×</button></div>
+        <div className="modal-heading"><div><p className="eyebrow">This service</p><h2 id="visitor-title">{existing ? `Edit ${settings.visitorLabel.toLocaleLowerCase()}` : `Add a ${settings.visitorLabel.toLocaleLowerCase()}`}</h2></div><button className="icon-button" aria-label="Close" type="button" onClick={onClose}>×</button></div>
         <form className="form-stack" onSubmit={submit}>
           <div className="form-grid">
-            <label>First name<input autoFocus value={firstName} onChange={(event) => setFirstName(event.target.value)} required /></label>
-            <label>Last name<input value={lastName} onChange={(event) => setLastName(event.target.value)} required /></label>
+            <label>First name<input autoFocus value={firstName} onChange={(event) => setFirstName(event.target.value)} required={settings.requireVisitorName} /></label>
+            <label>Last name<input value={lastName} onChange={(event) => setLastName(event.target.value)} required={settings.requireVisitorName} /></label>
           </div>
+          {settings.allowVisitorNotes && (
+            <label>
+              Notes <span className="optional">(optional)</span>
+              <textarea
+                value={notes}
+                maxLength={2000}
+                onChange={(event) => setNotes(event.target.value)}
+                placeholder="Accessibility, follow-up, or service notes"
+              />
+            </label>
+          )}
           {!existing && (
             <label className="choice-row">
               <input type="checkbox" checked={saveAsMember} onChange={(event) => setSaveAsMember(event.target.checked)} />

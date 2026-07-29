@@ -19,7 +19,7 @@ export const SERVICE_TYPES = [
   "Other",
 ] as const;
 
-export type ServiceType = (typeof SERVICE_TYPES)[number];
+export type ServiceType = string;
 
 export interface AuditedRecord {
   id: string;
@@ -63,6 +63,7 @@ export interface ChurchService extends AuditedRecord {
   serviceDate: string;
   serviceType: ServiceType;
   customName?: string;
+  serviceTime?: string;
   status: ServiceStatus;
   isArchived: boolean;
   deletedAt?: string;
@@ -81,7 +82,45 @@ export interface ServiceVisitor extends AuditedRecord {
   displayName: string;
   savedAsMember: boolean;
   memberPersonId?: string;
+  notes?: string;
   deletedAt?: string;
+}
+
+export interface ServiceTypeSetting {
+  id: string;
+  name: string;
+  defaultTime?: string;
+  enabled: boolean;
+  system: boolean;
+}
+
+export interface ApplicationSettings {
+  shortName: string;
+  timezone: string;
+  dateFormat: "month_day_year" | "day_month_year" | "iso";
+  weekStart: "sunday" | "monday";
+  serviceTypes: ServiceTypeSetting[];
+  defaultServiceStatus: ServiceStatus;
+  allowAdminReopenCompleted: boolean;
+  confirmComplete: boolean;
+  confirmArchive: boolean;
+  attendanceSort: "first_name" | "last_name" | "recently_added";
+  showAttendanceTotals: boolean;
+  showPresentCount: boolean;
+  showAbsentCount: boolean;
+  showTotalMemberCount: boolean;
+  warnZeroAttendance: boolean;
+  showInactiveInAttendance: boolean;
+  requireVisitorName: boolean;
+  allowVisitorNotes: boolean;
+  confirmVisitorRemoval: boolean;
+  visitorLabel: string;
+  showVisitorsSeparately: boolean;
+  includeVisitorsInTotal: boolean;
+}
+
+export interface OrganizationSettings extends AuditedRecord {
+  settings: ApplicationSettings;
 }
 
 export interface UserContext {
@@ -94,7 +133,13 @@ export interface UserContext {
 export interface SyncQueueItem {
   id: string;
   organizationId: string;
-  table: "people" | "services" | "service_attendance" | "service_visitors";
+  table:
+    | "organizations"
+    | "organization_settings"
+    | "people"
+    | "services"
+    | "service_attendance"
+    | "service_visitors";
   operation: "upsert";
   recordId: string;
   payload: Record<string, unknown>;
@@ -108,6 +153,7 @@ export interface SyncQueueItem {
 export const PULL_TABLES = [
   "organizations",
   "profiles",
+  "organization_settings",
   "people",
   "services",
   "service_attendance",
@@ -115,6 +161,59 @@ export const PULL_TABLES = [
 ] as const;
 
 export type PullTable = (typeof PULL_TABLES)[number];
+
+export const DEFAULT_APPLICATION_SETTINGS: ApplicationSettings = {
+  shortName: "ALUPC",
+  timezone: "America/Moncton",
+  dateFormat: "month_day_year",
+  weekStart: "sunday",
+  serviceTypes: [
+    {
+      id: "sunday-morning",
+      name: "Sunday Morning",
+      defaultTime: "10:30",
+      enabled: true,
+      system: true,
+    },
+    {
+      id: "sunday-evening",
+      name: "Sunday Evening",
+      defaultTime: "18:30",
+      enabled: true,
+      system: true,
+    },
+    {
+      id: "wednesday-bible-study",
+      name: "Wednesday Bible Study",
+      defaultTime: "19:00",
+      enabled: true,
+      system: true,
+    },
+    {
+      id: "special-service",
+      name: "Special Service",
+      enabled: true,
+      system: true,
+    },
+  ],
+  defaultServiceStatus: "draft",
+  allowAdminReopenCompleted: true,
+  confirmComplete: true,
+  confirmArchive: true,
+  attendanceSort: "first_name",
+  showAttendanceTotals: true,
+  showPresentCount: true,
+  showAbsentCount: true,
+  showTotalMemberCount: true,
+  warnZeroAttendance: true,
+  showInactiveInAttendance: false,
+  requireVisitorName: true,
+  allowVisitorNotes: true,
+  confirmVisitorRemoval: true,
+  visitorLabel: "Visitor",
+  showVisitorsSeparately: true,
+  includeVisitorsInTotal: true,
+};
 
 export interface SyncCursor {
   id: string;

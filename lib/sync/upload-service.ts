@@ -41,6 +41,8 @@ class SupabaseUploadError extends Error {
 }
 
 const UPLOAD_ORDER: SyncQueueItem["table"][] = [
+  "organizations",
+  "organization_settings",
   "people",
   "services",
   "service_attendance",
