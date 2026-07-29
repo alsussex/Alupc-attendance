@@ -123,14 +123,19 @@ export function synchronizeOrganization(
 export function registerAutomaticSync(
   user: UserContext,
   synchronize: () => Promise<unknown>,
+  options: { listenOnline?: boolean } = {},
 ) {
   const online = () => void synchronize();
   const focus = () => void synchronize();
-  window.addEventListener("online", online);
+  if (options.listenOnline !== false) {
+    window.addEventListener("online", online);
+  }
   window.addEventListener("focus", focus);
   const interval = window.setInterval(() => void synchronize(), 60_000);
   return () => {
-    window.removeEventListener("online", online);
+    if (options.listenOnline !== false) {
+      window.removeEventListener("online", online);
+    }
     window.removeEventListener("focus", focus);
     window.clearInterval(interval);
   };

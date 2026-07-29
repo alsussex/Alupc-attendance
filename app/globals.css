@@ -545,12 +545,9 @@ input::placeholder { color: #8a9994; }
 .sync-indicator { min-height: 34px; padding: .35rem .65rem; display: flex; align-items: center; gap: .45rem; border: 1px solid var(--line); border-radius: 999px; background: white; color: var(--muted); font-size: .72rem; font-weight: 700; cursor: pointer; }
 .sidebar .sync-indicator { border-color: rgb(255 255 255 / 13%); background: rgb(255 255 255 / 7%); color: #c9d8d3; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4c9a70; }
-.sync-indicator.local .status-dot, .sync-indicator.pending .status-dot { background: #d4a247; }
-.sync-indicator.error .status-dot { background: #c45555; }
-.sync-indicator.loading .status-dot,
-.sync-indicator.downloading .status-dot { background: #5c82b5; }
-.sync-indicator.offline .status-dot,
 .sync-indicator.pending .status-dot { background: #d4a247; }
+.sync-indicator.error .status-dot { background: #c45555; }
+.sync-indicator.offline .status-dot { background: #d4a247; }
 .sync-banner {
   margin-bottom: 1rem;
   padding: .75rem 1rem;
@@ -563,8 +560,7 @@ input::placeholder { color: #8a9994; }
   color: var(--muted);
   font-size: .84rem;
 }
-.sync-banner > span:nth-child(2) { display: grid; }
-.sync-banner small { max-width: 780px; color: var(--danger); white-space: pre-line; }
+.sync-banner strong { font-size: .84rem; }
 .sync-banner button {
   margin-left: auto;
   border: 0;
@@ -574,9 +570,10 @@ input::placeholder { color: #8a9994; }
   cursor: pointer;
 }
 .sync-banner.error { border-color: #eccaca; background: #fff7f7; }
-.sync-banner.offline,
-.sync-banner.local,
-.sync-banner.pending { border-color: #ead8b3; background: #fffaf0; }
+.sync-banner.offline { border-color: #ead8b3; background: #fffaf0; }
+.sync-banner.recovering { border-color: #c8d9e8; background: #f3f8fc; }
+.sync-banner.recovering .status-dot { background: #5c82b5; }
+.sync-banner.complete { border-color: #c9e3d3; background: #eff8f3; color: #275d43; }
 .admin-safety-note { padding: 1rem 1.1rem; display: flex; align-items: flex-start; gap: .75rem; border: 1px solid #cbdad4; border-radius: 14px; background: #f4f9f6; color: var(--muted); }
 .admin-safety-note > span { flex: 0 0 auto; width: 25px; height: 25px; display: grid; place-items: center; border-radius: 50%; background: var(--brand); color: white; font-size: .74rem; font-weight: 850; }
 .admin-safety-note p { margin: 0; font-size: .84rem; }

@@ -20,6 +20,8 @@ import { isAdmin } from "@/lib/auth/permissions";
 import { enqueueChange } from "@/lib/sync/queue";
 import { toCloudRecord } from "@/lib/sync/serialization";
 
+const attendanceWriteChains = new Map<string, Promise<AttendanceRecord>>();
+
 export async function listActiveMembers(organizationId: string) {
   return (await listMembers(organizationId)).filter(
     (person) => person.isActive,
@@ -301,36 +303,49 @@ export async function getServiceAttendance(serviceId: string) {
   return database.getAllFromIndex("attendance", "serviceId", serviceId);
 }
 
-export async function setMemberAttendance(
+export function setMemberAttendance(
   user: UserContext,
   serviceId: string,
   personId: string,
   present: boolean,
 ) {
-  const database = await getDatabase();
   const id = attendanceId(serviceId, personId);
-  const existing = await database.get("attendance", id);
-  const timestamp = nowIso();
-  const record: AttendanceRecord = {
-    id,
-    organizationId: user.organizationId,
-    serviceId,
-    personId,
-    present,
-    createdAt: existing?.createdAt ?? timestamp,
-    updatedAt: timestamp,
-    createdBy: existing?.createdBy ?? user.userId,
-    updatedBy: user.userId,
+  const previous = attendanceWriteChains.get(id);
+  const write = (previous?.catch(() => undefined) ?? Promise.resolve()).then(
+    async () => {
+      const database = await getDatabase();
+      const existing = await database.get("attendance", id);
+      const timestamp = nowIso();
+      const record: AttendanceRecord = {
+        id,
+        organizationId: user.organizationId,
+        serviceId,
+        personId,
+        present,
+        createdAt: existing?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+        createdBy: existing?.createdBy ?? user.userId,
+        updatedBy: user.userId,
+      };
+      await database.put("attendance", record);
+      await enqueueChange({
+        organizationId: user.organizationId,
+        table: "service_attendance",
+        recordId: id,
+        payload: toCloudRecord(record),
+      });
+      announceDataChanged();
+      return record;
+    },
+  );
+  attendanceWriteChains.set(id, write);
+  const cleanUp = () => {
+    if (attendanceWriteChains.get(id) === write) {
+      attendanceWriteChains.delete(id);
+    }
   };
-  await database.put("attendance", record);
-  await enqueueChange({
-    organizationId: user.organizationId,
-    table: "service_attendance",
-    recordId: id,
-    payload: toCloudRecord(record),
-  });
-  announceDataChanged();
-  return record;
+  void write.then(cleanUp, cleanUp);
+  return write;
 }
 
 export async function addServiceVisitor(

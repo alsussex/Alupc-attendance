@@ -9,6 +9,7 @@ import {
   type FormEvent,
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useSynchronization } from "@/components/sync/SyncProvider";
 import {
   SERVICE_TYPES,
   countAttendance,
@@ -30,6 +31,7 @@ import {
 } from "@/lib/repositories/attendance-repository";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
 import { isAdmin } from "@/lib/auth/permissions";
+import { serviceSaveFeedback } from "@/lib/services/save-feedback";
 
 function localDate() {
   const date = new Date();
@@ -42,6 +44,7 @@ function serviceTitle(service: ChurchService) {
 
 export function ServiceManager() {
   const { user } = useAuth();
+  const { syncNow } = useSynchronization();
   const [services, setServices] = useState<ChurchService[]>([]);
   const [members, setMembers] = useState<Person[]>([]);
   const [active, setActive] = useState<ChurchService | null>(null);
@@ -51,8 +54,12 @@ export function ServiceManager() {
   const [createOpen, setCreateOpen] = useState(false);
   const [visitorOpen, setVisitorOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [message, setMessage] = useState("");
+  const [serviceAction, setServiceAction] = useState<
+    "draft" | "completed" | null
+  >(null);
+  const [actionFeedback, setActionFeedback] = useState("");
   const handledDashboardIntent = useRef("");
+  const selectedRef = useRef<Set<string>>(new Set());
 
   const refreshLists = useCallback(async () => {
     if (!user) return;
@@ -79,7 +86,11 @@ export function ServiceManager() {
       listServiceVisitors(service.id),
     ]);
     setActive(service);
-    setSelected(new Set(attendance.filter((item) => item.present).map((item) => item.personId)));
+    const nextSelected = new Set(
+      attendance.filter((item) => item.present).map((item) => item.personId),
+    );
+    selectedRef.current = nextSelected;
+    setSelected(nextSelected);
     setVisitors(nextVisitors);
     setSearch("");
   }, []);
@@ -106,22 +117,28 @@ export function ServiceManager() {
 
   async function toggleMember(personId: string) {
     if (!user || !active) return;
-    const present = !selected.has(personId);
-    setSelected((current) => {
-      const next = new Set(current);
-      if (present) next.add(personId);
-      else next.delete(personId);
-      return next;
-    });
+    const present = !selectedRef.current.has(personId);
+    const next = new Set(selectedRef.current);
+    if (present) next.add(personId);
+    else next.delete(personId);
+    selectedRef.current = next;
+    setSelected(next);
     await setMemberAttendance(user, active.id, personId, present);
   }
 
   async function setStatus(status: "draft" | "completed") {
-    if (!user || !active) return;
-    const updated = await saveService(user, { ...active, status });
-    setActive(updated);
-    setMessage(status === "completed" ? "Service marked completed." : "Draft saved locally.");
-    await refreshLists();
+    if (!user || !active || serviceAction) return;
+    setServiceAction(status);
+    setActionFeedback("");
+    try {
+      const updated = await saveService(user, { ...active, status });
+      setActive(updated);
+      await refreshLists();
+      const outcome = await syncNow();
+      setActionFeedback(serviceSaveFeedback(status, outcome.status));
+    } finally {
+      setServiceAction(null);
+    }
   }
 
   const filteredMembers = useMemo(() => {
@@ -187,7 +204,11 @@ export function ServiceManager() {
             <span>{total === 1 ? "person present" : "people present"}</span>
           </div>
         </div>
-        {message && <div className="notice success" role="status">{message}</div>}
+        {actionFeedback && (
+          <div className="notice success" role="status">
+            {actionFeedback}
+          </div>
+        )}
         <section className="panel attendance-panel">
           <div className="panel-toolbar">
             <label className="search-field">
@@ -226,8 +247,22 @@ export function ServiceManager() {
         <div className="sticky-actions">
           <span>{total} selected</span>
           <div>
-            <button className="button subtle" type="button" onClick={() => void setStatus("draft")}>Save draft</button>
-            <button className="button primary" type="button" onClick={() => void setStatus("completed")}>Mark completed</button>
+            <button
+              className="button subtle"
+              type="button"
+              disabled={serviceAction !== null}
+              onClick={() => void setStatus("draft")}
+            >
+              {serviceAction === "draft" ? "Saving…" : "Save Draft"}
+            </button>
+            <button
+              className="button primary"
+              type="button"
+              disabled={serviceAction !== null}
+              onClick={() => void setStatus("completed")}
+            >
+              {serviceAction === "completed" ? "Saving…" : "Finish Service"}
+            </button>
           </div>
         </div>
         {visitorOpen && (
@@ -239,7 +274,6 @@ export function ServiceManager() {
               setVisitorOpen(false);
               await openService(active);
               await refreshLists();
-              setMessage(`${input.firstName} added to this service.`);
             }}
           />
         )}
@@ -251,7 +285,6 @@ export function ServiceManager() {
               setEditOpen(false);
               await refreshLists();
               await openService(service);
-              setMessage("Service details updated.");
             }}
           />
         )}

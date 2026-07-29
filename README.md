@@ -133,7 +133,7 @@ Screen -> repository -> IndexedDB transaction -> mutation queue
 - `lib/storage/database.ts` defines the durable local stores.
 - `lib/sync/queue.ts` coalesces repeated upserts for the same record.
 - Upload and pull remain separate, testable operations and run in dependency order.
-- Sync runs after login/startup, shortly after every local change, on reconnection/focus, periodically, and after capped exponential retry delays.
+- Sync runs after login/startup, shortly after every local change, on reconnection/focus, periodically, and after capped exponential retry delays. Rapid mutations are coalesced per stable record ID before upload.
 - Client UUIDs remain stable locally and in Supabase.
 - Cache Storage holds only the application shell; IndexedDB holds church records and pending mutations. A service-worker update does not delete IndexedDB.
 
@@ -149,14 +149,20 @@ After login, the profile identifies the active organization. The coordinator upl
 
 Each table stores its own `updated_at` cursor. Later pulls use deterministic `updated_at, id` pagination from an inclusive cursor. Repeated boundary rows are safe because IndexedDB upserts are idempotent. A cursor advances only after a complete table pull.
 
-### Visible sync states
+### Save and sync feedback
 
-- **Offline** — previously authorized local data is being used without a connection
-- **Saved on this device** — a change is durable in IndexedDB while offline
-- **Waiting to sync** — local mutations are queued
-- **Syncing** — uploads or downloads are running
-- **Synced** — synchronization finished without an outstanding error
-- **Sync error** — synchronization failed and will retry automatically; **Sync now** is a backup
+Routine changes—including attendance checkboxes, people, visitors, service details, and member reactivation—update IndexedDB immediately and synchronize quietly. Normal online work keeps a stable **Online** indicator instead of flashing between syncing states. A subtle pending indicator appears only when queued work remains longer than the normal background-sync window.
+
+**Save Draft** and **Finish Service** are the two explicit confirmation actions. They temporarily show **Saving…**, attempt an immediate sync after the local write, and then confirm the cloud or offline result.
+
+The prominent sync bar appears only when useful:
+
+- Offline, including the number of durable queued records
+- Reconnecting while saved changes are uploading
+- Briefly after recovery with **All changes synced**
+- After three consecutive online failures, while automatic retry continues
+
+**Sync now** remains a troubleshooting fallback. It is never required during normal attendance entry.
 
 ### Conflict resolution and data safety
 
@@ -219,11 +225,11 @@ This release does not include Excel export, reports, charts, advanced conflict r
 Use fictional data such as **Alex Meadow** and **Robin Field**.
 
 1. Apply all four migrations and configure the same Supabase project.
-2. Open Browser A as Admin, wait for **Synced**, invite a fictional Attendance Taker, and complete that user's first sign-in online in Browser B.
-3. In Browser A, add Alex Meadow, create a draft service, check Alex present, and wait for **Synced**.
-4. In Browser B, wait for **Synced** and confirm Alex, the service, and attendance total of one.
-5. Take Browser B offline. Add Robin Field or change attendance. Confirm **Saved on this device** or **Waiting to sync**, close the browser, reopen it while still offline, and verify the change remains.
-6. Restore connectivity and wait for automatic **Syncing**, then **Synced**. Use **Sync now** only as a backup.
-7. Focus Browser A, wait for **Synced**, and confirm Browser B's change appears exactly once.
+2. Open Browser A as Admin, wait for **Online**, invite a fictional Attendance Taker, and complete that user's first sign-in online in Browser B.
+3. In Browser A, add Alex Meadow, create a draft service, check Alex present, and allow background sync to complete.
+4. In Browser B, focus the app and confirm Alex, the service, and attendance total of one.
+5. Take Browser B offline. Add Robin Field or change attendance. Confirm the offline bar reports the queued change count, close the browser, reopen it while still offline, and verify the change remains.
+6. Restore connectivity and confirm **Back online — syncing…**, followed briefly by **All changes synced.** Use **Sync now** only as a backup.
+7. Focus Browser A and confirm Browser B's change appears exactly once.
 8. Uncheck and recheck one attendee and synchronize both browsers; confirm no duplicate attendance row and the total is correct.
 9. As the Attendance Taker, confirm `/users` and `/settings` redirect to the dashboard and direct archive/delete requests are rejected.

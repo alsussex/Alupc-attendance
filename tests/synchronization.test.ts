@@ -334,6 +334,47 @@ describe("multi-device upload and retry", () => {
     expect(await getServiceAttendance(service.id)).toHaveLength(1);
   });
 
+  it("preserves the latest rapid attendance intent on a second device", async () => {
+    const member = await saveMember(user, {
+      firstName: "Robin",
+      lastName: "Field",
+    });
+    const service = await saveService(user, {
+      serviceDate: "2026-07-19",
+      serviceType: "Sunday Morning",
+      status: "draft",
+    });
+    await Promise.all([
+      setMemberAttendance(user, service.id, member.id, true),
+      setMemberAttendance(user, service.id, member.id, false),
+    ]);
+    const cloud = new MemoryUploadTarget();
+    await uploadPendingChanges(organizationId, cloud);
+
+    const cloudRows: Partial<Record<PullTable, Record<string, unknown>[]>> = {
+      people: [],
+      services: [],
+      service_attendance: [],
+    };
+    for (const [key, value] of cloud.rows) {
+      if (key.startsWith("people:")) cloudRows.people?.push(value);
+      if (key.startsWith("services:")) cloudRows.services?.push(value);
+      if (key.startsWith("service_attendance:")) {
+        cloudRows.service_attendance?.push(value);
+      }
+    }
+
+    await clearLocalDatabase();
+    await pullOrganizationData(
+      organizationId,
+      new MemoryPullSource(cloudRows),
+    );
+
+    const attendance = await getServiceAttendance(service.id);
+    expect(attendance).toHaveLength(1);
+    expect(attendance[0].present).toBe(false);
+  });
+
   it("propagates an offline reactivation to another device without duplication", async () => {
     const member = await saveMember(administrator, {
       firstName: "Taylor",

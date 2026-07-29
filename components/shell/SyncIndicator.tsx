@@ -1,53 +1,49 @@
 "use client";
 
-import type { SyncPhase } from "@/lib/domain";
 import { useSynchronization } from "@/components/sync/SyncProvider";
-
-const labels: Record<SyncPhase, string> = {
-  loading: "Syncing",
-  downloading: "Syncing",
-  complete: "Synced",
-  local: "Saved on this device",
-  pending: "Waiting to sync",
-  error: "Sync error",
-  offline: "Offline",
-};
+import {
+  syncBannerPresentation,
+  syncIndicatorPresentation,
+} from "@/lib/sync/presentation";
 
 export function SyncIndicator() {
-  const { phase, error, syncNow } = useSynchronization();
-  const label = labels[phase];
+  const synchronization = useSynchronization();
+  const presentation = syncIndicatorPresentation(synchronization);
   return (
     <button
-      className={`sync-indicator ${phase}`}
+      className={`sync-indicator ${presentation.tone}`}
       type="button"
-      onClick={() => void syncNow()}
-      aria-label={`${label}. Activate to synchronize now.`}
-      title={error ?? "Activate to synchronize now"}
+      onClick={() => void synchronization.syncNow()}
+      aria-label={`${presentation.label}. Activate to synchronize now.`}
+      title={
+        synchronization.consecutiveFailures >= 3
+          ? synchronization.error ?? "Automatic synchronization will retry."
+          : "Synchronization runs automatically. Activate for manual sync."
+      }
     >
       <span className="status-dot" aria-hidden="true" />
-      {label}
+      {presentation.label}
     </button>
   );
 }
 
 export function SyncBanner() {
-  const { phase, error, syncNow } = useSynchronization();
-  if (phase === "complete") return null;
+  const synchronization = useSynchronization();
+  const presentation = syncBannerPresentation(synchronization);
+  if (!presentation) return null;
+
   return (
     <div
-      className={`sync-banner ${phase}`}
-      role={phase === "error" ? "alert" : "status"}
+      className={`sync-banner ${presentation.tone}`}
+      role={presentation.tone === "error" ? "alert" : "status"}
     >
       <span className="status-dot" aria-hidden="true" />
-      <span>
-        <strong>{labels[phase]}</strong>
-        {phase === "error" && error ? <small>{error}</small> : null}
-      </span>
-      {(phase === "error" ||
-        phase === "offline" ||
-        phase === "local" ||
-        phase === "pending") && (
-        <button type="button" onClick={() => void syncNow()}>
+      <strong>{presentation.message}</strong>
+      {presentation.showManualAction && (
+        <button
+          type="button"
+          onClick={() => void synchronization.syncNow()}
+        >
           Sync now
         </button>
       )}

@@ -60,7 +60,6 @@ export function PeopleDirectory() {
   const [reactivateTarget, setReactivateTarget] = useState<Person | null>(null);
   const [duplicate, setDuplicate] = useState<Person | null>(null);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -111,14 +110,12 @@ export function PeopleDirectory() {
     setSaving(false);
     setForm(null);
     setDuplicate(null);
-    setMessage(form.id ? "Member updated." : "Member added.");
     await refresh();
   }
 
   async function deactivate(person: Person) {
     if (!user || !confirm(`Mark ${person.displayName} inactive?`)) return;
     await markMemberInactive(user, person.id);
-    setMessage(`${person.displayName} is now inactive.`);
     await refresh();
   }
 
@@ -130,9 +127,6 @@ export function PeopleDirectory() {
     setSaving(false);
     setReactivateTarget(null);
     setProfile(null);
-    setMessage(
-      `${target.displayName} is active and available for attendance again.`,
-    );
     await refresh();
   }
 
@@ -147,7 +141,6 @@ export function PeopleDirectory() {
     }
     await removeMember(user, person.id);
     setProfile(null);
-    setMessage(`${person.displayName} was removed from the directory.`);
     await refresh();
   }
 
@@ -176,12 +169,6 @@ export function PeopleDirectory() {
           <span aria-hidden="true">＋</span> Add member
         </button>
       </div>
-
-      {message && (
-        <div className="notice success" role="status">
-          {message}
-        </div>
-      )}
 
       <section className="panel">
         {isAdmin(user) && (
@@ -377,7 +364,7 @@ export function PeopleDirectory() {
                 disabled={saving}
                 onClick={() => void reactivate()}
               >
-                {saving ? "Reactivating…" : "Reactivate member"}
+                Reactivate member
               </button>
             </div>
           </section>
@@ -450,11 +437,7 @@ export function PeopleDirectory() {
                   Cancel
                 </button>
                 <button className="button primary" disabled={saving}>
-                  {saving
-                    ? "Saving…"
-                    : duplicate
-                      ? "Add anyway"
-                      : "Save member"}
+                  {duplicate ? "Add anyway" : "Save member"}
                 </button>
               </div>
               {duplicate && (

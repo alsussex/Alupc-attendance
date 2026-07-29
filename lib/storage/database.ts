@@ -110,6 +110,13 @@ export function getDatabase() {
   return databasePromise;
 }
 
+export async function closeLocalDatabaseConnection() {
+  if (!databasePromise) return;
+  const database = await databasePromise;
+  database.close();
+  databasePromise = null;
+}
+
 export async function clearLocalDatabase() {
   const database = await getDatabase();
   const transaction = database.transaction(
