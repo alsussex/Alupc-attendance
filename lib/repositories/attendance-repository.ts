@@ -388,5 +388,76 @@ export async function addServiceVisitor(
 
 export async function listServiceVisitors(serviceId: string) {
   const database = await getDatabase();
-  return database.getAllFromIndex("visitors", "serviceId", serviceId);
+  return (
+    await database.getAllFromIndex("visitors", "serviceId", serviceId)
+  ).filter((visitor) => !visitor.deletedAt);
+}
+
+export async function editServiceVisitor(
+  user: UserContext,
+  id: string,
+  input: { firstName: string; lastName: string },
+) {
+  const database = await getDatabase();
+  const visitor = await database.get("visitors", id);
+  if (
+    !visitor ||
+    visitor.deletedAt ||
+    visitor.organizationId !== user.organizationId
+  ) {
+    throw new Error("Visitor not found");
+  }
+  const updated: ServiceVisitor = {
+    ...visitor,
+    firstName: input.firstName.trim(),
+    lastName: input.lastName.trim(),
+    displayName: makeDisplayName(input.firstName, input.lastName),
+    updatedAt: nowIso(),
+    updatedBy: user.userId,
+  };
+  await database.put("visitors", updated);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "service_visitors",
+    recordId: updated.id,
+    payload: toCloudRecord(updated),
+  });
+  announceDataChanged();
+  return updated;
+}
+
+export async function removeServiceVisitor(user: UserContext, id: string) {
+  const database = await getDatabase();
+  const visitor = await database.get("visitors", id);
+  if (
+    !visitor ||
+    visitor.deletedAt ||
+    visitor.organizationId !== user.organizationId
+  ) {
+    throw new Error("Visitor not found");
+  }
+  const timestamp = nowIso();
+  const updated: ServiceVisitor = {
+    ...visitor,
+    deletedAt: timestamp,
+    updatedAt: timestamp,
+    updatedBy: user.userId,
+  };
+  await database.put("visitors", updated);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "service_visitors",
+    recordId: updated.id,
+    payload: toCloudRecord(updated),
+  });
+  if (visitor.memberPersonId) {
+    await setMemberAttendance(
+      user,
+      visitor.serviceId,
+      visitor.memberPersonId,
+      false,
+    );
+  }
+  announceDataChanged();
+  return updated;
 }

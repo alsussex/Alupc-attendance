@@ -81,6 +81,7 @@ export interface ServiceVisitor extends AuditedRecord {
   displayName: string;
   savedAsMember: boolean;
   memberPersonId?: string;
+  deletedAt?: string;
 }
 
 export interface UserContext {

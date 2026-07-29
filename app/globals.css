@@ -160,18 +160,36 @@ input::placeholder { color: #8a9994; }
 .attendance-total { min-width: 166px; padding: 1rem 1.2rem; display: grid; border-radius: 16px; background: var(--brand); color: white; text-align: center; box-shadow: 0 10px 24px rgb(36 73 63 / 17%); }
 .attendance-total strong { font-size: 2.5rem; line-height: 1; }
 .attendance-total span { font-size: .8rem; color: #ccddd7; }
+.attendance-controls { min-height: 70px; padding: .75rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--line); background: #fbfcfb; }
+.attendance-filters { padding: .25rem; display: flex; gap: .2rem; border: 1px solid var(--line); border-radius: 13px; background: white; }
+.attendance-filter { min-height: 42px; padding: .55rem .85rem; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: .79rem; font-weight: 760; cursor: pointer; }
+.attendance-filter:hover { background: #f4f7f5; color: var(--ink); }
+.attendance-filter.active { background: var(--brand); color: white; box-shadow: 0 4px 12px rgb(36 73 63 / 16%); }
+.mark-absent-button:disabled { cursor: default; }
+.attendance-summary { min-height: 54px; padding: .65rem 1rem; display: flex; align-items: center; gap: 1.25rem; border-bottom: 1px solid var(--line); color: var(--muted); font-size: .83rem; }
+.attendance-summary strong { color: var(--brand); font-size: .9rem; }
 .attendance-list { display: grid; }
 .attendance-row { min-height: 76px; padding: .8rem 1rem; grid-template-columns: 0 42px 44px 1fr auto; display: grid; align-items: center; gap: .8rem; border-bottom: 1px solid #edf1ef; cursor: pointer; }
 .attendance-row input { position: absolute; opacity: 0; pointer-events: none; }
-.attendance-row.selected { background: #f2f8f5; }
+.attendance-row:hover { background: #fafcfb; }
+.attendance-row:focus-within { outline: 3px solid rgb(47 101 81 / 22%); outline-offset: -3px; }
+.attendance-row.selected { background: #edf7f1; box-shadow: inset 4px 0 var(--brand); }
 .attendance-check { width: 42px; height: 42px; border: 2px solid #b9c8c2; border-radius: 12px; display: grid; place-items: center; color: white; font-weight: 900; }
 .attendance-row.selected .attendance-check { border-color: var(--brand); background: var(--brand); }
 .attendance-name { font-size: 1.05rem; font-weight: 760; }
 .attendance-state { color: var(--muted); font-size: .8rem; }
+.attendance-row.selected .attendance-state { color: var(--brand); font-weight: 800; }
+.attendance-empty { min-height: 150px; padding: 2rem; display: grid; place-items: center; align-content: center; text-align: center; }
+.attendance-empty span { margin-top: .25rem; color: var(--muted); font-size: .82rem; }
 .visitor-summary { padding: 1.2rem; background: #fbfcfb; }
-.visitor-summary h2 { font-size: 1rem; }
-.visitor-summary div { padding: .45rem 0; display: flex; justify-content: space-between; border-top: 1px solid var(--line); }
-.visitor-summary span { color: var(--muted); font-size: .8rem; }
+.visitor-summary h2 { margin-bottom: .5rem; font-size: 1rem; }
+.visitor-row { min-height: 66px; padding: .6rem 0; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-top: 1px solid var(--line); }
+.visitor-name { min-width: 0; display: grid; }
+.visitor-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.visitor-name small { margin-top: .12rem; color: var(--muted); font-size: .75rem; }
+.visitor-actions { display: flex; gap: .4rem; }
+.visitor-actions .button { min-height: 42px; padding: .45rem .7rem; }
+.form-note { margin: 0; padding: .85rem 1rem; border-radius: 12px; background: #f4f7f5; color: var(--muted); font-size: .8rem; }
 .sticky-actions { position: sticky; bottom: 1rem; z-index: 5; padding: .8rem .9rem .8rem 1.2rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border: 1px solid var(--line); border-radius: 16px; background: rgb(255 255 255 / 94%); box-shadow: var(--shadow); backdrop-filter: blur(12px); }
 .sticky-actions > span { color: var(--muted); font-weight: 700; }
 .sticky-actions div { display: flex; gap: .6rem; }
@@ -624,6 +642,11 @@ input::placeholder { color: #8a9994; }
   .page-heading.with-action .button { width: 100%; }
   .form-grid { grid-template-columns: 1fr; }
   .panel-toolbar { align-items: stretch; flex-direction: column; }
+  .attendance-controls { align-items: stretch; flex-direction: column; }
+  .attendance-filters { overflow-x: auto; }
+  .attendance-filter { flex: 1 0 auto; }
+  .mark-absent-button { width: 100%; }
+  .attendance-summary { justify-content: space-between; gap: .5rem; }
   .search-field { max-width: none; }
   .count-label { padding-left: .2rem; }
   .person-row { flex-wrap: wrap; }
@@ -636,6 +659,8 @@ input::placeholder { color: #8a9994; }
   .attendance-row { grid-template-columns: 0 42px 1fr auto; }
   .attendance-row .avatar { display: none; }
   .attendance-state { display: none; }
+  .visitor-row { align-items: stretch; flex-direction: column; }
+  .visitor-actions .button { flex: 1; }
   .sticky-actions { bottom: .65rem; align-items: stretch; flex-direction: column; }
   .sticky-actions > span { display: none; }
   .sticky-actions div { display: grid; grid-template-columns: 1fr 1.3fr; }

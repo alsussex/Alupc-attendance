@@ -141,5 +141,6 @@ export function fromCloudRecord(
     displayName: requiredString(row, "display_name"),
     savedAsMember: requiredBoolean(row, "saved_as_member"),
     memberPersonId: optionalString(row, "member_person_id"),
+    deletedAt: optionalString(row, "deleted_at"),
   };
 }

@@ -63,7 +63,7 @@ export async function loadDashboardSnapshot(
   now = new Date(),
 ): Promise<DashboardSnapshot> {
   const database = await getDatabase();
-  const [organization, people, services, attendance, visitors] =
+  const [organization, people, services, attendance, storedVisitors] =
     await Promise.all([
       database.get("organizations", organizationId),
       database.getAllFromIndex("people", "organizationId", organizationId),
@@ -86,6 +86,7 @@ export async function loadDashboardSnapshot(
     people.add(record.personId);
     attendanceByService.set(record.serviceId, people);
   }
+  const visitors = storedVisitors.filter((visitor) => !visitor.deletedAt);
   const visitorsByService = new Map<string, ServiceVisitor[]>();
   for (const visitor of visitors) {
     visitorsByService.set(visitor.serviceId, [

@@ -20,10 +20,12 @@ import {
 } from "@/lib/domain";
 import {
   addServiceVisitor,
+  editServiceVisitor,
   getServiceAttendance,
   listActiveMembers,
   listServices,
   listServiceVisitors,
+  removeServiceVisitor,
   removeService,
   saveService,
   setServiceArchived,
@@ -32,6 +34,11 @@ import {
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
 import { isAdmin } from "@/lib/auth/permissions";
 import { serviceSaveFeedback } from "@/lib/services/save-feedback";
+import {
+  attendanceCounts,
+  filterAttendanceMembers,
+  type AttendanceFilter,
+} from "@/lib/services/attendance-view";
 
 function localDate() {
   const date = new Date();
@@ -51,8 +58,12 @@ export function ServiceManager() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [visitors, setVisitors] = useState<ServiceVisitor[]>([]);
   const [search, setSearch] = useState("");
+  const [attendanceFilter, setAttendanceFilter] =
+    useState<AttendanceFilter>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [visitorOpen, setVisitorOpen] = useState(false);
+  const [editingVisitor, setEditingVisitor] =
+    useState<ServiceVisitor | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [serviceAction, setServiceAction] = useState<
     "draft" | "completed" | null
@@ -93,6 +104,7 @@ export function ServiceManager() {
     setSelected(nextSelected);
     setVisitors(nextVisitors);
     setSearch("");
+    setAttendanceFilter("all");
   }, []);
 
   useEffect(() => {
@@ -126,6 +138,25 @@ export function ServiceManager() {
     await setMemberAttendance(user, active.id, personId, present);
   }
 
+  async function markAllAbsent() {
+    if (!user || !active || selectedRef.current.size === 0) return;
+    if (
+      !confirm(
+        "Mark all members absent? This will clear every Present selection.",
+      )
+    ) {
+      return;
+    }
+    const previouslySelected = [...selectedRef.current];
+    selectedRef.current = new Set();
+    setSelected(new Set());
+    await Promise.all(
+      previouslySelected.map((personId) =>
+        setMemberAttendance(user, active.id, personId, false),
+      ),
+    );
+  }
+
   async function setStatus(status: "draft" | "completed") {
     if (!user || !active || serviceAction) return;
     setServiceAction(status);
@@ -142,9 +173,18 @@ export function ServiceManager() {
   }
 
   const filteredMembers = useMemo(() => {
-    const normalized = search.toLocaleLowerCase().trim();
-    return members.filter((member) => member.displayName.toLocaleLowerCase().includes(normalized));
-  }, [members, search]);
+    return filterAttendanceMembers(
+      members,
+      selected,
+      attendanceFilter,
+      search,
+    );
+  }, [attendanceFilter, members, search, selected]);
+
+  const memberCounts = useMemo(
+    () => attendanceCounts(members, selected),
+    [members, selected],
+  );
 
   const total = countAttendance(
     selected,
@@ -218,6 +258,46 @@ export function ServiceManager() {
             </label>
             <button className="button secondary" type="button" onClick={() => setVisitorOpen(true)}>＋ Add visitor</button>
           </div>
+          <div className="attendance-controls">
+            <div
+              className="attendance-filters"
+              role="group"
+              aria-label="Filter attendance list"
+            >
+              {(["all", "present", "absent"] as const).map((filter) => (
+                <button
+                  className={
+                    attendanceFilter === filter
+                      ? "attendance-filter active"
+                      : "attendance-filter"
+                  }
+                  type="button"
+                  key={filter}
+                  aria-pressed={attendanceFilter === filter}
+                  onClick={() => setAttendanceFilter(filter)}
+                >
+                  {filter === "all"
+                    ? `All (${memberCounts.total})`
+                    : filter === "present"
+                      ? `Present (${memberCounts.present})`
+                      : `Absent (${memberCounts.absent})`}
+                </button>
+              ))}
+            </div>
+            <button
+              className="button subtle mark-absent-button"
+              type="button"
+              disabled={memberCounts.present === 0}
+              onClick={() => void markAllAbsent()}
+            >
+              Mark all absent
+            </button>
+          </div>
+          <div className="attendance-summary" aria-live="polite">
+            <strong>{memberCounts.present} present</strong>
+            <span>{memberCounts.absent} absent</span>
+            <span>{memberCounts.total} total</span>
+          </div>
           <div className="attendance-list">
             {filteredMembers.map((member) => {
               const checked = selected.has(member.id);
@@ -227,18 +307,54 @@ export function ServiceManager() {
                   <span className="attendance-check" aria-hidden="true">{checked ? "✓" : ""}</span>
                   <span className="avatar">{member.firstName[0]}{member.lastName[0]}</span>
                   <span className="attendance-name">{member.displayName}</span>
-                  <span className="attendance-state">{checked ? "Present" : "Not selected"}</span>
+                  <span className="attendance-state">{checked ? "Present" : "Absent"}</span>
                 </label>
               );
             })}
+            {filteredMembers.length === 0 && (
+              <div className="attendance-empty">
+                <strong>No members match this view.</strong>
+                <span>Try another filter or clear the search.</span>
+              </div>
+            )}
           </div>
           {visitors.length > 0 && (
             <div className="visitor-summary">
               <h2>Visitors for this service</h2>
               {visitors.map((visitor) => (
-                <div key={visitor.id}>
-                  <strong>{visitor.displayName}</strong>
-                  <span>{visitor.savedAsMember ? "Saved as member" : "This service only"}</span>
+                <div className="visitor-row" key={visitor.id}>
+                  <span className="visitor-name">
+                    <strong>{visitor.displayName}</strong>
+                    <small>{visitor.savedAsMember ? "Saved as member" : "This service only"}</small>
+                  </span>
+                  <span className="visitor-actions">
+                    <button
+                      className="button subtle"
+                      type="button"
+                      onClick={() => setEditingVisitor(visitor)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="button danger-text"
+                      type="button"
+                      onClick={() => {
+                        if (!user) return;
+                        if (
+                          !confirm(
+                            "Remove this visitor from the service? This will remove their attendance entry from this service.",
+                          )
+                        ) {
+                          return;
+                        }
+                        void removeServiceVisitor(user, visitor.id).then(() =>
+                          openService(active),
+                        );
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </span>
                 </div>
               ))}
             </div>
@@ -274,6 +390,18 @@ export function ServiceManager() {
               setVisitorOpen(false);
               await openService(active);
               await refreshLists();
+            }}
+          />
+        )}
+        {editingVisitor && (
+          <VisitorModal
+            existing={editingVisitor}
+            onClose={() => setEditingVisitor(null)}
+            onSave={async (input) => {
+              if (!user) return;
+              await editServiceVisitor(user, editingVisitor.id, input);
+              setEditingVisitor(null);
+              await openService(active);
             }}
           />
         )}
@@ -362,10 +490,24 @@ export function ServiceManager() {
   }
 }
 
-function VisitorModal({ onClose, onSave }: { onClose: () => void; onSave: (input: { firstName: string; lastName: string; saveAsMember: boolean }) => void }) {
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [saveAsMember, setSaveAsMember] = useState(false);
+function VisitorModal({
+  onClose,
+  onSave,
+  existing,
+}: {
+  onClose: () => void;
+  onSave: (input: {
+    firstName: string;
+    lastName: string;
+    saveAsMember: boolean;
+  }) => void;
+  existing?: ServiceVisitor;
+}) {
+  const [firstName, setFirstName] = useState(existing?.firstName ?? "");
+  const [lastName, setLastName] = useState(existing?.lastName ?? "");
+  const [saveAsMember, setSaveAsMember] = useState(
+    existing?.savedAsMember ?? false,
+  );
   function submit(event: FormEvent) {
     event.preventDefault();
     onSave({ firstName, lastName, saveAsMember });
@@ -373,17 +515,25 @@ function VisitorModal({ onClose, onSave }: { onClose: () => void; onSave: (input
   return (
     <div className="modal-backdrop">
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="visitor-title">
-        <div className="modal-heading"><div><p className="eyebrow">This service</p><h2 id="visitor-title">Add a visitor</h2></div><button className="icon-button" aria-label="Close" type="button" onClick={onClose}>×</button></div>
+        <div className="modal-heading"><div><p className="eyebrow">This service</p><h2 id="visitor-title">{existing ? "Edit visitor" : "Add a visitor"}</h2></div><button className="icon-button" aria-label="Close" type="button" onClick={onClose}>×</button></div>
         <form className="form-stack" onSubmit={submit}>
           <div className="form-grid">
             <label>First name<input autoFocus value={firstName} onChange={(event) => setFirstName(event.target.value)} required /></label>
             <label>Last name<input value={lastName} onChange={(event) => setLastName(event.target.value)} required /></label>
           </div>
-          <label className="choice-row">
-            <input type="checkbox" checked={saveAsMember} onChange={(event) => setSaveAsMember(event.target.checked)} />
-            <span><strong>Save as member for future services</strong><small>They will appear in future attendance lists.</small></span>
-          </label>
-          <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose}>Cancel</button><button className="button primary">Add visitor</button></div>
+          {!existing && (
+            <label className="choice-row">
+              <input type="checkbox" checked={saveAsMember} onChange={(event) => setSaveAsMember(event.target.checked)} />
+              <span><strong>Save as member for future services</strong><small>They will appear in future attendance lists.</small></span>
+            </label>
+          )}
+          {existing?.savedAsMember && (
+            <p className="form-note">
+              This visitor is linked to a permanent member. Editing this
+              service entry does not change the permanent member record.
+            </p>
+          )}
+          <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose}>Cancel</button><button className="button primary">{existing ? "Save visitor" : "Add visitor"}</button></div>
         </form>
       </section>
     </div>
