@@ -10,6 +10,11 @@ import type {
 import { getDatabase } from "@/lib/storage/database";
 
 export type ServiceDirectoryFilter = "all" | "draft" | "completed";
+export type ServiceSyncState =
+  | "synced"
+  | "pending"
+  | "uploading"
+  | "conflict";
 
 export interface ServiceDirectoryItem {
   service: ChurchService;
@@ -18,6 +23,7 @@ export interface ServiceDirectoryItem {
   totalPresent: number;
   lastEditor?: string;
   pendingSync: boolean;
+  syncState: ServiceSyncState;
 }
 
 export interface ServiceMonthGroup {
@@ -142,6 +148,21 @@ export function summarizeOrganizationServices(
   return services
     .filter((service) => !service.deletedAt && !service.isArchived)
     .map((service): ServiceDirectoryItem => {
+      const serviceQueue = queue.filter((item) =>
+        queueBelongsToService(item, service.id),
+      );
+      const syncState: ServiceSyncState = serviceQueue.some(
+        (item) =>
+          item.status === "conflict" ||
+          (item.status === "error" &&
+            item.lastError?.includes("SYNC_CONFLICT")),
+      )
+        ? "conflict"
+        : serviceQueue.some((item) => item.status === "processing")
+          ? "uploading"
+          : serviceQueue.length
+            ? "pending"
+            : "synced";
       const membersPresent = attendance.filter(
         (record) => record.serviceId === service.id && record.present,
       ).length;
@@ -157,9 +178,8 @@ export function summarizeOrganizationServices(
         visitorsPresent,
         totalPresent: membersPresent + visitorsPresent,
         lastEditor: profileNames.get(service.updatedBy),
-        pendingSync: queue.some((item) =>
-          queueBelongsToService(item, service.id),
-        ),
+        pendingSync: serviceQueue.length > 0,
+        syncState,
       };
     })
     .sort(serviceSort);

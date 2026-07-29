@@ -189,7 +189,11 @@ details[open] > summary > .folder-icon { transform: rotate(90deg); }
 .service-directory-counts { padding-left: 1rem; border-left: 1px solid var(--line); }
 .service-directory-counts strong { color: var(--brand); font-size: 1.35rem; }
 .service-directory-state { justify-items: start; }
-.pending-service-sync { color: #8a641f; font-size: .68rem; font-weight: 760; }
+.service-sync-state { font-size: .68rem; font-weight: 760; }
+.service-sync-state.pending { color: #8a641f; }
+.service-sync-state.uploading { color: #1764c0; }
+.service-sync-state.conflict { color: #a6372d; }
+.service-sync-state.synced { color: #397453; }
 .service-row-arrow { color: var(--muted); font-size: 1.3rem; }
 .status-pill { padding: .3rem .55rem; border-radius: 999px; font-size: .7rem; font-weight: 800; text-transform: capitalize; }
 .status-pill.draft { background: #fff4de; color: #795518; }

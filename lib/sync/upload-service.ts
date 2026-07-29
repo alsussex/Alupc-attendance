@@ -2,6 +2,7 @@
 
 import type { SyncQueueItem, VisitorSyncConflict } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
+import { announceDataChanged } from "@/lib/storage/data-events";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { reconcileVisitorMutation } from "@/lib/sync/visitor-conflicts";
 
@@ -349,6 +350,7 @@ export async function uploadPendingChanges(
       updatedAt: new Date().toISOString(),
     };
     await database.put("syncQueue", processing);
+    announceDataChanged();
     if (process.env.NODE_ENV === "development") {
       console.info("[sync] mutation attempt", {
         mutationId: item.id,
@@ -398,6 +400,7 @@ export async function uploadPendingChanges(
           },
         });
       }
+      announceDataChanged();
       result.uploaded += 1;
     } catch (caught) {
       const message =
@@ -426,6 +429,7 @@ export async function uploadPendingChanges(
               : undefined,
           updatedAt: new Date().toISOString(),
         });
+        announceDataChanged();
       }
       if (
         mutationIsStillCurrent &&

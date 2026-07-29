@@ -1245,8 +1245,29 @@ export function ServiceManager() {
                               : "Completed"}
                           </span>
                           {item.pendingSync && (
-                            <small className="pending-service-sync">
-                              ● Waiting to sync
+                            <small
+                              className={`service-sync-state ${item.syncState}`}
+                              aria-label={`Synchronization status: ${
+                                item.syncState === "conflict" && !isAdmin(user)
+                                  ? "needs attention"
+                                  : item.syncState
+                              }`}
+                            >
+                              {item.syncState === "uploading"
+                                ? "↑ Uploading"
+                                : item.syncState === "conflict"
+                                  ? isAdmin(user)
+                                    ? "! Conflict"
+                                    : "! Needs attention"
+                                  : "● Sync pending"}
+                            </small>
+                          )}
+                          {!item.pendingSync && (
+                            <small
+                              className="service-sync-state synced"
+                              aria-label="Synchronization status: synced"
+                            >
+                              ✓ Synced
                             </small>
                           )}
                         </span>

@@ -76,6 +76,7 @@ function item(
     visitorsPresent: 0,
     totalPresent: 0,
     pendingSync: false,
+    syncState: "synced",
   };
 }
 
@@ -375,6 +376,7 @@ describe("year and month service folders", () => {
       visitorsPresent: 1,
       lastEditor: "Casey Admin",
       pendingSync: true,
+      syncState: "pending",
     });
     expect(directory.find((entry) => entry.service.id === other.id)).toMatchObject({
       totalPresent: 0,
@@ -395,5 +397,59 @@ describe("year and month service folders", () => {
     );
     expect(summaries).toHaveLength(1);
     expect(summaries[0].service.id).toBe("stable-id");
+  });
+
+  it("derives each draft sync state from its own parent and dependent mutations", () => {
+    const service = item("draft-sync-state", "2026-07-29").service;
+    const mutation = (
+      status: "pending" | "processing" | "error" | "conflict",
+      table: "services" | "service_attendance" | "service_visitors",
+      lastError?: string,
+    ) => ({
+      id: `${table}-${status}`,
+      organizationId,
+      table,
+      operation: "upsert" as const,
+      recordId:
+        table === "services" ? service.id : `${service.id}-${table}`,
+      payload:
+        table === "services"
+          ? { id: service.id }
+          : { id: `${service.id}-${table}`, service_id: service.id },
+      status,
+      attempts: 1,
+      lastError,
+      createdAt: "2026-07-29T12:00:00.000Z",
+      updatedAt: "2026-07-29T12:00:00.000Z",
+    });
+
+    expect(
+      summarizeOrganizationServices(
+        [service],
+        [],
+        [],
+        [],
+        [mutation("processing", "service_attendance")],
+      )[0].syncState,
+    ).toBe("uploading");
+    expect(
+      summarizeOrganizationServices(
+        [service],
+        [],
+        [],
+        [],
+        [
+          mutation("pending", "services"),
+          mutation(
+            "error",
+            "service_visitors",
+            "SYNC_CONFLICT: server version is newer",
+          ),
+        ],
+      )[0].syncState,
+    ).toBe("conflict");
+    expect(
+      summarizeOrganizationServices([service], [], [], [], [])[0].syncState,
+    ).toBe("synced");
   });
 });

@@ -221,6 +221,37 @@ bidirectional process. **Settings > Device & Sync > Repair local sync state**
 refreshes authentication and rebuilds remote cached copies only when no local
 writes are pending.
 
+### Organization-wide draft editing
+
+A draft is an organization record, never a private browser or creator record.
+`created_by` is retained only for audit history. The services SELECT policy and
+every pull query are scoped by `organization_id`, so Admins and Attendance
+Takers in the same church receive the same service UUID, status, attendance
+rows, named visitors, and unnamed visitor count.
+
+Draft discovery runs at startup and sign-in, after token refresh, on browser
+focus, on network reconnection, after an organization-filtered Realtime event,
+after each successful upload, through **Sync now**, and through the 30-second
+incremental reconciliation fallback. A pull announces a local data change, so
+an open Services or attendance screen refreshes from IndexedDB without a page
+reload. Realtime is an accelerator; the durable cursor-based pull is the source
+of recovery after a missed event or direct Supabase edit.
+
+Service, person, visitor, and attendance mutations use stable IDs. Attendance
+uses the canonical `serviceId:personId` local key plus the database unique
+constraint on organization/service/person. Retries therefore update the same
+records rather than creating a second draft or attendance row. The Services
+directory derives **Synced**, **Sync pending**, **Uploading**, or **Conflict**
+from the service and all of its dependent queued mutations. Attendance Takers
+see the non-technical **Needs attention** wording for a conflict.
+
+Completion is a one-way precedence rule during ordinary reconciliation. If a
+stale pending Draft meets a newer Completed server version, IndexedDB adopts
+Completed and rewrites the queued service mutation against that current base
+version while preserving pending attendance and visitors. Only an Admin using
+the explicit, permitted reopen workflow against the current version can reopen
+a completed service.
+
 ### Save and sync feedback
 
 Routine changes—including attendance checkboxes, people, visitors, service details, and member reactivation—update IndexedDB immediately and synchronize quietly. Normal online work keeps a stable **Online** indicator instead of flashing between syncing states. A subtle pending indicator appears only when queued work remains longer than the normal background-sync window.
@@ -253,9 +284,9 @@ The prominent sync bar appears only when useful:
 - Member reactivation updates the existing UUID in place, clears its inactivity timestamp, and leaves every historical attendance row attached.
 - Conflict resolution is remote-authoritative when no local write is pending
   and optimistic-concurrency protected when both sides changed the same record.
-  Conflicting local work is retained rather than guessed away. There is not yet
-  a field-level conflict review editor; an Admin can inspect the entity,
-  record ID, attempt count, and error under Device & Sync.
+  Conflicting local work is retained rather than guessed away. Visitor
+  conflicts have field-level Admin review; other record conflicts expose the
+  entity, record ID, attempt count, and error under Device & Sync.
 
 ### People lifecycle RLS and queued recovery
 
@@ -267,7 +298,9 @@ A mutation that previously failed RLS remains in IndexedDB with `error` status. 
 
 ### Known limitations
 
-- Sync runs while the app is open; it does not use background sync, push notifications, or Supabase Realtime.
+- Sync and Realtime reconciliation run while the app is open. There is no
+  operating-system background sync or push notification after the browser has
+  been fully closed.
 - The application supports one active organization per profile and no organization switching.
 - Invitation resend depends on Supabase Auth email delivery and rate limits.
 - Last-sign-in information is available only through the server-only Auth Admin API.
