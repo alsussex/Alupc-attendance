@@ -12,7 +12,7 @@ import {
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
 import { isAdmin } from "@/lib/auth/permissions";
 
-const emptySnapshot: DashboardSnapshot = {
+export const emptyDashboardSnapshot: DashboardSnapshot = {
   churchName: "Abundant Life UPC",
   totalPeople: 0,
   servicesThisMonth: 0,
@@ -37,10 +37,28 @@ function greetingFor(date: Date) {
   return "Good evening";
 }
 
-function formatServiceDate(value: string) {
+function dateKey(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function formatServiceDate(value: string, long = false) {
   return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
-    month: "short",
+    month: long ? "long" : "short",
     day: "numeric",
+    year: long ? "numeric" : undefined,
+  });
+}
+
+function formatServiceTime(value?: string) {
+  if (!value) return null;
+  const [hours, minutes] = value.split(":").map(Number);
+  return new Date(2026, 0, 1, hours, minutes).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
   });
 }
 
@@ -80,13 +98,9 @@ function relativeTime(timestamp: string, now: Date) {
 
 export function Dashboard() {
   const { user } = useAuth();
-  const [snapshot, setSnapshot] = useState(emptySnapshot);
+  const [snapshot, setSnapshot] = useState(emptyDashboardSnapshot);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [expandedMonth, setExpandedMonth] = useState<
-    string | null | undefined
-  >(undefined);
-  const now = useMemo(() => new Date(), []);
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -109,56 +123,163 @@ export function Dashboard() {
     };
   }, [refresh]);
 
+  return (
+    <DashboardView
+      snapshot={snapshot}
+      loading={loading}
+      error={error}
+      isAdministrator={isAdmin(user)}
+    />
+  );
+}
+
+export function DashboardView({
+  snapshot,
+  loading,
+  error = "",
+  isAdministrator,
+  currentDate,
+}: {
+  snapshot: DashboardSnapshot;
+  loading: boolean;
+  error?: string;
+  isAdministrator: boolean;
+  currentDate?: Date;
+}) {
+  const now = useMemo(() => currentDate ?? new Date(), [currentDate]);
+  const [expandedMonth, setExpandedMonth] = useState<
+    string | null | undefined
+  >(undefined);
   const serviceGroups = useMemo(
     () => groupServices(snapshot.services),
     [snapshot.services],
   );
-
   const visibleMonth =
     expandedMonth === undefined ? serviceGroups[0]?.key : expandedMonth;
-
   const draft = snapshot.draftService;
+  const today = dateKey(now);
+  const nextService = useMemo(
+    () =>
+      [...snapshot.services]
+        .filter((service) => service.serviceDate >= today)
+        .sort(
+          (left, right) =>
+            left.serviceDate.localeCompare(right.serviceDate) ||
+            (left.serviceTime ?? "").localeCompare(right.serviceTime ?? ""),
+        )[0],
+    [snapshot.services, today],
+  );
   const visitorHref = draft
     ? `/services?service=${draft.id}&visitor=1`
     : "/services?new=1";
   const stats = [
-    ["Total People", snapshot.totalPeople, "active members", "P"],
-    ["Services This Month", snapshot.servicesThisMonth, "services", "S"],
-    [
-      "Attendance This Month",
-      snapshot.attendanceThisMonth,
-      "total attendance",
-      "✓",
-    ],
-    ["Visitors This Month", snapshot.visitorsThisMonth, "welcomed", "V"],
-    ["Average Attendance", snapshot.averageAttendance, "per service", "A"],
+    {
+      label: "Total members",
+      value: snapshot.totalPeople,
+      hint: "active members",
+      glyph: "P",
+      tone: "neutral",
+    },
+    {
+      label: "Attendance this month",
+      value: snapshot.attendanceThisMonth,
+      hint: "members and visitors",
+      glyph: "✓",
+      tone: "current",
+    },
+    {
+      label: "Visitors this month",
+      value: snapshot.visitorsThisMonth,
+      hint: "people welcomed",
+      glyph: "V",
+      tone: "neutral",
+    },
+    {
+      label: "Services this month",
+      value: snapshot.servicesThisMonth,
+      hint: "church services",
+      glyph: "S",
+      tone: "neutral",
+    },
+    {
+      label: "Average attendance",
+      value: snapshot.averageAttendance,
+      hint: "per service",
+      glyph: "A",
+      tone: "neutral",
+    },
+    {
+      label: "Draft services",
+      value: snapshot.services.filter((service) => service.status === "draft")
+        .length,
+      hint: "ready to continue",
+      glyph: "D",
+      tone: "draft",
+    },
   ] as const;
 
   return (
-    <div className="dashboard">
-      <section className="dashboard-welcome" aria-labelledby="dashboard-title">
-        <div>
-          <p className="dashboard-date">
-            <span>
-              {now.toLocaleDateString(undefined, { weekday: "long" })}
-            </span>
+    <div className="dashboard dashboard-redesign">
+      <section className="dashboard-hero" aria-labelledby="dashboard-title">
+        <div className="dashboard-hero-copy">
+          <p className="dashboard-greeting">{greetingFor(now)}</p>
+          <h1 id="dashboard-title">{snapshot.churchName} Attendance</h1>
+          <p className="dashboard-full-date">
             {now.toLocaleDateString(undefined, {
+              weekday: "long",
               month: "long",
               day: "numeric",
               year: "numeric",
             })}
           </p>
-          <p className="dashboard-greeting">{greetingFor(now)}</p>
-          <h1 id="dashboard-title">{snapshot.churchName}</h1>
-          <div className={draft ? "readiness active" : "readiness"}>
-            <span className="readiness-dot" aria-hidden="true" />
-            {draft ? "Attendance in progress" : "Ready for the next service"}
+          <div className="dashboard-hero-actions">
+            <Link className="button primary dashboard-primary-action" href="/services?new=1">
+              <span aria-hidden="true">＋</span>
+              New service
+            </Link>
+            <Link className="button dashboard-secondary-action" href="/services">
+              View services
+            </Link>
           </div>
         </div>
-        <Link className="button dashboard-start" href="/services?new=1">
-          <span aria-hidden="true">＋</span>
-          Start New Service
-        </Link>
+
+        {loading ? (
+          <HeroSkeleton />
+        ) : nextService ? (
+          <Link
+            className="dashboard-focus-card"
+            href={`/services?service=${nextService.id}`}
+            aria-label={`Open ${nextService.title}`}
+          >
+            <span className="dashboard-focus-kicker">
+              {nextService.serviceDate === today
+                ? "Today’s service"
+                : "Next service"}
+            </span>
+            <strong>{nextService.title}</strong>
+            <span>
+              {formatServiceDate(nextService.serviceDate, true)}
+              {formatServiceTime(nextService.serviceTime)
+                ? ` · ${formatServiceTime(nextService.serviceTime)}`
+                : ""}
+            </span>
+            <span className={`dashboard-focus-status ${nextService.status}`}>
+              {nextService.status === "draft" ? "Ready to continue" : "Completed"}
+            </span>
+            <span className="dashboard-focus-arrow" aria-hidden="true">
+              →
+            </span>
+          </Link>
+        ) : (
+          <div className="dashboard-focus-card empty-focus">
+            <span className="dashboard-focus-icon" aria-hidden="true">
+              ✓
+            </span>
+            <span className="dashboard-focus-kicker">You’re all set</span>
+            <strong>Ready for the next service</strong>
+            <span>Create a service whenever you’re ready to begin.</span>
+          </div>
+        )}
       </section>
 
       {error && (
@@ -167,130 +288,127 @@ export function Dashboard() {
         </div>
       )}
 
-      {draft && (
+      {draft && !loading && (
         <Link
-          className="resume-card"
+          className="dashboard-resume"
           href={`/services?service=${draft.id}`}
           aria-label={`Resume attendance for ${draft.title}`}
         >
-          <span className="resume-icon" aria-hidden="true">
-            ✓
+          <span className="dashboard-resume-icon" aria-hidden="true">
+            ▶
           </span>
-          <span className="resume-copy">
-            <span className="eyebrow">Draft service</span>
-            <strong>Resume Attendance</strong>
-            <small>
-              {draft.title} · {formatServiceDate(draft.serviceDate)} ·{" "}
-              {draft.attendanceTotal} selected
-            </small>
+          <span className="dashboard-resume-copy">
+            <small>Attendance in progress</small>
+            <strong>Resume {draft.title}</strong>
+            <span>
+              {formatServiceDate(draft.serviceDate)} ·{" "}
+              {draft.attendanceTotal} present
+            </span>
           </span>
-          <span className="resume-arrow" aria-hidden="true">
-            →
+          <span className="dashboard-resume-action">
+            Resume attendance <span aria-hidden="true">→</span>
           </span>
         </Link>
       )}
 
       <section aria-labelledby="quick-actions-title">
-        <div className="section-heading">
-          <div>
-            <p className="eyebrow">Get started</p>
-            <h2 id="quick-actions-title">Quick actions</h2>
-          </div>
-          <span>Everything important is one tap away.</span>
-        </div>
-        <div className="quick-action-grid">
+        <DashboardSectionHeading
+          eyebrow="Shortcuts"
+          title="Quick actions"
+          id="quick-actions-title"
+        />
+        <div className="dashboard-action-grid">
           <QuickAction
             href="/services?new=1"
             glyph="＋"
-            label="Start New Service"
-            description="Open a fresh attendance list"
+            label="New service"
+            description="Start taking attendance"
             primary
           />
           <QuickAction
             href="/people"
             glyph="P"
-            label="People"
-            description="Manage the member directory"
-          />
-          <QuickAction
-            href="/services"
-            glyph="S"
-            label="Services"
-            description="Review attendance records"
+            label="Members"
+            description="View and manage people"
           />
           <QuickAction
             href={visitorHref}
             glyph="V"
             label="Visitors"
-            description="Add during a service"
+            description="Add to the current service"
+          />
+          <QuickAction
+            href="/services"
+            glyph="S"
+            label="Services"
+            description="Browse attendance history"
           />
           <button
-            className="quick-action placeholder-action"
+            className="dashboard-action-card unavailable"
             type="button"
             disabled
-            aria-label="Reports, coming in a future stage"
+            aria-label="Reports, coming in a future release"
           >
-            <span className="quick-action-icon" aria-hidden="true">
+            <span className="dashboard-action-icon" aria-hidden="true">
               R
             </span>
             <span>
               <strong>Reports</strong>
-              <small>Coming in a future stage</small>
+              <small>Coming in a future release</small>
             </span>
           </button>
-          {isAdmin(user) && (
+          {isAdministrator && (
             <QuickAction
               href="/settings"
               glyph="⚙"
               label="Settings"
-              description="Organization preferences"
+              description="Church preferences"
             />
           )}
         </div>
       </section>
 
-      <section className="dashboard-stats" aria-label="Attendance statistics">
-        {stats.map(([label, value, hint, glyph]) => (
-          <article className="stat-card" key={label}>
-            <span className="stat-icon" aria-hidden="true">
-              {glyph}
-            </span>
-            <span className="stat-copy">
-              <span>{label}</span>
-              <strong>{loading ? "—" : value.toLocaleString()}</strong>
-              <small>{hint}</small>
-            </span>
-          </article>
-        ))}
+      <section aria-labelledby="overview-title">
+        <DashboardSectionHeading
+          eyebrow="At a glance"
+          title="Attendance overview"
+          id="overview-title"
+        />
+        <div className="dashboard-metric-grid" aria-label="Attendance statistics">
+          {loading
+            ? Array.from({ length: 6 }, (_, index) => (
+                <MetricSkeleton key={index} />
+              ))
+            : stats.map((stat) => <MetricCard key={stat.label} {...stat} />)}
+        </div>
       </section>
 
-      <div className="dashboard-columns">
+      <div className="dashboard-content-grid">
         <section
-          className="dashboard-panel"
+          className="dashboard-surface dashboard-services-surface"
           aria-labelledby="recent-services-title"
         >
-          <div className="section-heading panel-heading">
-            <div>
-              <p className="eyebrow">Attendance history</p>
-              <h2 id="recent-services-title">Recent services</h2>
-            </div>
-            {snapshot.services.length > 0 && (
-              <Link href="/services">View all</Link>
-            )}
-          </div>
+          <DashboardPanelHeading
+            eyebrow="Attendance history"
+            title="Recent services"
+            id="recent-services-title"
+            action={
+              snapshot.services.length > 0 ? (
+                <Link href="/services">View all services</Link>
+              ) : null
+            }
+          />
 
           {loading ? (
-            <div className="dashboard-loading" role="status">
-              Loading recent services…
-            </div>
+            <RecentServicesSkeleton />
           ) : serviceGroups.length ? (
-            <div className="service-months">
+            <div className="dashboard-service-months">
               {serviceGroups.map((group) => {
                 const expanded = visibleMonth === group.key;
                 return (
-                  <article className="service-month" key={group.key}>
+                  <article className="dashboard-service-month" key={group.key}>
                     <button
-                      className="month-toggle"
+                      className="dashboard-month-toggle"
                       type="button"
                       aria-expanded={expanded}
                       aria-controls={`month-${group.key}`}
@@ -298,88 +416,68 @@ export function Dashboard() {
                         setExpandedMonth(expanded ? null : group.key)
                       }
                     >
-                      <span aria-hidden="true">{expanded ? "⌄" : "›"}</span>
-                      <strong>{group.label}</strong>
-                      <small>
-                        {group.services.length}{" "}
-                        {group.services.length === 1 ? "service" : "services"}
-                      </small>
+                      <span>
+                        <strong>{group.label}</strong>
+                        <small>
+                          {group.services.length}{" "}
+                          {group.services.length === 1 ? "service" : "services"}
+                        </small>
+                      </span>
+                      <span className="dashboard-month-chevron" aria-hidden="true">
+                        {expanded ? "−" : "+"}
+                      </span>
                     </button>
-                    <div
-                      className={
-                        expanded
-                          ? "month-service-region expanded"
-                          : "month-service-region"
-                      }
-                      id={`month-${group.key}`}
-                      aria-hidden={!expanded}
-                      inert={!expanded}
-                    >
-                      <div>
+                    {expanded && (
+                      <div
+                        className="dashboard-service-card-grid"
+                        id={`month-${group.key}`}
+                      >
                         {group.services.map((service) => (
-                          <Link
-                            className="recent-service-row"
-                            href={`/services?service=${service.id}`}
+                          <ServiceCard
                             key={service.id}
-                          >
-                            <span className="recent-service-date">
-                              {formatServiceDate(service.serviceDate)}
-                            </span>
-                            <span className="recent-service-copy">
-                              <strong>{service.title}</strong>
-                              <small>
-                                {service.attendanceTotal} attending ·{" "}
-                                {service.visitorCount}{" "}
-                                {service.visitorCount === 1
-                                  ? "visitor"
-                                  : "visitors"}
-                              </small>
-                            </span>
-                            <span className={`status-pill ${service.status}`}>
-                              {service.status}
-                            </span>
-                          </Link>
+                            service={service}
+                            now={now}
+                          />
                         ))}
                       </div>
-                    </div>
+                    )}
                   </article>
                 );
               })}
             </div>
           ) : (
-            <div className="dashboard-empty">
-              <div className="empty-calendar" aria-hidden="true">
-                <span />
-                <strong>✓</strong>
-              </div>
-              <h3>No services yet.</h3>
+            <div className="dashboard-empty-state">
+              <span className="dashboard-empty-icon" aria-hidden="true">
+                +
+              </span>
+              <h3>No services yet</h3>
               <p>
-                Create the first service and your member checklist will be ready.
+                Create your first service to begin tracking attendance.
               </p>
               <Link className="button primary large" href="/services?new=1">
-                Create First Service
+                Create first service
               </Link>
             </div>
           )}
         </section>
 
-        <section className="dashboard-panel" aria-labelledby="activity-title">
-          <div className="section-heading panel-heading">
-            <div>
-              <p className="eyebrow">Latest changes</p>
-              <h2 id="activity-title">Recent activity</h2>
-            </div>
-          </div>
+        <section
+          className="dashboard-surface dashboard-activity-surface"
+          aria-labelledby="activity-title"
+        >
+          <DashboardPanelHeading
+            eyebrow="Latest changes"
+            title="Recent activity"
+            id="activity-title"
+          />
           {loading ? (
-            <div className="dashboard-loading" role="status">
-              Loading recent activity…
-            </div>
+            <ActivitySkeleton />
           ) : snapshot.activity.length ? (
-            <ol className="activity-timeline">
+            <ol className="dashboard-activity-list">
               {snapshot.activity.map((item) => (
                 <li key={item.id}>
                   <span
-                    className={`activity-icon ${item.type}`}
+                    className={`dashboard-activity-icon ${item.type}`}
                     aria-hidden="true"
                   >
                     {activityGlyphs[item.type]}
@@ -392,15 +490,54 @@ export function Dashboard() {
               ))}
             </ol>
           ) : (
-            <div className="activity-empty">
+            <div className="dashboard-activity-empty">
               <span aria-hidden="true">✓</span>
-              <strong>You’re ready to begin.</strong>
+              <strong>You’re ready to begin</strong>
               <p>Member, service, and attendance updates will appear here.</p>
             </div>
           )}
         </section>
       </div>
     </div>
+  );
+}
+
+function DashboardSectionHeading({
+  eyebrow,
+  title,
+  id,
+}: {
+  eyebrow: string;
+  title: string;
+  id: string;
+}) {
+  return (
+    <div className="dashboard-section-heading">
+      <p>{eyebrow}</p>
+      <h2 id={id}>{title}</h2>
+    </div>
+  );
+}
+
+function DashboardPanelHeading({
+  eyebrow,
+  title,
+  id,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  id: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <header className="dashboard-panel-heading">
+      <div>
+        <p>{eyebrow}</p>
+        <h2 id={id}>{title}</h2>
+      </div>
+      {action}
+    </header>
   );
 }
 
@@ -419,16 +556,163 @@ function QuickAction({
 }) {
   return (
     <Link
-      className={primary ? "quick-action primary-action" : "quick-action"}
+      className={
+        primary
+          ? "dashboard-action-card primary"
+          : "dashboard-action-card"
+      }
       href={href}
     >
-      <span className="quick-action-icon" aria-hidden="true">
+      <span className="dashboard-action-icon" aria-hidden="true">
         {glyph}
       </span>
       <span>
         <strong>{label}</strong>
         <small>{description}</small>
       </span>
+      <span className="dashboard-action-arrow" aria-hidden="true">
+        →
+      </span>
     </Link>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  hint,
+  glyph,
+  tone,
+}: {
+  label: string;
+  value: number;
+  hint: string;
+  glyph: string;
+  tone: "neutral" | "current" | "draft";
+}) {
+  return (
+    <article className={`dashboard-metric-card ${tone}`}>
+      <span className="dashboard-metric-icon" aria-hidden="true">
+        {glyph}
+      </span>
+      <strong>{value.toLocaleString()}</strong>
+      <span>{label}</span>
+      <small>{hint}</small>
+    </article>
+  );
+}
+
+function ServiceCard({
+  service,
+  now,
+}: {
+  service: DashboardService;
+  now: Date;
+}) {
+  return (
+    <Link
+      className="dashboard-service-card"
+      href={`/services?service=${service.id}`}
+      aria-label={`Open ${service.title}, ${service.status}`}
+    >
+      <div className="dashboard-service-card-top">
+        <span className={`dashboard-service-status ${service.status}`}>
+          <span aria-hidden="true" />
+          {service.status === "draft" ? "Draft" : "Completed"}
+        </span>
+        <span className="dashboard-service-arrow" aria-hidden="true">
+          ↗
+        </span>
+      </div>
+      <strong>{service.title}</strong>
+      <span className="dashboard-service-date">
+        {formatServiceDate(service.serviceDate, true)}
+        {formatServiceTime(service.serviceTime)
+          ? ` · ${formatServiceTime(service.serviceTime)}`
+          : ""}
+      </span>
+      <div className="dashboard-service-stats">
+        <span>
+          <strong>{service.attendanceTotal}</strong>
+          <small>Attendance</small>
+        </span>
+        <span>
+          <strong>{service.visitorCount}</strong>
+          <small>Visitors</small>
+        </span>
+      </div>
+      <small className="dashboard-service-updated">
+        Updated {relativeTime(service.updatedAt, now)}
+      </small>
+    </Link>
+  );
+}
+
+function SkeletonLine({ className = "" }: { className?: string }) {
+  return <span className={`dashboard-skeleton ${className}`} aria-hidden="true" />;
+}
+
+function HeroSkeleton() {
+  return (
+    <div
+      className="dashboard-focus-card dashboard-focus-skeleton"
+      role="status"
+      aria-label="Loading church dashboard"
+    >
+      <SkeletonLine className="short" />
+      <SkeletonLine className="title" />
+      <SkeletonLine />
+      <SkeletonLine className="pill" />
+    </div>
+  );
+}
+
+function MetricSkeleton() {
+  return (
+    <article className="dashboard-metric-card skeleton-card" aria-hidden="true">
+      <SkeletonLine className="metric-icon" />
+      <SkeletonLine className="metric-number" />
+      <SkeletonLine />
+      <SkeletonLine className="short" />
+    </article>
+  );
+}
+
+function RecentServicesSkeleton() {
+  return (
+    <div
+      className="dashboard-card-skeleton-grid"
+      role="status"
+      aria-label="Loading recent services"
+    >
+      {[0, 1].map((item) => (
+        <div className="dashboard-service-card skeleton-card" key={item}>
+          <SkeletonLine className="pill" />
+          <SkeletonLine className="title" />
+          <SkeletonLine />
+          <SkeletonLine className="block" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ActivitySkeleton() {
+  return (
+    <div
+      className="dashboard-activity-skeleton"
+      role="status"
+      aria-label="Loading recent activity"
+    >
+      {[0, 1, 2, 3].map((item) => (
+        <div key={item}>
+          <SkeletonLine className="activity-dot" />
+          <span>
+            <SkeletonLine />
+            <SkeletonLine className="short" />
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }

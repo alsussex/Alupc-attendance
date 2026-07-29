@@ -7,9 +7,11 @@ export interface DashboardService {
   id: string;
   title: string;
   serviceDate: string;
+  serviceTime?: string;
   status: ChurchService["status"];
   attendanceTotal: number;
   visitorCount: number;
+  updatedAt: string;
 }
 
 export interface DashboardActivity {
@@ -50,6 +52,7 @@ function summarizeService(
     id: service.id,
     title: serviceTitle(service),
     serviceDate: service.serviceDate,
+    serviceTime: service.serviceTime,
     status: service.status,
     attendanceTotal:
       presentMembers.size +
@@ -58,6 +61,7 @@ function summarizeService(
     visitorCount:
       serviceVisitors.filter((visitor) => !visitor.savedAsMember).length +
       (service.unnamedVisitorCount ?? 0),
+    updatedAt: service.updatedAt,
   };
 }
 
