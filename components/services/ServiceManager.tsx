@@ -512,10 +512,6 @@ export function ServiceManager() {
         (item) => item.conflict?.serviceId === active.id,
       )
     : [];
-  const namedVisitorCount = visitors.filter(
-    (visitor) => !visitor.deletedAt && !visitor.savedAsMember,
-  ).length;
-
   if (active) {
     return (
       <div className="attendance-workspace">
@@ -616,11 +612,6 @@ export function ServiceManager() {
         </div>
         {settings.showAttendanceTotals && (
           <section className="attendance-metrics" aria-live="polite">
-            <article className="attendance-metric total">
-              <span>Total Present</span>
-              <strong>{presentCounts.total}</strong>
-              <small>Members + visitors</small>
-            </article>
             <article className="attendance-metric members">
               <span>Members Present</span>
               <strong>{presentCounts.members}</strong>
@@ -628,6 +619,11 @@ export function ServiceManager() {
             <article className="attendance-metric visitors">
               <span>Visitors</span>
               <strong>{presentCounts.visitors}</strong>
+            </article>
+            <article className="attendance-metric total">
+              <span>Total Present</span>
+              <strong>{presentCounts.total}</strong>
+              <small>Members + visitors</small>
             </article>
             <article className="attendance-metric status">
               <span>Service Status</span>
@@ -892,10 +888,7 @@ export function ServiceManager() {
               </section>
               <div className="visitor-tab-summary">
                 <strong>{presentCounts.visitors} visitors</strong>
-                <span>
-                  {namedVisitorCount} named + {active.unnamedVisitorCount ?? 0}{" "}
-                  unnamed
-                </span>
+                <span>Everyone visiting this service</span>
               </div>
               <div className="visitor-card-grid">
                 {filteredVisitors.map((visitor) => (

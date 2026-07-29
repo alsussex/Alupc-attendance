@@ -2,6 +2,7 @@
 
 import type { UserContext } from "@/lib/domain";
 import { isAdmin } from "@/lib/auth/permissions";
+import { buildAttendanceReportRows } from "@/lib/reports/attendance-report";
 import { getDatabase } from "@/lib/storage/database";
 
 export type ExportDataset =
@@ -43,6 +44,14 @@ export async function buildOrganizationExport(
       database.getAllFromIndex("attendance", "organizationId", organizationId),
       database.getAllFromIndex("visitors", "organizationId", organizationId),
     ]);
+  const reportRows = buildAttendanceReportRows(
+    services,
+    attendance,
+    visitors,
+  );
+  const serviceSummaries = new Map(
+    reportRows.map((summary) => [summary.serviceId, summary]),
+  );
 
   if (dataset === "backup") {
     return JSON.stringify(
@@ -55,6 +64,17 @@ export async function buildOrganizationExport(
         services,
         attendance,
         visitors,
+        serviceAttendanceSummaries: services.map((service) => {
+          const summary = serviceSummaries.get(service.id)!;
+          return {
+            service_id: service.id,
+            members_present: summary.membersPresent,
+            named_visitor_count: summary.namedVisitorCount,
+            unnamed_visitor_count: summary.unnamedVisitorCount,
+            visitor_total: summary.visitorTotal,
+            total_present: summary.totalPresent,
+          };
+        }),
       },
       null,
       2,
@@ -84,45 +104,102 @@ export async function buildOrganizationExport(
 
   if (dataset === "services") {
     return rowsToCsv(
-      ["ID", "Date", "Time", "Type", "Custom name", "Status"],
-      services
-        .filter((service) => !service.deletedAt)
-        .map((service) => [
+      [
+        "ID",
+        "Date",
+        "Time",
+        "Type",
+        "Custom name",
+        "Status",
+        "members_present",
+        "named_visitor_count",
+        "unnamed_visitor_count",
+        "visitor_total",
+        "total_present",
+      ],
+      services.filter((service) => !service.deletedAt).map((service) => {
+        const summary = serviceSummaries.get(service.id)!;
+        return [
           service.id,
           service.serviceDate,
           service.serviceTime,
           service.serviceType,
           service.customName,
           service.status,
-        ]),
+          summary.membersPresent,
+          summary.namedVisitorCount,
+          summary.unnamedVisitorCount,
+          summary.visitorTotal,
+          summary.totalPresent,
+        ];
+      }),
     );
   }
 
   if (dataset === "attendance") {
     return rowsToCsv(
-      ["ID", "Service ID", "Person ID", "Present", "Updated"],
-      attendance.map((record) => [
-        record.id,
-        record.serviceId,
-        record.personId,
-        record.present,
-        record.updatedAt,
-      ]),
+      [
+        "ID",
+        "Service ID",
+        "Person ID",
+        "Present",
+        "Updated",
+        "members_present",
+        "named_visitor_count",
+        "unnamed_visitor_count",
+        "visitor_total",
+        "total_present",
+      ],
+      attendance.map((record) => {
+        const summary = serviceSummaries.get(record.serviceId);
+        return [
+          record.id,
+          record.serviceId,
+          record.personId,
+          record.present,
+          record.updatedAt,
+          summary?.membersPresent ?? 0,
+          summary?.namedVisitorCount ?? 0,
+          summary?.unnamedVisitorCount ?? 0,
+          summary?.visitorTotal ?? 0,
+          summary?.totalPresent ?? 0,
+        ];
+      }),
     );
   }
 
   return rowsToCsv(
-    ["ID", "Service ID", "First name", "Last name", "Notes", "Saved as member"],
+    [
+      "ID",
+      "Service ID",
+      "First name",
+      "Last name",
+      "Notes",
+      "Saved as member",
+      "members_present",
+      "named_visitor_count",
+      "unnamed_visitor_count",
+      "visitor_total",
+      "total_present",
+    ],
     visitors
       .filter((visitor) => !visitor.deletedAt)
-      .map((visitor) => [
-        visitor.id,
-        visitor.serviceId,
-        visitor.firstName,
-        visitor.lastName,
-        visitor.notes,
-        visitor.savedAsMember,
-      ]),
+      .map((visitor) => {
+        const summary = serviceSummaries.get(visitor.serviceId);
+        return [
+          visitor.id,
+          visitor.serviceId,
+          visitor.firstName,
+          visitor.lastName,
+          visitor.notes,
+          visitor.savedAsMember,
+          summary?.membersPresent ?? 0,
+          summary?.namedVisitorCount ?? 0,
+          summary?.unnamedVisitorCount ?? 0,
+          summary?.visitorTotal ?? 0,
+          summary?.totalPresent ?? 0,
+        ];
+      }),
   );
 }
 

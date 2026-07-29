@@ -1,4 +1,5 @@
 import type { Person, ServiceVisitor } from "@/lib/domain";
+import { countVisitors } from "@/lib/services/attendance-summary";
 
 export type AttendanceFilter = "all" | "present" | "absent";
 
@@ -42,10 +43,7 @@ export function attendancePresentCounts(
   includeVisitors = true,
   unnamedVisitorCount = 0,
 ) {
-  const visitorCount =
-    visitors.filter(
-      (visitor) => !visitor.deletedAt && !visitor.savedAsMember,
-    ).length + Math.max(0, unnamedVisitorCount);
+  const visitorCount = countVisitors(visitors, unnamedVisitorCount);
   return {
     total: presentMemberIds.size + (includeVisitors ? visitorCount : 0),
     members: presentMemberIds.size,

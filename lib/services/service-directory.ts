@@ -7,6 +7,7 @@ import type {
   ServiceVisitor,
   SyncQueueItem,
 } from "@/lib/domain";
+import { summarizeServiceAttendance } from "@/lib/services/attendance-summary";
 import { getDatabase } from "@/lib/storage/database";
 
 export type ServiceDirectoryFilter = "all" | "draft" | "completed";
@@ -163,20 +164,16 @@ export function summarizeOrganizationServices(
           : serviceQueue.length
             ? "pending"
             : "synced";
-      const membersPresent = attendance.filter(
-        (record) => record.serviceId === service.id && record.present,
-      ).length;
-      const visitorsPresent = visitors.filter(
-        (visitor) =>
-          visitor.serviceId === service.id &&
-          !visitor.deletedAt &&
-          !visitor.savedAsMember,
-      ).length + (service.unnamedVisitorCount ?? 0);
+      const summary = summarizeServiceAttendance(
+        service,
+        attendance,
+        visitors,
+      );
       return {
         service,
-        membersPresent,
-        visitorsPresent,
-        totalPresent: membersPresent + visitorsPresent,
+        membersPresent: summary.membersPresent,
+        visitorsPresent: summary.visitorTotal,
+        totalPresent: summary.totalPresent,
         lastEditor: profileNames.get(service.updatedBy),
         pendingSync: serviceQueue.length > 0,
         syncState,

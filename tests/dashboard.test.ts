@@ -5,6 +5,7 @@ import {
   saveMember,
   saveService,
   setMemberAttendance,
+  setUnnamedVisitorCount,
 } from "@/lib/repositories/attendance-repository";
 import { clearLocalDatabase, getDatabase } from "@/lib/storage/database";
 import type { UserContext } from "@/lib/domain";
@@ -46,6 +47,7 @@ describe("dashboard snapshot", () => {
       lastName: "Lane",
       saveAsMember: false,
     });
+    await setUnnamedVisitorCount(user, service.id, 2);
 
     const snapshot = await loadDashboardSnapshot(
       user.organizationId,
@@ -55,13 +57,13 @@ describe("dashboard snapshot", () => {
     expect(snapshot.churchName).toBe("Abundant Life UPC");
     expect(snapshot.totalPeople).toBe(1);
     expect(snapshot.servicesThisMonth).toBe(1);
-    expect(snapshot.attendanceThisMonth).toBe(2);
-    expect(snapshot.visitorsThisMonth).toBe(1);
-    expect(snapshot.averageAttendance).toBe(2);
+    expect(snapshot.attendanceThisMonth).toBe(4);
+    expect(snapshot.visitorsThisMonth).toBe(3);
+    expect(snapshot.averageAttendance).toBe(4);
     expect(snapshot.draftService?.id).toBe(service.id);
     expect(snapshot.services[0]).toMatchObject({
-      attendanceTotal: 2,
-      visitorCount: 1,
+      attendanceTotal: 4,
+      visitorCount: 3,
       status: "draft",
     });
     expect(snapshot.activity.map((item) => item.type)).toEqual(

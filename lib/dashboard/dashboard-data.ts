@@ -1,6 +1,11 @@
 "use client";
 
-import type { ChurchService, ServiceVisitor } from "@/lib/domain";
+import type {
+  AttendanceRecord,
+  ChurchService,
+  ServiceVisitor,
+} from "@/lib/domain";
+import { summarizeServiceAttendance } from "@/lib/services/attendance-summary";
 import { getDatabase } from "@/lib/storage/database";
 
 export interface DashboardService {
@@ -43,24 +48,18 @@ function monthKey(date: Date) {
 
 function summarizeService(
   service: ChurchService,
-  attendanceByService: Map<string, Set<string>>,
-  visitorsByService: Map<string, ServiceVisitor[]>,
+  attendance: AttendanceRecord[],
+  visitors: ServiceVisitor[],
 ): DashboardService {
-  const presentMembers = attendanceByService.get(service.id) ?? new Set();
-  const serviceVisitors = visitorsByService.get(service.id) ?? [];
+  const summary = summarizeServiceAttendance(service, attendance, visitors);
   return {
     id: service.id,
     title: serviceTitle(service),
     serviceDate: service.serviceDate,
     serviceTime: service.serviceTime,
     status: service.status,
-    attendanceTotal:
-      presentMembers.size +
-      serviceVisitors.filter((visitor) => !visitor.savedAsMember).length +
-      (service.unnamedVisitorCount ?? 0),
-    visitorCount:
-      serviceVisitors.filter((visitor) => !visitor.savedAsMember).length +
-      (service.unnamedVisitorCount ?? 0),
+    attendanceTotal: summary.totalPresent,
+    visitorCount: summary.visitorTotal,
     updatedAt: service.updatedAt,
   };
 }
@@ -86,23 +85,9 @@ export async function loadDashboardSnapshot(
   const orderedServices = services
     .filter((service) => !service.deletedAt && !service.isArchived)
     .sort((a, b) => b.serviceDate.localeCompare(a.serviceDate));
-  const attendanceByService = new Map<string, Set<string>>();
-  for (const record of attendance) {
-    if (!record.present) continue;
-    const people = attendanceByService.get(record.serviceId) ?? new Set<string>();
-    people.add(record.personId);
-    attendanceByService.set(record.serviceId, people);
-  }
   const visitors = storedVisitors.filter((visitor) => !visitor.deletedAt);
-  const visitorsByService = new Map<string, ServiceVisitor[]>();
-  for (const visitor of visitors) {
-    visitorsByService.set(visitor.serviceId, [
-      ...(visitorsByService.get(visitor.serviceId) ?? []),
-      visitor,
-    ]);
-  }
   const serviceSummaries = orderedServices.map((service) =>
-    summarizeService(service, attendanceByService, visitorsByService),
+    summarizeService(service, attendance, visitors),
   );
   const currentMonth = monthKey(now);
   const monthServices = serviceSummaries.filter((service) =>
@@ -165,10 +150,10 @@ export async function loadDashboardSnapshot(
     ).length,
     servicesThisMonth: monthServices.length,
     attendanceThisMonth,
-    visitorsThisMonth: visitors.filter((visitor) => {
-      const service = serviceById.get(visitor.serviceId);
-      return service?.serviceDate.startsWith(currentMonth);
-    }).length,
+    visitorsThisMonth: monthServices.reduce(
+      (sum, service) => sum + service.visitorCount,
+      0,
+    ),
     averageAttendance: monthServices.length
       ? Math.round(attendanceThisMonth / monthServices.length)
       : 0,

@@ -167,10 +167,15 @@ the first successful synchronization. New default service times apply only to
 new services; historical service rows are not rewritten.
 
 CSV exports are available for members, inactive members, services, attendance,
-and visitors. The JSON backup contains organization-scoped application records
-but excludes sessions, passwords, access/refresh tokens, invitation tokens,
-environment variables, and synchronization diagnostics. Import/restore and
-permanent organization deletion are explicitly unavailable in this release.
+and visitors. Service-related exports include `members_present`,
+`named_visitor_count`, `unnamed_visitor_count`, `visitor_total`, and
+`total_present`. The JSON backup includes the same values in
+`serviceAttendanceSummaries` alongside the organization-scoped application
+records, but excludes sessions, passwords, access/refresh tokens, invitation
+tokens, environment variables, and synchronization diagnostics. These
+summaries provide reporting-ready historical totals without changing completed
+service records. Import/restore and permanent organization deletion are
+explicitly unavailable in this release.
 
 User invitations and role management now live at **Settings > Users**. Invites,
 role changes, access changes, password reset, and global sign-out remain
@@ -204,6 +209,13 @@ Migration `202607290010_unnamed_visitor_count.sql` adds a constrained unnamed
 visitor count to each service. The count uses the same local-first service
 record, UUID, version checks, mutation queue, RLS, and realtime reconciliation;
 it does not create placeholder visitor records.
+
+The attendance workspace deliberately presents one combined **Visitors** total:
+named service-only visitors plus the service's unnamed visitor count. The
+running **Total Present** is members present plus that combined visitor total.
+Named visitors remain editable service records; unnamed visitors remain only an
+aggregate count on the service. Completed services preserve both forms with the
+original service and attendance UUIDs.
 
 Supabase continues refreshing tokens automatically. The authentication provider
 also handles `SIGNED_IN`, `TOKEN_REFRESHED`, and `SIGNED_OUT` explicitly,
