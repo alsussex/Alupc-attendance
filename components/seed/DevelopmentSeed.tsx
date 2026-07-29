@@ -9,7 +9,13 @@ export function DevelopmentSeed() {
   const { user } = useAuth();
   const { phase } = useSynchronization();
   useEffect(() => {
-    if (user && phase === "complete") void seedDevelopmentMembers(user);
+    if (
+      process.env.NODE_ENV === "development" &&
+      user &&
+      phase === "complete"
+    ) {
+      void seedDevelopmentMembers(user);
+    }
   }, [phase, user]);
   return null;
 }

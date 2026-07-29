@@ -50,6 +50,56 @@ npm run build
 npm audit --omit=dev
 ```
 
+## Private Vercel test deployment
+
+The default Vercel `*.vercel.app` production domain is sufficient. A custom domain is not required. The application derives host-dependent metadata from the incoming request and uses root-relative PWA paths, so there is no production hostname hardcoded in the source.
+
+### Required Vercel environment variables
+
+Add these in **Vercel → Project → Settings → Environment Variables**:
+
+| Variable | Production value |
+| --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | The existing Supabase project URL, such as `https://your-project-ref.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | The existing browser-safe anon/publishable key |
+| `NEXT_PUBLIC_ENABLE_DEMO_SEED` | `false` |
+
+Apply all three to **Production**. Apply the same values to **Preview** only if preview deployments will be used for testing. Values prefixed with `NEXT_PUBLIC_` are included in browser code: the anon key is designed for this use, while a service-role key, database password, access token, or other privileged credential must never be added.
+
+### Supabase authentication URLs
+
+After Vercel creates the project, copy its stable production domain exactly. In **Supabase → Authentication → URL Configuration**, configure:
+
+- **Site URL:** `https://<assigned-production-domain>.vercel.app`
+- **Production Redirect URL:** `https://<assigned-production-domain>.vercel.app/login`
+- **Local Development Redirect URL:** `http://localhost:3000/login`
+
+For the expected project name, these will normally be `https://alupc-attendance.vercel.app` and `https://alupc-attendance.vercel.app/login`, but use the domain Vercel actually assigns if it differs. The current password sign-in does not initiate a redirect; these settings establish the correct safe destination for Supabase-generated authentication links. Keep the production entry exact. Add Supabase's Vercel preview wildcard only if preview authentication is genuinely required.
+
+### Safe deployment checklist
+
+1. Confirm both Supabase migrations have been applied.
+2. Confirm the first authorized authentication user and organization profile exist.
+3. Confirm `.env.example` still contains placeholders and no `.env.local` file is tracked.
+4. Confirm `NEXT_PUBLIC_ENABLE_DEMO_SEED=false` in Vercel.
+5. Import the existing `alsussex/Alupc-attendance` GitHub repository into Vercel; do not create another repository.
+6. Select the `main` production branch, leave the root directory as the repository root, and use the **Next.js** framework preset.
+7. Keep the default install command and build command (`npm run build`). Do not set an output directory override.
+8. Add the three environment variables above without exposing them in source control or chat.
+9. Deploy and copy the assigned production `vercel.app` domain.
+10. Add the exact Site URL and redirect URLs to Supabase as described above.
+11. For a genuinely private test, enable Vercel Deployment Protection using Vercel Authentication or password protection when available. Supabase login still controls application data access.
+12. Open `/login`, sign in, and wait for **Sync complete** before entering test data.
+13. Use fictional records only during deployment verification.
+
+### PWA deployment behavior
+
+- Navigation requests use the network first, so a new deployment replaces an older application shell whenever connectivity is available.
+- The service-worker script and manifest are served with revalidation headers, and the browser checks for updates on registration, focus, reconnection, and hourly while open.
+- Activating a new service worker removes only older Church Attendance shell caches.
+- IndexedDB is separate from Cache Storage. Service-worker activation does not delete people, services, attendance, visitors, pending writes, or synchronization cursors.
+- The service worker ignores all cross-origin requests, including Supabase authentication and synchronization traffic.
+
 ## Create the first organization and authorized user
 
 1. In the Supabase dashboard, open **Authentication → Users → Add user**.

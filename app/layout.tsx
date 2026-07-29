@@ -6,8 +6,14 @@ import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
-  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
-  const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  const host =
+    requestHeaders.get("x-forwarded-host") ??
+    requestHeaders.get("host") ??
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ??
+    "church-attendance.invalid";
+  const protocol =
+    requestHeaders.get("x-forwarded-proto") ??
+    (process.env.NODE_ENV === "development" ? "http" : "https");
   const image = `${protocol}://${host}/og.png`;
   const description = "A focused, offline-capable church attendance workspace.";
   return {

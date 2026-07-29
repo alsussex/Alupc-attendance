@@ -10,7 +10,12 @@ const FICTIONAL_MEMBERS = [
 ];
 
 export async function seedDevelopmentMembers(user: UserContext) {
-  if (process.env.NEXT_PUBLIC_ENABLE_DEMO_SEED !== "true") return;
+  if (
+    process.env.NODE_ENV !== "development" ||
+    process.env.NEXT_PUBLIC_ENABLE_DEMO_SEED !== "true"
+  ) {
+    return;
+  }
   if ((await listActiveMembers(user.organizationId)).length > 0) return;
   await Promise.all(FICTIONAL_MEMBERS.map((person) => saveMember(user, person)));
 }
