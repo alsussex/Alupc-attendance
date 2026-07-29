@@ -5,6 +5,7 @@ import type { UserContext } from "@/lib/domain";
 import {
   addServiceVisitor,
   editServiceVisitor,
+  findDuplicateMember,
   getServiceAttendance,
   listActiveMembers,
   listServiceVisitors,
@@ -15,7 +16,9 @@ import {
 } from "@/lib/repositories/attendance-repository";
 import {
   attendanceCounts,
+  attendancePresentCounts,
   filterAttendanceMembers,
+  filterAttendanceVisitors,
 } from "@/lib/services/attendance-view";
 import {
   clearLocalDatabase,
@@ -99,6 +102,118 @@ describe("attendance-taking view", () => {
     await saveService(attendanceTaker, { ...service, status: "completed" });
     await closeLocalDatabaseConnection();
     expect((await getServiceAttendance(service.id))[0].present).toBe(true);
+  });
+
+  it("calculates present-only member, visitor, and total counts instantly", async () => {
+    const member = await saveMember(attendanceTaker, {
+      firstName: "Robin",
+      lastName: "North",
+    });
+    const service = await saveService(attendanceTaker, {
+      serviceDate: "2026-09-06",
+      serviceType: "Sunday Morning",
+      status: "draft",
+    });
+    const { visitor } = await addServiceVisitor(attendanceTaker, service.id, {
+      firstName: "Jamie",
+      lastName: "Fields",
+      saveAsMember: false,
+    });
+
+    expect(
+      attendancePresentCounts(new Set([member.id]), [visitor]),
+    ).toEqual({ total: 2, members: 1, visitors: 1 });
+    expect(attendancePresentCounts(new Set(), [visitor])).toEqual({
+      total: 1,
+      members: 0,
+      visitors: 1,
+    });
+  });
+
+  it("searches visitors and keeps them out of the absent filter", async () => {
+    const service = await saveService(attendanceTaker, {
+      serviceDate: "2026-09-13",
+      serviceType: "Sunday Evening",
+      status: "draft",
+    });
+    const { visitor } = await addServiceVisitor(attendanceTaker, service.id, {
+      firstName: "Skyler",
+      lastName: "Reed",
+      saveAsMember: false,
+    });
+
+    expect(filterAttendanceVisitors([visitor], "all", "sky")).toEqual([
+      visitor,
+    ]);
+    expect(filterAttendanceVisitors([visitor], "present", "reed")).toEqual([
+      visitor,
+    ]);
+    expect(filterAttendanceVisitors([visitor], "absent", "")).toEqual([]);
+  });
+
+  it("keeps the row-wide present control and high-contrast selected styling", () => {
+    const source = readFileSync(
+      resolve("components/services/ServiceManager.tsx"),
+      "utf8",
+    );
+    const styles = readFileSync(resolve("app/globals.css"), "utf8");
+
+    expect(source).toContain(
+      'checked ? "attendance-row selected" : "attendance-row"',
+    );
+    expect(source).toContain("Total Present");
+    expect(source).toContain("+ Add Member");
+    expect(source).toContain("+ Add Visitor");
+    expect(styles).toContain(".attendance-row.selected");
+    expect(styles).toContain("background: #e4f6e9");
+    expect(styles).toContain("min-height: 92px");
+  });
+
+  it("adds a member offline, marks them present, and queues both records", async () => {
+    const service = await saveService(attendanceTaker, {
+      serviceDate: "2026-09-20",
+      serviceType: "Sunday Morning",
+      status: "draft",
+    });
+    const member = await saveMember(attendanceTaker, {
+      firstName: "Quinn",
+      lastName: "Parker",
+    });
+    await setMemberAttendance(attendanceTaker, service.id, member.id, true);
+    await closeLocalDatabaseConnection();
+
+    expect(
+      (await listActiveMembers(organizationId)).map((person) => person.id),
+    ).toContain(member.id);
+    expect(
+      (await getServiceAttendance(service.id)).find(
+        (record) => record.personId === member.id,
+      )?.present,
+    ).toBe(true);
+    const pending = await getPendingChanges(organizationId);
+    expect(
+      pending.some(
+        (mutation) =>
+          mutation.table === "people" && mutation.recordId === member.id,
+      ),
+    ).toBe(true);
+    expect(
+      pending.some(
+        (mutation) =>
+          mutation.table === "service_attendance" &&
+          mutation.recordId.includes(member.id),
+      ),
+    ).toBe(true);
+  });
+
+  it("preserves normalized duplicate detection for quick member entry", async () => {
+    const member = await saveMember(attendanceTaker, {
+      firstName: "Alex",
+      lastName: "Morgan",
+    });
+    expect(
+      await findDuplicateMember(organizationId, "  ALEX   MORGAN  "),
+    ).toMatchObject({ id: member.id });
   });
 });
 

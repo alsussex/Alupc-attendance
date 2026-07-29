@@ -12,8 +12,8 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useSynchronization } from "@/components/sync/SyncProvider";
 import {
   SERVICE_TYPES,
-  countAttendance,
   DEFAULT_APPLICATION_SETTINGS,
+  normalizeName,
   type ApplicationSettings,
   type ChurchService,
   type Person,
@@ -31,8 +31,10 @@ import {
   removeServiceVisitor,
   removeService,
   saveService,
+  saveMember,
   setServiceArchived,
   setMemberAttendance,
+  restoreMember,
 } from "@/lib/repositories/attendance-repository";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
 import { isAdmin } from "@/lib/auth/permissions";
@@ -44,7 +46,9 @@ import {
 } from "@/lib/settings/settings";
 import {
   attendanceCounts,
+  attendancePresentCounts,
   filterAttendanceMembers,
+  filterAttendanceVisitors,
   type AttendanceFilter,
 } from "@/lib/services/attendance-view";
 
@@ -85,6 +89,7 @@ export function ServiceManager() {
     useState<AttendanceFilter>("all");
   const [createOpen, setCreateOpen] = useState(false);
   const [visitorOpen, setVisitorOpen] = useState(false);
+  const [memberOpen, setMemberOpen] = useState(false);
   const [editingVisitor, setEditingVisitor] =
     useState<ServiceVisitor | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -192,7 +197,7 @@ export function ServiceManager() {
     }
     if (status === "completed") {
       const zeroWarning =
-        settings.warnZeroAttendance && total === 0
+        settings.warnZeroAttendance && presentCounts.total === 0
           ? " No attendance has been recorded."
           : "";
       if (
@@ -229,20 +234,94 @@ export function ServiceManager() {
     [members, selected],
   );
 
-  const total = countAttendance(
-    selected,
-    settings.includeVisitorsInTotal
-      ? visitors.filter((visitor) => !visitor.savedAsMember).length
-      : 0,
+  const presentCounts = useMemo(
+    () =>
+      attendancePresentCounts(
+        selected,
+        visitors,
+        settings.includeVisitorsInTotal,
+      ),
+    [selected, settings.includeVisitorsInTotal, visitors],
   );
+
+  const filteredVisitors = useMemo(
+    () => filterAttendanceVisitors(visitors, attendanceFilter, search),
+    [attendanceFilter, search, visitors],
+  );
+
+  async function createQuickMember(
+    firstName: string,
+    lastName: string,
+    allowDuplicate = false,
+  ) {
+    if (!user || !active) return undefined;
+    const displayName = `${firstName} ${lastName}`;
+    const match = (await listMembers(user.organizationId)).find(
+      (person) =>
+        normalizeName(person.displayName) === normalizeName(displayName),
+    );
+    if (match && !allowDuplicate) return match;
+    const member = await saveMember(user, { firstName, lastName });
+    await setMemberAttendance(user, active.id, member.id, true);
+    await refreshLists();
+    await openService(active);
+    return undefined;
+  }
+
+  async function useExistingQuickMember(person: Person) {
+    if (!user || !active) return;
+    if (!person.isActive) {
+      if (!isAdmin(user)) {
+        throw new Error(
+          "This member is inactive. An administrator must reactivate them before attendance can be recorded.",
+        );
+      }
+      await restoreMember(user, person.id);
+    }
+    await setMemberAttendance(user, active.id, person.id, true);
+    await refreshLists();
+    await openService(active);
+  }
 
   if (active) {
     return (
-      <div className="page-stack">
-        <div className="service-topline">
+      <div className="attendance-workspace">
+        <div className="service-topline attendance-service-header">
           <button className="button subtle" type="button" onClick={() => setActive(null)}>← All services</button>
           <div className="service-admin-actions">
             <span className={`status-pill ${active.status}`}>{active.status}</span>
+            {active.status === "completed" ? (
+              isAdmin(user) &&
+              settings.allowAdminReopenCompleted && (
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={serviceAction !== null}
+                  onClick={() => void setStatus("draft")}
+                >
+                  {serviceAction === "draft" ? "Saving…" : "Reopen Service"}
+                </button>
+              )
+            ) : (
+              <>
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={serviceAction !== null}
+                  onClick={() => void setStatus("draft")}
+                >
+                  {serviceAction === "draft" ? "Saving…" : "Save Draft"}
+                </button>
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={serviceAction !== null}
+                  onClick={() => void setStatus("completed")}
+                >
+                  {serviceAction === "completed" ? "Saving…" : "Finish Service"}
+                </button>
+              </>
+            )}
             {isAdmin(user) && (
               <>
                 <button className="button subtle" type="button" onClick={() => setEditOpen(true)}>Edit</button>
@@ -281,7 +360,7 @@ export function ServiceManager() {
             )}
           </div>
         </div>
-        <div className="attendance-heading">
+        <div className="attendance-heading attendance-service-heading">
           <div>
             <p className="eyebrow">{formatChurchDate(active.serviceDate, settings)}</p>
             <h1>{serviceTitle(active)}</h1>
@@ -290,26 +369,63 @@ export function ServiceManager() {
               Select every person who attended. Changes save to this device immediately.
             </p>
           </div>
-          {settings.showAttendanceTotals && (
-            <div className="attendance-total" aria-live="polite">
-              <strong>{total}</strong>
-              <span>{total === 1 ? "person present" : "people present"}</span>
-            </div>
-          )}
         </div>
+        {settings.showAttendanceTotals && (
+          <section className="attendance-metrics" aria-live="polite">
+            <article className="attendance-metric total">
+              <span>Total Present</span>
+              <strong>{presentCounts.total}</strong>
+              <small>Members + visitors</small>
+            </article>
+            <article className="attendance-metric members">
+              <span>Members Present</span>
+              <strong>{presentCounts.members}</strong>
+            </article>
+            <article className="attendance-metric visitors">
+              <span>Visitors Present</span>
+              <strong>{presentCounts.visitors}</strong>
+            </article>
+            <article className="attendance-metric status">
+              <span>Service Status</span>
+              <strong>
+                {active.status === "draft" ? "In Progress" : "Completed"}
+              </strong>
+            </article>
+          </section>
+        )}
         {actionFeedback && (
           <div className="notice success" role="status">
             {actionFeedback}
           </div>
         )}
         <section className="panel attendance-panel">
-          <div className="panel-toolbar">
-            <label className="search-field">
-              <span className="sr-only">Search attendance list</span>
+          <div className="panel-toolbar attendance-action-bar">
+            <label className="search-field attendance-search">
+              <span className="sr-only">Search members and visitors</span>
               <span aria-hidden="true">⌕</span>
-              <input type="search" placeholder="Search the member list" value={search} onChange={(event) => setSearch(event.target.value)} />
+              <input
+                type="search"
+                placeholder="Search members and visitors"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
             </label>
-            <button className="button secondary" type="button" onClick={() => setVisitorOpen(true)}>＋ Add visitor</button>
+            <div className="attendance-quick-actions">
+              <button
+                className="button secondary"
+                type="button"
+                onClick={() => setMemberOpen(true)}
+              >
+                + Add Member
+              </button>
+              <button
+                className="button primary"
+                type="button"
+                onClick={() => setVisitorOpen(true)}
+              >
+                + Add Visitor
+              </button>
+            </div>
           </div>
           <div className="attendance-controls">
             <div
@@ -330,10 +446,10 @@ export function ServiceManager() {
                   onClick={() => setAttendanceFilter(filter)}
                 >
                   {filter === "all"
-                    ? `All (${memberCounts.total})`
+                    ? "All"
                     : filter === "present"
                       ? `Present (${memberCounts.present})`
-                      : `Absent (${memberCounts.absent})`}
+                      : "Absent"}
                 </button>
               ))}
             </div>
@@ -346,29 +462,35 @@ export function ServiceManager() {
               Mark all absent
             </button>
           </div>
-          {settings.showAttendanceTotals && (
-            <div className="attendance-summary" aria-live="polite">
-              {settings.showPresentCount && (
-                <strong>{memberCounts.present} present</strong>
-              )}
-              {settings.showAbsentCount && (
-                <span>{memberCounts.absent} absent</span>
-              )}
-              {settings.showTotalMemberCount && (
-                <span>{memberCounts.total} total</span>
-              )}
-            </div>
-          )}
           <div className="attendance-list">
+            <div className="attendance-column-heading">
+              <h2>Members</h2>
+              <span>{presentCounts.members} present</span>
+            </div>
             {filteredMembers.map((member) => {
               const checked = selected.has(member.id);
               return (
-                <label className={checked ? "attendance-row selected" : "attendance-row"} key={member.id}>
-                  <input type="checkbox" checked={checked} onChange={() => void toggleMember(member.id)} />
-                  <span className="attendance-check" aria-hidden="true">{checked ? "✓" : ""}</span>
-                  <span className="avatar">{member.firstName[0]}{member.lastName[0]}</span>
-                  <span className="attendance-name">{member.displayName}</span>
-                  <span className="attendance-state">{checked ? "Present" : "Absent"}</span>
+                <label
+                  className={checked ? "attendance-row selected" : "attendance-row"}
+                  key={member.id}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    aria-label={`${member.displayName} present`}
+                    onChange={() => void toggleMember(member.id)}
+                  />
+                  <span className="attendance-check" aria-hidden="true">
+                    {checked ? "✓" : ""}
+                  </span>
+                  <span className="avatar">
+                    {member.firstName[0]}
+                    {member.lastName[0]}
+                  </span>
+                  <span className="attendance-name">
+                    <HighlightedText text={member.displayName} query={search} />
+                    <small>{checked ? "Present" : "Tap to mark present"}</small>
+                  </span>
                 </label>
               );
             })}
@@ -379,7 +501,7 @@ export function ServiceManager() {
               </div>
             )}
           </div>
-          {visitors.length > 0 && (
+          {attendanceFilter !== "absent" && (
             <div
               className={
                 settings.showVisitorsSeparately
@@ -388,12 +510,27 @@ export function ServiceManager() {
               }
             >
               {settings.showVisitorsSeparately && (
-                <h2>{settings.visitorLabel}s for this service</h2>
+                <div className="attendance-column-heading">
+                  <h2>{settings.visitorLabel}s</h2>
+                  <span>{presentCounts.visitors} present</span>
+                </div>
               )}
-              {visitors.map((visitor) => (
-                <div className="visitor-row" key={visitor.id}>
+              {filteredVisitors.map((visitor) => (
+                <div className="visitor-row visitor-attendance-row" key={visitor.id}>
+                  <span className="visitor-present-check" aria-hidden="true">
+                    ✓
+                  </span>
+                  <span className="visitor-avatar" aria-hidden="true">
+                    {visitor.firstName[0] || "V"}
+                    {visitor.lastName[0] || ""}
+                  </span>
                   <span className="visitor-name">
-                    <strong>{visitor.displayName}</strong>
+                    <strong>
+                      <HighlightedText
+                        text={visitor.displayName}
+                        query={search}
+                      />
+                    </strong>
                     <small>{visitor.savedAsMember ? "Saved as member" : "This service only"}</small>
                     {settings.allowVisitorNotes && visitor.notes && (
                       <small>{visitor.notes}</small>
@@ -430,11 +567,25 @@ export function ServiceManager() {
                   </span>
                 </div>
               ))}
+              {filteredVisitors.length === 0 && (
+                <div className="attendance-empty">
+                  <strong>
+                    {search
+                      ? `No ${settings.visitorLabel.toLocaleLowerCase()}s match your search.`
+                      : `No ${settings.visitorLabel.toLocaleLowerCase()}s yet.`}
+                  </strong>
+                  <span>
+                    {search
+                      ? "Try another name or clear the search."
+                      : "Use Add Visitor when someone new attends."}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </section>
-        <div className="sticky-actions">
-          <span>{total} selected</span>
+        <div className="sticky-actions attendance-mobile-actions">
+          <span>{presentCounts.total} present</span>
           <div>
             {active.status === "completed" ? (
               isAdmin(user) &&
@@ -470,6 +621,13 @@ export function ServiceManager() {
             )}
           </div>
         </div>
+        {memberOpen && (
+          <QuickAddMemberModal
+            onClose={() => setMemberOpen(false)}
+            onCreate={createQuickMember}
+            onUseExisting={useExistingQuickMember}
+          />
+        )}
         {visitorOpen && (
           <VisitorModal
             settings={settings}
@@ -609,6 +767,188 @@ export function ServiceManager() {
       </div>
     );
   }
+}
+
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  const trimmed = query.trim();
+  if (!trimmed) return text;
+  const index = text.toLocaleLowerCase().indexOf(trimmed.toLocaleLowerCase());
+  if (index < 0) return text;
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="search-match">
+        {text.slice(index, index + trimmed.length)}
+      </mark>
+      {text.slice(index + trimmed.length)}
+    </>
+  );
+}
+
+function QuickAddMemberModal({
+  onClose,
+  onCreate,
+  onUseExisting,
+}: {
+  onClose: () => void;
+  onCreate: (
+    firstName: string,
+    lastName: string,
+    allowDuplicate?: boolean,
+  ) => Promise<Person | undefined>;
+  onUseExisting: (person: Person) => Promise<void>;
+}) {
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [duplicate, setDuplicate] = useState<Person | undefined>();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function create(allowDuplicate = false) {
+    setSaving(true);
+    setError("");
+    try {
+      const match = await onCreate(firstName, lastName, allowDuplicate);
+      if (match) {
+        setDuplicate(match);
+        return;
+      }
+      onClose();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not add member.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleUseExisting() {
+    if (!duplicate) return;
+    setSaving(true);
+    setError("");
+    try {
+      await onUseExisting(duplicate);
+      onClose();
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not use this member.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <section
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quick-member-title"
+      >
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">This service</p>
+            <h2 id="quick-member-title">Add a member</h2>
+          </div>
+          <button
+            className="icon-button"
+            aria-label="Close"
+            type="button"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        <form
+          className="form-stack"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void create(false);
+          }}
+        >
+          <div className="form-grid">
+            <label>
+              First name
+              <input
+                autoFocus
+                value={firstName}
+                onChange={(event) => {
+                  setFirstName(event.target.value);
+                  setDuplicate(undefined);
+                }}
+                required
+              />
+            </label>
+            <label>
+              Last name
+              <input
+                value={lastName}
+                onChange={(event) => {
+                  setLastName(event.target.value);
+                  setDuplicate(undefined);
+                }}
+                required
+              />
+            </label>
+          </div>
+          {duplicate && (
+            <div className="notice warning duplicate-member-warning">
+              <strong>{duplicate.displayName} already exists.</strong>
+              <span>
+                {duplicate.isActive
+                  ? "Use the existing member, or add another person with the same name."
+                  : "This member is inactive. An administrator can reactivate and mark them present."}
+              </span>
+              <div>
+                <button
+                  className="button secondary"
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void handleUseExisting()}
+                >
+                  {duplicate.isActive
+                    ? "Use existing and mark present"
+                    : "Reactivate and mark present"}
+                </button>
+                <button
+                  className="button subtle"
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void create(true)}
+                >
+                  Add another person
+                </button>
+              </div>
+            </div>
+          )}
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+          <p className="form-note">
+            The member will be added to the church directory and marked present
+            for this service. This works while offline.
+          </p>
+          <div className="modal-actions">
+            <button
+              className="button subtle"
+              type="button"
+              disabled={saving}
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            {!duplicate && (
+              <button className="button primary" disabled={saving}>
+                {saving ? "Adding…" : "Add member and mark present"}
+              </button>
+            )}
+          </div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 function VisitorModal({

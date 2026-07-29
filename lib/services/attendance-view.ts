@@ -1,4 +1,4 @@
-import type { Person } from "@/lib/domain";
+import type { Person, ServiceVisitor } from "@/lib/domain";
 
 export type AttendanceFilter = "all" | "present" | "absent";
 
@@ -34,4 +34,35 @@ export function filterAttendanceMembers(
       member.displayName.toLocaleLowerCase().includes(normalizedQuery)
     );
   });
+}
+
+export function attendancePresentCounts(
+  presentMemberIds: ReadonlySet<string>,
+  visitors: ServiceVisitor[],
+  includeVisitors = true,
+) {
+  const visitorCount = includeVisitors
+    ? visitors.filter(
+        (visitor) => !visitor.deletedAt && !visitor.savedAsMember,
+      ).length
+    : 0;
+  return {
+    total: presentMemberIds.size + visitorCount,
+    members: presentMemberIds.size,
+    visitors: visitorCount,
+  };
+}
+
+export function filterAttendanceVisitors(
+  visitors: ServiceVisitor[],
+  filter: AttendanceFilter,
+  query: string,
+) {
+  if (filter === "absent") return [];
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  return visitors.filter(
+    (visitor) =>
+      !visitor.deletedAt &&
+      visitor.displayName.toLocaleLowerCase().includes(normalizedQuery),
+  );
 }
