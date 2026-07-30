@@ -71,6 +71,14 @@ interface DynamicSupabaseTable {
   ): DynamicSupabaseQuery;
 }
 
+interface DynamicSupabaseClient {
+  from(name: string): DynamicSupabaseTable;
+  rpc(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<DynamicSupabaseResult>;
+}
+
 class SupabaseUploadError extends Error {
   constructor(
     message: string,
@@ -146,9 +154,29 @@ export function createSupabaseUploadTarget(): UploadTarget {
         ...payload,
         last_mutation_id: context.mutationToken,
       };
-      const client = getSupabaseClient() as unknown as {
-        from(name: string): DynamicSupabaseTable;
-      };
+      const client = getSupabaseClient() as unknown as DynamicSupabaseClient;
+
+      // Audit history is append-only and Attendance Takers intentionally cannot
+      // read it. Sending it through the editable-record SELECT/UPSERT path would
+      // require permissions that no audit writer should need. The RPC derives
+      // the actor and organization from auth.uid(), and safely acknowledges an
+      // already-applied mutation without exposing audit rows to the caller.
+      if (table === "audit_log") {
+        const { data, error } = await client.rpc("append_audit_log_entry", {
+          p_entry: payload,
+          p_mutation_id: context.mutationToken,
+        });
+        if (error) throw new SupabaseUploadError(error.message, error.code);
+        return {
+          version:
+            typeof data?.version === "number" ? Number(data.version) : 1,
+          updatedAt:
+            typeof data?.updated_at === "string"
+              ? data.updated_at
+              : undefined,
+        };
+      }
+
       const applyIdentity = (query: DynamicSupabaseQuery) => {
         if (table === "service_attendance") {
           return query
