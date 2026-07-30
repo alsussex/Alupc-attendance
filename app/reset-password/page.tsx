@@ -2,14 +2,14 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { getSupabaseClient } from "@/lib/supabase/client";
+import { useToast } from "@/components/feedback/ToastProvider";
 import {
   passwordConfirmationError,
   preparePasswordSetupSession,
 } from "@/lib/auth/password";
-import { useToast } from "@/components/feedback/ToastProvider";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
-export default function AcceptInvitePage() {
+export default function ResetPasswordPage() {
   const router = useRouter();
   const { showToast } = useToast();
   const [ready, setReady] = useState(false);
@@ -21,7 +21,7 @@ export default function AcceptInvitePage() {
   useEffect(() => {
     if (!navigator.onLine) {
       queueMicrotask(() =>
-        setError("Accepting an invitation requires an internet connection."),
+        setError("Setting a new password requires an internet connection."),
       );
       return;
     }
@@ -34,7 +34,7 @@ export default function AcceptInvitePage() {
         setError(
           caught instanceof Error
             ? caught.message
-            : "Open the most recent invitation link from your email.",
+            : "This password-recovery link could not be used.",
         ),
       );
   }, []);
@@ -47,67 +47,42 @@ export default function AcceptInvitePage() {
       return;
     }
     setSaving(true);
+    setError("");
     const { error: updateError } = await getSupabaseClient().auth.updateUser({
       password,
     });
     if (updateError) {
       setError(
         /expired|invalid|session|token/i.test(updateError.message)
-          ? "This invitation link is invalid, expired, or has already been used. Ask an administrator to resend it."
-          : "Your password could not be saved. Please try again.",
+          ? "This password-recovery link is invalid, expired, or has already been used. Request a new link."
+          : "Your password could not be updated. Please try again.",
       );
       setSaving(false);
       return;
     }
-    const client = getSupabaseClient();
-    const {
-      data: { user },
-    } = await client.auth.getUser();
-    if (user) {
-      const { data: profile } = await client
-        .from("profiles")
-        .select("organization_id, display_name, role")
-        .eq("id", user.id)
-        .single();
-      if (profile) {
-        const auditId = crypto.randomUUID();
-        await client.from("audit_log").insert({
-          id: auditId,
-          organization_id: profile.organization_id,
-          entity_type: "user",
-          entity_id: user.id,
-          action: "invitation_accepted",
-          user_id: user.id,
-          user_display_name: profile.display_name || user.email || "Church user",
-          role: profile.role,
-          details: {},
-          version: 1,
-          last_mutation_id: auditId,
-        });
-      }
-    }
-    showToast("Account setup complete.", { key: "invitation-accepted" });
+    showToast("Password updated.", { key: "password-updated" });
     router.replace("/dashboard");
   }
 
   return (
     <main className="login-page">
-      <section className="login-card" aria-labelledby="invite-title">
+      <section className="login-card" aria-labelledby="reset-password-title">
         <div className="login-brand">
-          <span className="brand-mark large" aria-hidden="true">AL</span>
+          <span className="brand-mark large" aria-hidden="true">
+            AL
+          </span>
           <span>Abundant Life UPC</span>
         </div>
         <div>
-          <p className="eyebrow">Authorized attendance access</p>
-          <h1 id="invite-title">Finish setting up your account</h1>
+          <p className="eyebrow">Account recovery</p>
+          <h1 id="reset-password-title">Set a new password</h1>
           <p className="muted">
-            Choose a password for Church Attendance. Your first setup must be
-            completed online.
+            Choose a new password before continuing to Church Attendance.
           </p>
         </div>
         <form className="form-stack" onSubmit={submit}>
           <label>
-            Password
+            New password
             <input
               type="password"
               autoComplete="new-password"
@@ -130,11 +105,23 @@ export default function AcceptInvitePage() {
               required
             />
           </label>
-          {error && <div className="notice error" role="alert">{error}</div>}
-          <button className="button primary large full" disabled={!ready || saving}>
-            {saving ? "Saving…" : "Complete account setup"}
+          {error && (
+            <div className="notice error" role="alert">
+              {error}
+            </div>
+          )}
+          <button
+            className="button primary large full"
+            disabled={!ready || saving}
+          >
+            {saving ? "Updating…" : "Update password"}
           </button>
         </form>
+        {!ready && (
+          <a className="login-text-action" href="/login">
+            Return to sign in
+          </a>
+        )}
       </section>
     </main>
   );

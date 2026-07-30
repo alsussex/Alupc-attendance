@@ -1,6 +1,7 @@
 "use client";
 
 import { useSynchronization } from "@/components/sync/SyncProvider";
+import { useToast } from "@/components/feedback/ToastProvider";
 import {
   syncBannerPresentation,
   syncIndicatorPresentation,
@@ -8,13 +9,20 @@ import {
 
 export function SyncIndicator() {
   const synchronization = useSynchronization();
+  const { showToast } = useToast();
   const presentation = syncIndicatorPresentation(synchronization);
   return (
     <button
       className={`sync-indicator ${presentation.tone}`}
       type="button"
       disabled={synchronization.isSyncing}
-      onClick={() => void synchronization.syncNow()}
+      onClick={() =>
+        void synchronization.syncNow().then((outcome) => {
+          if (outcome.status === "synced") {
+            showToast("All changes synced.", { key: "manual-sync-complete" });
+          }
+        })
+      }
       aria-label={`${presentation.label}. Activate to synchronize now.`}
       title={
         synchronization.consecutiveFailures >= 3
@@ -30,6 +38,7 @@ export function SyncIndicator() {
 
 export function SyncBanner() {
   const synchronization = useSynchronization();
+  const { showToast } = useToast();
   const presentation = syncBannerPresentation(synchronization);
   if (!presentation) return null;
 
@@ -44,7 +53,15 @@ export function SyncBanner() {
         <button
           type="button"
           disabled={synchronization.isSyncing}
-          onClick={() => void synchronization.syncNow()}
+          onClick={() =>
+            void synchronization.syncNow().then((outcome) => {
+              if (outcome.status === "synced") {
+                showToast("All changes synced.", {
+                  key: "manual-sync-complete",
+                });
+              }
+            })
+          }
         >
           {synchronization.isSyncing ? "Syncing…" : "Sync now"}
         </button>

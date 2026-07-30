@@ -38,6 +38,7 @@ Requirements: Node.js 22.13 or newer, npm, and a Supabase project.
    - `supabase/migrations/202607290010_unnamed_visitor_count.sql`
    - `supabase/migrations/202607290011_append_only_audit_log.sql`
    - `supabase/migrations/202607300001_bulk_member_entry.sql`
+   - `supabase/migrations/202607300002_account_recovery_contacts_and_visitors.sql`
 
 4. Create the first user and organization using the steps below.
 5. Put the project URL, browser-safe anon key, and server-only service-role key in `.env.local`. The service-role key must never have a `NEXT_PUBLIC_` prefix.
@@ -109,14 +110,16 @@ In **Supabase > Authentication > URL Configuration**, configure:
 - Site URL: `https://<assigned-production-domain>.vercel.app`
 - Production login redirect: `https://<assigned-production-domain>.vercel.app/login`
 - Production invitation redirect: `https://<assigned-production-domain>.vercel.app/accept-invite`
+- Production password-recovery redirect: `https://<assigned-production-domain>.vercel.app/reset-password`
 - Local login redirect: `http://localhost:3000/login`
 - Local invitation redirect: `http://localhost:3000/accept-invite`
+- Local password-recovery redirect: `http://localhost:3000/reset-password`
 
 The default Vercel domain is sufficient. Use the exact stable production domain Vercel assigns. Add preview wildcards only if preview authentication is genuinely needed.
 
 ## Private Vercel deployment checklist
 
-1. Confirm all twelve migrations were applied in filename order.
+1. Confirm all thirteen migrations were applied in filename order.
 2. Confirm the first Admin and organization profile exist.
 3. Confirm `.env.example` contains placeholders and `.env.local` is untracked.
 4. Import the existing `alsussex/Alupc-attendance` repository and select `main`.
@@ -380,6 +383,32 @@ The migration permits Attendance Takers only the safe inactive/removed →
 active restoration transition; deactivation, archival, deletion, organization
 changes, and creation ownership changes remain blocked.
 
+## Account recovery, direct user creation, and member contact details
+
+The sign-in page can request a Supabase password-recovery email without
+revealing whether an account exists. Recovery links return to
+`/reset-password`; invitation links return to `/accept-invite`. Both routes
+exchange the callback code, require matching password confirmation, and handle
+expired or reused links without entering the protected application.
+
+Settings → Users separates **Invite User** from **Create User**. Direct account
+creation calls the authenticated `/api/admin/users` server route. The route
+verifies the caller's access token, reloads the active Admin profile, derives
+the organization from that profile, and only then uses
+`SUPABASE_SERVICE_ROLE_KEY` on the server. Passwords and privileged credentials
+are never stored in IndexedDB, returned to the browser, or copied into audit
+details.
+
+Migration
+`202607300002_account_recovery_contacts_and_visitors.sql` must be applied after
+`202607300001_bulk_member_entry.sql`. It adds optional member email and phone
+fields, permits an empty visitor last name while retaining a required first
+name, and creates `member_private_details` for Admin-only notes. Email and phone
+follow the existing trusted member-edit permission used by Admins and
+Attendance Takers. Administrative notes have separate Admin-only RLS, offline
+storage, synchronization, backup/export support, and audits that record only
+that notes changed—not their text.
+
 ### Known limitations
 
 - Sync and Realtime reconciliation run while the app is open. There is no
@@ -433,7 +462,7 @@ This release does not include Excel export, reports, charts, import/restore, per
 
 Use fictional data such as **Alex Meadow** and **Robin Field**.
 
-1. Apply all twelve migrations and configure the same Supabase project.
+1. Apply all thirteen migrations and configure the same Supabase project.
 2. Open Browser A as Admin, wait for **Online**, invite a fictional Attendance Taker, and complete that user's first sign-in online in Browser B.
 3. In Browser A, add Alex Meadow, create a draft service, check Alex present, and allow background sync to complete.
 4. In Browser B, focus the app and confirm Alex, the service, and attendance total of one.

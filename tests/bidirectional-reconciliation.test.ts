@@ -145,7 +145,8 @@ describe("session-aware synchronization recovery", () => {
     });
 
     expect(recoverAccess).toHaveBeenCalledTimes(1);
-    expect(result.upload.errors).toHaveLength(2);
+    expect(result.upload.errors).toHaveLength(1);
+    expect(result.upload.diagnostics).toHaveLength(2);
     expect(await getPendingChanges(organizationId)).toHaveLength(1);
   });
 
@@ -334,7 +335,7 @@ describe("remote subscription lifecycle", () => {
     const stopA = subscribeToRemoteOrganizationChanges(user, vi.fn(), fake.client);
     const stopB = subscribeToRemoteOrganizationChanges(user, vi.fn(), fake.client);
     expect(activeRemoteSubscriptionCount()).toBe(1);
-    expect(fake.filters).toHaveLength(8);
+    expect(fake.filters).toHaveLength(9);
     expect(
       fake.filters.every((filter) =>
         filter.filter?.includes(organizationId),
@@ -431,7 +432,8 @@ describe("database conflict safeguards", () => {
       },
     };
     const result = await uploadPendingChanges(organizationId, target);
-    expect(result.errors[0]).toContain("SYNC_CONFLICT");
+    expect(result.errors[0]).toContain("newer changes from another device");
+    expect(result.diagnostics?.[0]).toContain("SYNC_CONFLICT");
     const queued = await getPendingChanges(organizationId);
     expect(queued).toHaveLength(1);
     expect(queued[0]).toMatchObject({

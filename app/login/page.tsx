@@ -3,6 +3,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import {
+  requestPasswordRecovery,
+} from "@/lib/auth/password";
+import { getSupabaseClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
   const { loading, user, error, signIn } = useAuth();
@@ -10,6 +14,11 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
+  const [recoveryEmail, setRecoveryEmail] = useState("");
+  const [recoverySaving, setRecoverySaving] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [recoveryError, setRecoveryError] = useState("");
 
   useEffect(() => {
     if (!loading && user) router.replace("/dashboard");
@@ -25,6 +34,30 @@ export default function LoginPage() {
       // AuthProvider exposes the user-facing error.
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function recoverPassword(event: FormEvent) {
+    event.preventDefault();
+    setRecoverySaving(true);
+    setRecoveryError("");
+    try {
+      await requestPasswordRecovery(
+        getSupabaseClient(),
+        recoveryEmail,
+        `${window.location.origin}/reset-password`,
+      );
+      setRecoveryMessage(
+        "If an account exists for that email, a password-recovery link is on its way.",
+      );
+    } catch (caught) {
+      setRecoveryError(
+        caught instanceof Error
+          ? caught.message
+          : "The recovery email could not be requested.",
+      );
+    } finally {
+      setRecoverySaving(false);
     }
   }
 
@@ -61,6 +94,16 @@ export default function LoginPage() {
               required
             />
           </label>
+          <button
+            className="login-text-action"
+            type="button"
+            onClick={() => {
+              setRecoveryEmail(email);
+              setRecoveryOpen(true);
+            }}
+          >
+            Forgot password?
+          </button>
           {error && <div className="notice error" role="alert">{error}</div>}
           <button className="button primary large full" disabled={submitting || loading}>
             {submitting ? "Signing in…" : "Sign in"}
@@ -72,6 +115,75 @@ export default function LoginPage() {
           sign-in, this device can reopen the attendance workspace offline.
         </p>
       </section>
+      {recoveryOpen && (
+        <div className="modal-backdrop">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="forgot-password-title"
+          >
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Account recovery</p>
+                <h2 id="forgot-password-title">Reset your password</h2>
+                <p>
+                  Enter your authorized account email. Password setup requires
+                  an internet connection.
+                </p>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Close password recovery"
+                onClick={() => setRecoveryOpen(false)}
+              >
+                ×
+              </button>
+            </div>
+            <form className="form-stack" onSubmit={recoverPassword}>
+              <label>
+                Email address
+                <input
+                  autoFocus
+                  type="email"
+                  autoComplete="email"
+                  value={recoveryEmail}
+                  onChange={(event) => setRecoveryEmail(event.target.value)}
+                  required
+                />
+              </label>
+              {recoveryMessage && (
+                <div className="notice success" role="status">
+                  {recoveryMessage}
+                </div>
+              )}
+              {recoveryError && (
+                <div className="notice error" role="alert">
+                  {recoveryError}
+                </div>
+              )}
+              <div className="modal-actions">
+                <button
+                  className="button subtle"
+                  type="button"
+                  onClick={() => setRecoveryOpen(false)}
+                >
+                  Close
+                </button>
+                {!recoveryMessage && (
+                  <button
+                    className="button primary"
+                    disabled={recoverySaving}
+                  >
+                    {recoverySaving ? "Sending…" : "Send recovery email"}
+                  </button>
+                )}
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

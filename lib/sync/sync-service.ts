@@ -95,7 +95,12 @@ async function runSynchronization(
     options.onPhase?.("offline");
     await storeStatus(user, "offline");
     return {
-      upload: { uploaded: 0, errors: [], blockedConflicts: 0 },
+      upload: {
+        uploaded: 0,
+        errors: [],
+        diagnostics: [],
+        blockedConflicts: 0,
+      },
       pull: { downloaded: 0, merged: 0, skippedPending: 0, skippedOlder: 0 },
     };
   }
@@ -171,7 +176,9 @@ export async function synchronizeWithSessionRecovery(
     const result = await synchronizeOrganization(user, options);
     if (
       !options.recoverAccess ||
-      !result.upload.errors.some(isAuthenticationSynchronizationError)
+      !(result.upload.diagnostics ?? result.upload.errors).some(
+        isAuthenticationSynchronizationError,
+      )
     ) {
       return result;
     }

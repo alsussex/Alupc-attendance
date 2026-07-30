@@ -5,6 +5,8 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { AuditHistory } from "@/components/audit/AuditHistory";
 import type { UserRole } from "@/lib/domain";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { passwordConfirmationError } from "@/lib/auth/password";
+import { useToast } from "@/components/feedback/ToastProvider";
 
 interface ManagedUser {
   id: string;
@@ -52,10 +54,12 @@ function formatDate(value?: string | null) {
 
 export function UserManagement({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [historyUser, setHistoryUser] = useState<ManagedUser | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -131,13 +135,22 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
           <h1>User Management</h1>
           <p>Invite trusted volunteers to the existing Abundant Life UPC organization.</p>
         </div>
-        <button
-          className="button primary"
-          type="button"
-          onClick={() => setInviteOpen(true)}
-        >
-          ＋ Invite user
-        </button>
+        <div className="button-row">
+          <button
+            className="button secondary"
+            type="button"
+            onClick={() => setInviteOpen(true)}
+          >
+            Invite User
+          </button>
+          <button
+            className="button primary"
+            type="button"
+            onClick={() => setCreateOpen(true)}
+          >
+            Create User
+          </button>
+        </div>
       </div>
 
       <div className="admin-safety-note">
@@ -319,10 +332,172 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
           onInvited={async (email) => {
             setInviteOpen(false);
             setMessage(`Invitation sent to ${email}.`);
+            showToast("Invitation sent.", { key: `invite:${email}` });
             await refresh();
           }}
         />
       )}
+      {createOpen && (
+        <CreateUserModal
+          onClose={() => setCreateOpen(false)}
+          onCreated={async (email) => {
+            setCreateOpen(false);
+            setMessage(`User account created for ${email}.`);
+            showToast("User created.", { key: `created-user:${email}` });
+            await refresh();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreateUserModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (email: string) => Promise<void>;
+}) {
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [role, setRole] = useState<UserRole>("attendance_taker");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const validation = passwordConfirmationError(password, confirmation);
+    if (validation) {
+      setError(validation);
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await adminRequest("", {
+        method: "POST",
+        body: JSON.stringify({
+          mode: "create",
+          displayName,
+          email,
+          password,
+          role,
+        }),
+      });
+      await onCreated(email);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "The user account could not be created.",
+      );
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <section
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-user-title"
+      >
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">Secure administrator action</p>
+            <h2 id="create-user-title">Create an authorized user</h2>
+            <p>
+              This account is created immediately in the current church
+              organization. Share the initial password securely.
+            </p>
+          </div>
+          <button
+            className="icon-button"
+            aria-label="Close"
+            type="button"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        <form className="form-stack" onSubmit={submit}>
+          <label>
+            Display name
+            <input
+              autoFocus
+              value={displayName}
+              onChange={(event) => setDisplayName(event.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Email address
+            <input
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              required
+            />
+          </label>
+          <div className="form-grid">
+            <label>
+              Initial password
+              <input
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Confirm password
+              <input
+                type="password"
+                autoComplete="new-password"
+                minLength={8}
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                required
+              />
+            </label>
+          </div>
+          <label>
+            Role
+            <select
+              value={role}
+              onChange={(event) => setRole(event.target.value as UserRole)}
+            >
+              <option value="attendance_taker">Attendance Taker</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+          {error && (
+            <div className="notice error" role="alert">
+              {error}
+            </div>
+          )}
+          <div className="modal-actions">
+            <button
+              className="button subtle"
+              type="button"
+              disabled={saving}
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button className="button primary" disabled={saving}>
+              {saving ? "Creating…" : "Create User"}
+            </button>
+          </div>
+        </form>
+      </section>
     </div>
   );
 }

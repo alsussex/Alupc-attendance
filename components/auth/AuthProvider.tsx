@@ -519,7 +519,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (
         event === "INITIAL_SESSION" ||
         event === "SIGNED_IN" ||
-        event === "TOKEN_REFRESHED"
+        event === "TOKEN_REFRESHED" ||
+        event === "PASSWORD_RECOVERY"
       ) {
         const eventKey = `${event}:${nextSession?.user.id ?? "none"}:${nextSession?.access_token ?? "none"}`;
         const now = Date.now();

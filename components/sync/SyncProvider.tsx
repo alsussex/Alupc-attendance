@@ -127,7 +127,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           count = await getQueueCount(activeUser.organizationId);
           setPendingCount(count);
           if (result.upload.errors.length) {
-            const message = result.upload.errors.join("\n");
+            const message = [...new Set(result.upload.errors)].join("\n");
             setError(
               activeUser.role === "admin"
                 ? message

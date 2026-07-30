@@ -216,7 +216,10 @@ describe("organization-wide service visibility", () => {
     };
     const result = await uploadPendingChanges(organizationId, target);
     expect(result.uploaded).toBe(0);
-    expect(result.errors[0]).toContain("completed cloud service is newer");
+    expect(result.errors[0]).toContain("newer changes from another device");
+    expect(result.diagnostics?.[0]).toContain(
+      "completed cloud service is newer",
+    );
     expect(await getPendingChanges(organizationId)).toHaveLength(1);
   });
 

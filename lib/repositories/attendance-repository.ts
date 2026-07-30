@@ -9,6 +9,7 @@ import {
   type AttendanceRecord,
   type ChurchService,
   type Person,
+  type MemberPrivateDetails,
   type ServiceStatus,
   type ServiceType,
   type ServiceVisitor,
@@ -20,6 +21,7 @@ import { isAdmin } from "@/lib/auth/permissions";
 import { enqueueChange } from "@/lib/sync/queue";
 import { toCloudRecord } from "@/lib/sync/serialization";
 import { recordAuditEntry } from "@/lib/audit/audit-repository";
+import { memberContactValidation } from "@/lib/people/member-contact";
 
 const attendanceWriteChains = new Map<string, Promise<AttendanceRecord>>();
 const unnamedVisitorWriteChains = new Map<string, Promise<ChurchService>>();
@@ -129,10 +131,14 @@ export async function saveMember(
     firstName: string;
     lastName: string;
     allowDuplicate?: boolean;
+    email?: string;
+    phone?: string;
   },
 ) {
   const database = await getDatabase();
   const existing = input.id ? await database.get("people", input.id) : undefined;
+  const contactError = memberContactValidation(input);
+  if (contactError) throw new Error(contactError);
   const timestamp = nowIso();
   const person: Person = {
     id: input.id ?? createId(),
@@ -145,6 +151,8 @@ export async function saveMember(
     isActive: existing?.isActive ?? true,
     duplicateNameAllowed:
       input.allowDuplicate ?? existing?.duplicateNameAllowed ?? false,
+    email: input.email?.trim().toLocaleLowerCase() || undefined,
+    phone: input.phone?.trim() || undefined,
     inactiveAt: existing?.inactiveAt,
     deletedAt: existing?.deletedAt,
     createdAt: existing?.createdAt ?? timestamp,
@@ -159,17 +167,24 @@ export async function saveMember(
     recordId: person.id,
     payload: toCloudRecord(person),
   });
-  if (
-    !existing ||
-    existing.firstName !== person.firstName ||
-    existing.lastName !== person.lastName
-  ) {
+  const changedFields = !existing
+    ? ["name", ...(person.email ? ["email"] : []), ...(person.phone ? ["phone"] : [])]
+    : [
+        ...(existing.firstName !== person.firstName ||
+        existing.lastName !== person.lastName
+          ? ["name"]
+          : []),
+        ...(existing.email !== person.email ? ["email"] : []),
+        ...(existing.phone !== person.phone ? ["phone"] : []),
+      ];
+  if (!existing || changedFields.length > 0) {
     await recordAuditEntry(user, {
       entityType: "member",
       entityId: person.id,
       action: existing ? "edited" : "added",
       details: {
         name: person.displayName,
+        changedFields,
         ...(existing
           ? { from: existing.displayName, to: person.displayName }
           : {}),
@@ -178,6 +193,73 @@ export async function saveMember(
   }
   announceDataChanged();
   return person;
+}
+
+export async function getMemberPrivateDetails(
+  user: UserContext,
+  memberId: string,
+) {
+  if (!isAdmin(user)) return undefined;
+  const database = await getDatabase();
+  const details = await database.get("memberPrivateDetails", memberId);
+  return details?.organizationId === user.organizationId
+    ? details
+    : undefined;
+}
+
+export async function saveMemberPrivateDetails(
+  user: UserContext,
+  memberId: string,
+  notes: string,
+) {
+  if (!isAdmin(user)) {
+    throw new Error("Only an administrator can update private member notes.");
+  }
+  const validation = memberContactValidation({ notes });
+  if (validation) throw new Error(validation);
+  const database = await getDatabase();
+  const member = await database.get("people", memberId);
+  if (
+    !member ||
+    member.organizationId !== user.organizationId ||
+    member.personType !== "member"
+  ) {
+    throw new Error("Member not found.");
+  }
+  const existing = await database.get("memberPrivateDetails", memberId);
+  const timestamp = nowIso();
+  const record: MemberPrivateDetails = {
+    id: memberId,
+    memberId,
+    organizationId: user.organizationId,
+    version: existing?.version,
+    notes: notes.trim(),
+    createdAt: existing?.createdAt ?? timestamp,
+    updatedAt: timestamp,
+    createdBy: existing?.createdBy ?? user.userId,
+    updatedBy: user.userId,
+  };
+  await database.put("memberPrivateDetails", record);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "member_private_details",
+    recordId: memberId,
+    payload: toCloudRecord(record),
+    basePayload: existing ? toCloudRecord(existing) : undefined,
+  });
+  if (!existing || existing.notes !== record.notes) {
+    await recordAuditEntry(user, {
+      entityType: "member",
+      entityId: memberId,
+      action: "edited",
+      details: {
+        name: member.displayName,
+        changedFields: ["notes"],
+      },
+    });
+  }
+  announceDataChanged();
+  return record;
 }
 
 export async function markMemberInactive(user: UserContext, id: string) {
@@ -600,15 +682,13 @@ export async function addServiceVisitor(
   const database = await getDatabase();
   await requireEditableService(user, serviceId);
   const timestamp = nowIso();
-  const firstName =
-    input.firstName.trim() ||
-    (!input.lastName.trim() ? input.fallbackName?.trim() || "Visitor" : "");
+  const firstName = input.firstName.trim();
   const lastName = input.lastName.trim();
+  if (!firstName) {
+    throw new Error("A visitor first name is required.");
+  }
   let member: Person | undefined;
   if (input.saveAsMember) {
-    if (!firstName || !lastName) {
-      throw new Error("A first and last name are required to save a member.");
-    }
     member = await saveMember(user, { firstName, lastName });
     await setMemberAttendance(user, serviceId, member.id, true);
   }
@@ -676,10 +756,11 @@ export async function editServiceVisitor(
     throw new Error("Visitor not found");
   }
   await requireEditableService(user, visitor.serviceId);
-  const firstName =
-    input.firstName.trim() ||
-    (!input.lastName.trim() ? input.fallbackName?.trim() || "Visitor" : "");
+  const firstName = input.firstName.trim();
   const lastName = input.lastName.trim();
+  if (!firstName) {
+    throw new Error("A visitor first name is required.");
+  }
   const updated: ServiceVisitor = {
     ...visitor,
     firstName,

@@ -10,6 +10,7 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { AuditHistory } from "@/components/audit/AuditHistory";
 import { BulkMemberEntryModal } from "@/components/people/BulkMemberEntryModal";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { isAdmin } from "@/lib/auth/permissions";
 import type { Person } from "@/lib/domain";
 import {
@@ -21,6 +22,7 @@ import { sortMembersByLastName } from "@/lib/people/bulk-member-entry";
 import {
   findExactMemberMatches,
   getLastAttendanceDates,
+  getMemberPrivateDetails,
   listActiveMembers,
   listMemberCandidates,
   listMembers,
@@ -28,6 +30,7 @@ import {
   removeMember,
   restoreMember,
   saveMember,
+  saveMemberPrivateDetails,
 } from "@/lib/repositories/attendance-repository";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
 
@@ -35,9 +38,18 @@ interface FormState {
   id?: string;
   firstName: string;
   lastName: string;
+  email: string;
+  phone: string;
+  notes: string;
 }
 
-const emptyForm: FormState = { firstName: "", lastName: "" };
+const emptyForm: FormState = {
+  firstName: "",
+  lastName: "",
+  email: "",
+  phone: "",
+  notes: "",
+};
 
 function formatDate(value?: string | null) {
   if (!value) return "Not available";
@@ -51,6 +63,7 @@ function formatDate(value?: string | null) {
 
 export function PeopleDirectory() {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const [people, setPeople] = useState<Person[]>([]);
   const [memberCandidates, setMemberCandidates] = useState<Person[]>([]);
   const [lastAttendance, setLastAttendance] = useState<Map<string, string>>(
@@ -62,6 +75,7 @@ export function PeopleDirectory() {
   );
   const [form, setForm] = useState<FormState | null>(null);
   const [profile, setProfile] = useState<Person | null>(null);
+  const [profileNotes, setProfileNotes] = useState("");
   const [reactivateTarget, setReactivateTarget] = useState<Person | null>(null);
   const [duplicate, setDuplicate] = useState<Person | null>(null);
   const [multipleMatches, setMultipleMatches] = useState<Person[]>([]);
@@ -132,11 +146,17 @@ export function PeopleDirectory() {
       }
     }
     setSaving(true);
-    await saveMember(user, { ...form, allowDuplicate });
+    const saved = await saveMember(user, { ...form, allowDuplicate });
+    if (isAdmin(user)) {
+      await saveMemberPrivateDetails(user, saved.id, form.notes);
+    }
     setSaving(false);
     setForm(null);
     setDuplicate(null);
     await refresh();
+    showToast(form.id ? "Member updated." : "Member added.", {
+      key: `member-saved:${saved.id}:${saved.updatedAt}`,
+    });
   }
 
   async function deactivate(person: Person) {
@@ -170,13 +190,25 @@ export function PeopleDirectory() {
     await refresh();
   }
 
-  function edit(person: Person) {
+  async function edit(person: Person) {
+    if (!user) return;
+    const details = await getMemberPrivateDetails(user, person.id);
     setProfile(null);
     setForm({
       id: person.id,
       firstName: person.firstName,
       lastName: person.lastName,
+      email: person.email ?? "",
+      phone: person.phone ?? "",
+      notes: details?.notes ?? "",
     });
+  }
+
+  async function viewProfile(person: Person) {
+    if (!user) return;
+    const details = await getMemberPrivateDetails(user, person.id);
+    setProfileNotes(details?.notes ?? "");
+    setProfile(person);
   }
 
   return (
@@ -290,14 +322,14 @@ export function PeopleDirectory() {
                 <button
                   className="button subtle"
                   type="button"
-                  onClick={() => setProfile(person)}
+                  onClick={() => void viewProfile(person)}
                 >
                   View profile
                 </button>
                 <button
                   className="button subtle"
                   type="button"
-                  onClick={() => edit(person)}
+                  onClick={() => void edit(person)}
                 >
                   Edit
                 </button>
@@ -355,8 +387,9 @@ export function PeopleDirectory() {
           person={profile}
           lastAttendanceDate={lastAttendance.get(profile.id)}
           canManageLifecycle={isAdmin(user)}
+          notes={profileNotes}
           onClose={() => setProfile(null)}
-          onEdit={() => edit(profile)}
+          onEdit={() => void edit(profile)}
           onReactivate={() => {
             setReactivateTarget(profile);
             setProfile(null);
@@ -461,7 +494,7 @@ export function PeopleDirectory() {
                       setMultipleMatches([]);
                       setForm(null);
                       if (match.isActive && !match.deletedAt) {
-                        setProfile(match);
+                        void viewProfile(match);
                       } else {
                         setReactivateTarget(match);
                       }
@@ -549,6 +582,46 @@ export function PeopleDirectory() {
                   />
                 </label>
               </div>
+              <div className="form-grid">
+                <label>
+                  Email address <span className="optional">(optional)</span>
+                  <input
+                    type="email"
+                    autoComplete="email"
+                    maxLength={254}
+                    value={form.email}
+                    onChange={(event) =>
+                      setForm({ ...form, email: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Phone number <span className="optional">(optional)</span>
+                  <input
+                    type="tel"
+                    autoComplete="tel"
+                    maxLength={50}
+                    value={form.phone}
+                    onChange={(event) =>
+                      setForm({ ...form, phone: event.target.value })
+                    }
+                  />
+                </label>
+              </div>
+              {isAdmin(user) && (
+                <label>
+                  Administrative notes{" "}
+                  <span className="optional">(optional, Admin only)</span>
+                  <textarea
+                    maxLength={4000}
+                    value={form.notes}
+                    onChange={(event) =>
+                      setForm({ ...form, notes: event.target.value })
+                    }
+                    placeholder="Plain-text notes for church administration"
+                  />
+                </label>
+              )}
               {duplicate && (
                 <div className="notice warning" role="alert">
                   <strong>This member already exists.</strong>
@@ -560,7 +633,7 @@ export function PeopleDirectory() {
                     type="button"
                     onClick={() => {
                       setForm(null);
-                      setProfile(duplicate);
+                      void viewProfile(duplicate);
                       setDuplicate(null);
                     }}
                   >
@@ -606,6 +679,7 @@ function MemberProfileModal({
   person,
   lastAttendanceDate,
   canManageLifecycle,
+  notes,
   onClose,
   onEdit,
   onReactivate,
@@ -613,6 +687,7 @@ function MemberProfileModal({
   person: Person;
   lastAttendanceDate?: string;
   canManageLifecycle: boolean;
+  notes: string;
   onClose: () => void;
   onEdit: () => void;
   onReactivate: () => void;
@@ -666,6 +741,28 @@ function MemberProfileModal({
             <div>
               <dt>Date made inactive</dt>
               <dd>{formatDate(person.inactiveAt)}</dd>
+            </div>
+          )}
+          {person.email && (
+            <div>
+              <dt>Email</dt>
+              <dd>
+                <a href={`mailto:${person.email}`}>{person.email}</a>
+              </dd>
+            </div>
+          )}
+          {person.phone && (
+            <div>
+              <dt>Phone</dt>
+              <dd>
+                <a href={`tel:${person.phone}`}>{person.phone}</a>
+              </dd>
+            </div>
+          )}
+          {canManageLifecycle && notes && (
+            <div className="member-profile-notes">
+              <dt>Administrative notes</dt>
+              <dd>{notes}</dd>
             </div>
           )}
         </dl>

@@ -58,8 +58,15 @@ export interface Person extends AuditedRecord {
   personType: PersonType;
   isActive: boolean;
   duplicateNameAllowed?: boolean;
+  email?: string;
+  phone?: string;
   inactiveAt?: string | null;
   deletedAt?: string | null;
+}
+
+export interface MemberPrivateDetails extends AuditedRecord {
+  memberId: string;
+  notes: string;
 }
 
 export interface ChurchService extends AuditedRecord {
@@ -164,6 +171,7 @@ export interface SyncQueueItem {
   table:
     | "organizations"
     | "organization_settings"
+    | "member_private_details"
     | "people"
     | "services"
     | "service_attendance"
@@ -210,6 +218,7 @@ export const PULL_TABLES = [
   "profiles",
   "organization_settings",
   "people",
+  "member_private_details",
   "services",
   "service_attendance",
   "service_visitors",

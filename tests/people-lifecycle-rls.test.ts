@@ -118,7 +118,8 @@ describe("people lifecycle behavior", () => {
     await markMemberInactive(administrator, member.id);
     target.rejectPeople = true;
     const failed = await uploadPendingChanges(organizationId, target);
-    expect(failed.errors[0]).toContain("row-level security policy");
+    expect(failed.errors[0]).toContain("does not have permission");
+    expect(failed.diagnostics?.[0]).toContain("row-level security policy");
     expect((await getPendingChanges(organizationId))[0]).toMatchObject({
       table: "people",
       recordId: member.id,

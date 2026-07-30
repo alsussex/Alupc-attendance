@@ -7,6 +7,7 @@ import type {
   ChurchService,
   Organization,
   OrganizationSettings,
+  MemberPrivateDetails,
   Person,
   Profile,
   ServiceVisitor,
@@ -34,6 +35,11 @@ export interface AttendanceDatabase extends DBSchema {
     key: string;
     value: Person;
     indexes: { organizationId: string; displayName: string };
+  };
+  memberPrivateDetails: {
+    key: string;
+    value: MemberPrivateDetails;
+    indexes: { organizationId: string; memberId: string };
   };
   services: {
     key: string;
@@ -82,7 +88,7 @@ let databasePromise: Promise<IDBPDatabase<AttendanceDatabase>> | null = null;
 
 export function getDatabase() {
   if (!databasePromise) {
-    databasePromise = openDB<AttendanceDatabase>("church-attendance", 4, {
+    databasePromise = openDB<AttendanceDatabase>("church-attendance", 5, {
       upgrade(database, oldVersion) {
         if (oldVersion < 1) {
           const people = database.createObjectStore("people", { keyPath: "id" });
@@ -148,6 +154,14 @@ export function getDatabase() {
             ["organizationId", "occurredAt", "id"],
           );
         }
+        if (oldVersion < 5) {
+          const privateDetails = database.createObjectStore(
+            "memberPrivateDetails",
+            { keyPath: "id" },
+          );
+          privateDetails.createIndex("organizationId", "organizationId");
+          privateDetails.createIndex("memberId", "memberId");
+        }
       },
     });
   }
@@ -169,6 +183,7 @@ export async function clearLocalDatabase() {
       "organizationSettings",
       "profiles",
       "people",
+      "memberPrivateDetails",
       "services",
       "attendance",
       "visitors",
@@ -184,6 +199,7 @@ export async function clearLocalDatabase() {
     transaction.objectStore("organizationSettings").clear(),
     transaction.objectStore("profiles").clear(),
     transaction.objectStore("people").clear(),
+    transaction.objectStore("memberPrivateDetails").clear(),
     transaction.objectStore("services").clear(),
     transaction.objectStore("attendance").clear(),
     transaction.objectStore("visitors").clear(),

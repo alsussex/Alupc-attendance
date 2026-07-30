@@ -10,6 +10,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useSynchronization } from "@/components/sync/SyncProvider";
 import { UserManagement } from "@/components/users/UserManagement";
 import { AuditHistory } from "@/components/audit/AuditHistory";
+import { useToast } from "@/components/feedback/ToastProvider";
 import {
   type ApplicationSettings,
   type Organization,
@@ -85,6 +86,7 @@ function displayTime(value?: string) {
 export function SettingsCenter() {
   const { user, session, signOut, refreshAccess } = useAuth();
   const synchronization = useSynchronization();
+  const { showToast } = useToast();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [settings, setSettings] = useState<ApplicationSettings | null>(null);
@@ -238,6 +240,7 @@ export function SettingsCenter() {
         );
       }
       await refreshDeviceStatus();
+      showToast("Settings saved.", { key: `settings-saved:${section}` });
     } catch (caught) {
       setFeedback("");
       setError(
@@ -263,6 +266,7 @@ export function SettingsCenter() {
       base,
       dataset === "backup" ? "application/json" : "text/csv",
     );
+    showToast("Export completed.", { key: `export:${dataset}:${today()}` });
   }
 
   async function runSecurityAction(action: () => Promise<void>) {

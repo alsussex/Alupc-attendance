@@ -23,6 +23,7 @@ const REMOTE_TABLES = [
   "service_attendance",
   "service_visitors",
   "organization_settings",
+  "member_private_details",
   "audit_log",
 ] as const;
 

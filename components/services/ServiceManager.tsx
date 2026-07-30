@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useSynchronization } from "@/components/sync/SyncProvider";
+import { useToast } from "@/components/feedback/ToastProvider";
 import { AuditHistory } from "@/components/audit/AuditHistory";
 import { recordAuditEntry } from "@/lib/audit/audit-repository";
 import {
@@ -106,6 +107,7 @@ function storedFolderKeys(value: string | null, fallback: string[]) {
 export function ServiceManager() {
   const { user } = useAuth();
   const { syncNow } = useSynchronization();
+  const { showToast } = useToast();
   const [services, setServices] = useState<ChurchService[]>([]);
   const [serviceDirectory, setServiceDirectory] = useState<
     ServiceDirectoryItem[]
@@ -126,6 +128,7 @@ export function ServiceManager() {
   const [createOpen, setCreateOpen] = useState(false);
   const [visitorOpen, setVisitorOpen] = useState(false);
   const [memberOpen, setMemberOpen] = useState(false);
+  const [finishConfirmationOpen, setFinishConfirmationOpen] = useState(false);
   const [editingVisitor, setEditingVisitor] =
     useState<ServiceVisitor | null>(null);
   const [historyVisitor, setHistoryVisitor] =
@@ -312,18 +315,6 @@ export function ServiceManager() {
       if (!isAdmin(user) || !settings.allowAdminReopenCompleted) return;
       if (!confirm("Reopen this completed service for editing?")) return;
     }
-    if (status === "completed") {
-      const zeroWarning =
-        settings.warnZeroAttendance && presentCounts.total === 0
-          ? " No attendance has been recorded."
-          : "";
-      if (
-        (settings.confirmComplete || zeroWarning) &&
-        !confirm(`Finish this service?${zeroWarning}`)
-      ) {
-        return;
-      }
-    }
     setServiceAction(status);
     setActionFeedback("");
     try {
@@ -347,6 +338,14 @@ export function ServiceManager() {
       await refreshLists();
       const outcome = await syncNow();
       setActionFeedback(serviceSaveFeedback(status, outcome.status));
+      showToast(
+        status === "completed"
+          ? "Service finished."
+          : active.status === "completed"
+            ? "Service reopened."
+            : "Attendance saved.",
+        { key: `service-status:${active.id}:${status}` },
+      );
     } finally {
       setServiceAction(null);
     }
@@ -454,6 +453,9 @@ export function ServiceManager() {
     await refreshLists();
     await openService(active, { resetView: false });
     highlightCard(`member-card-${member.id}`);
+    showToast("Member added and marked present.", {
+      key: `member-added:${member.id}`,
+    });
     return undefined;
   }
 
@@ -592,7 +594,7 @@ export function ServiceManager() {
                   className="button primary"
                   type="button"
                   disabled={serviceAction !== null}
-                  onClick={() => void setStatus("completed")}
+                  onClick={() => setFinishConfirmationOpen(true)}
                 >
                   {serviceAction === "completed" ? "Saving…" : "Finish Service"}
                 </button>
@@ -1141,7 +1143,7 @@ export function ServiceManager() {
                   className="button primary"
                   type="button"
                   disabled={serviceAction !== null}
-                  onClick={() => void setStatus("completed")}
+                  onClick={() => setFinishConfirmationOpen(true)}
                 >
                   {serviceAction === "completed" ? "Saving…" : "Finish Service"}
                 </button>
@@ -1149,6 +1151,53 @@ export function ServiceManager() {
             )}
           </div>
         </div>
+        {finishConfirmationOpen && !serviceLocked && (
+          <div className="modal-backdrop">
+            <section
+              className="modal confirmation-modal"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="finish-service-title"
+              aria-describedby="finish-service-description"
+            >
+              <div>
+                <p className="eyebrow">Complete attendance</p>
+                <h2 id="finish-service-title">Finish this service?</h2>
+                <p id="finish-service-description">
+                  Finishing will lock attendance and visitor editing. An
+                  administrator can reopen the service later.
+                  {settings.warnZeroAttendance && presentCounts.total === 0
+                    ? " No attendance has been recorded."
+                    : ""}
+                </p>
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="button subtle"
+                  type="button"
+                  autoFocus
+                  disabled={serviceAction !== null}
+                  onClick={() => setFinishConfirmationOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="button primary"
+                  type="button"
+                  disabled={serviceAction !== null}
+                  onClick={async () => {
+                    await setStatus("completed");
+                    setFinishConfirmationOpen(false);
+                  }}
+                >
+                  {serviceAction === "completed"
+                    ? "Saving…"
+                    : "Finish Service"}
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
         {memberOpen && !serviceLocked && (
           <QuickAddMemberModal
             onClose={() => setMemberOpen(false)}
@@ -1192,6 +1241,9 @@ export function ServiceManager() {
               await openService(active, { resetView: false });
               await refreshLists();
               highlightCard(`visitor-card-${visitor.id}`);
+              showToast("Visitor added.", {
+                key: `visitor-added:${visitor.id}`,
+              });
             }}
           />
         )}
@@ -1205,6 +1257,9 @@ export function ServiceManager() {
               await editServiceVisitor(user, editingVisitor.id, input);
               setEditingVisitor(null);
               await openService(active, { resetView: false });
+              showToast("Visitor updated.", {
+                key: `visitor-updated:${editingVisitor.id}`,
+              });
             }}
           />
         )}
@@ -1248,6 +1303,9 @@ export function ServiceManager() {
               setEditOpen(false);
               await refreshLists();
               await openService(service);
+              showToast("Service updated.", {
+                key: `service-updated:${service.id}`,
+              });
             }}
           />
         )}
@@ -1452,7 +1510,7 @@ export function ServiceManager() {
           </section>
         )}
       </section>
-      {createOpen && <ServiceModal settings={settings} onClose={() => setCreateOpen(false)} onSaved={async (service) => { setCreateOpen(false); await refreshLists(); await openService(service); }} />}
+      {createOpen && <ServiceModal settings={settings} onClose={() => setCreateOpen(false)} onSaved={async (service) => { setCreateOpen(false); await refreshLists(); await openService(service); showToast("Service created.", { key: `service-created:${service.id}` }); }} />}
     </div>
   );
 
@@ -1996,8 +2054,8 @@ function VisitorModal({
         <div className="modal-heading"><div><p className="eyebrow">This service</p><h2 id="visitor-title">{existing ? `Edit ${settings.visitorLabel.toLocaleLowerCase()}` : `Add a ${settings.visitorLabel.toLocaleLowerCase()}`}</h2></div><button className="icon-button" aria-label="Close" type="button" onClick={onClose}>×</button></div>
         <form className="form-stack" onSubmit={submit}>
           <div className="form-grid">
-            <label>First name<input autoFocus value={firstName} onChange={(event) => setFirstName(event.target.value)} required={settings.requireVisitorName} /></label>
-            <label>Last name<input value={lastName} onChange={(event) => setLastName(event.target.value)} required={settings.requireVisitorName} /></label>
+            <label>First name<input autoFocus value={firstName} onChange={(event) => setFirstName(event.target.value)} required /></label>
+            <label>Last name <span className="optional">(optional)</span><input value={lastName} onChange={(event) => setLastName(event.target.value)} /></label>
           </div>
           {settings.allowVisitorNotes && (
             <label>

@@ -145,7 +145,7 @@ describe("quiet routine synchronization", () => {
       "utf8",
     );
 
-    expect(peopleSource).not.toContain("Member added.");
+    expect(peopleSource).toContain("Member added.");
     expect(peopleSource).not.toContain("Reactivating…");
     expect(peopleSource).not.toContain('"Saving…"');
     expect(serviceSource).not.toContain("added to this service.");

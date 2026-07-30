@@ -34,12 +34,17 @@ export async function buildOrganizationExport(
   if (!isAdmin(user)) throw new Error("Administrator access is required.");
   const database = await getDatabase();
   const organizationId = user.organizationId;
-  const [organization, settings, profiles, people, services, attendance, visitors, auditLog] =
+  const [organization, settings, profiles, people, memberPrivateDetails, services, attendance, visitors, auditLog] =
     await Promise.all([
       database.get("organizations", organizationId),
       database.get("organizationSettings", organizationId),
       database.getAllFromIndex("profiles", "organizationId", organizationId),
       database.getAllFromIndex("people", "organizationId", organizationId),
+      database.getAllFromIndex(
+        "memberPrivateDetails",
+        "organizationId",
+        organizationId,
+      ),
       database.getAllFromIndex("services", "organizationId", organizationId),
       database.getAllFromIndex("attendance", "organizationId", organizationId),
       database.getAllFromIndex("visitors", "organizationId", organizationId),
@@ -62,6 +67,7 @@ export async function buildOrganizationExport(
         settings,
         profiles,
         people,
+        memberPrivateDetails,
         services,
         attendance,
         visitors,
@@ -92,12 +98,26 @@ export async function buildOrganizationExport(
         person.isActive === active,
     );
     return rowsToCsv(
-      ["ID", "First name", "Last name", "Display name", "Status", "Created"],
+      [
+        "ID",
+        "First name",
+        "Last name",
+        "Display name",
+        "Email",
+        "Phone",
+        "Administrative notes",
+        "Status",
+        "Created",
+      ],
       records.map((person) => [
         person.id,
         person.firstName,
         person.lastName,
         person.displayName,
+        person.email,
+        person.phone,
+        memberPrivateDetails.find((details) => details.memberId === person.id)
+          ?.notes,
         person.isActive ? "Active" : "Inactive",
         person.createdAt,
       ]),

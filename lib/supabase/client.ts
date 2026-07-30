@@ -26,7 +26,9 @@ export function getSupabaseClient() {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      // Invitation and recovery routes exchange their own callback credentials
+      // so an unrelated existing browser session can never satisfy setup.
+      detectSessionInUrl: false,
     },
   });
   return client;

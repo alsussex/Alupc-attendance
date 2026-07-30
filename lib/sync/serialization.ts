@@ -4,6 +4,7 @@ import type {
   ChurchService,
   Organization,
   OrganizationSettings,
+  MemberPrivateDetails,
   Person,
   Profile,
   PullTable,
@@ -13,6 +14,7 @@ import type {
 export type LocalPullRecord =
   | Organization
   | OrganizationSettings
+  | MemberPrivateDetails
   | Profile
   | Person
   | ChurchService
@@ -42,6 +44,11 @@ function requiredString(row: Record<string, unknown>, key: string) {
 function optionalString(row: Record<string, unknown>, key: string) {
   const value = row[key];
   return typeof value === "string" && value ? value : undefined;
+}
+
+function stringOrEmpty(row: Record<string, unknown>, key: string) {
+  const value = row[key];
+  return typeof value === "string" ? value : "";
 }
 
 function requiredBoolean(row: Record<string, unknown>, key: string) {
@@ -153,8 +160,18 @@ export function fromCloudRecord(
         row,
         "duplicate_name_allowed",
       ),
+      email: optionalString(row, "email"),
+      phone: optionalString(row, "phone"),
       inactiveAt: optionalString(row, "inactive_at"),
       deletedAt: optionalString(row, "deleted_at"),
+    };
+  }
+
+  if (table === "member_private_details") {
+    return {
+      ...audited,
+      memberId: requiredString(row, "member_id"),
+      notes: stringOrEmpty(row, "notes"),
     };
   }
 
@@ -188,7 +205,7 @@ export function fromCloudRecord(
     ...audited,
     serviceId: requiredString(row, "service_id"),
     firstName: requiredString(row, "first_name"),
-    lastName: requiredString(row, "last_name"),
+    lastName: stringOrEmpty(row, "last_name"),
     displayName: requiredString(row, "display_name"),
     savedAsMember: requiredBoolean(row, "saved_as_member"),
     memberPersonId: optionalString(row, "member_person_id"),

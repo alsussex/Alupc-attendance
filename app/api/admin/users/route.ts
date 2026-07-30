@@ -4,10 +4,18 @@ import {
   authorizeAdministrator,
   validUserRole,
 } from "@/lib/supabase/admin-server";
+import { passwordValidationError } from "@/lib/auth/password";
 
 function failure(caught: unknown, status = 400) {
-  const message =
+  let message =
     caught instanceof Error ? caught.message : "The request could not be completed.";
+  if (/already (been )?registered|already exists|duplicate/i.test(message)) {
+    message = "An account already exists for this email address.";
+  } else if (/password/i.test(message) && /weak|short|characters|strength/i.test(message)) {
+    message = "The password does not meet the required security rules.";
+  } else if (/service role|supabase administration is not configured/i.test(message)) {
+    message = "Secure server-side account administration is not configured.";
+  }
   const unauthorized =
     /authentication|session|administrator access/i.test(message);
   return NextResponse.json(
@@ -120,6 +128,8 @@ export async function POST(request: Request) {
       email?: unknown;
       displayName?: unknown;
       role?: unknown;
+      mode?: unknown;
+      password?: unknown;
     };
     const email =
       typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -128,14 +138,28 @@ export async function POST(request: Request) {
     if (!email || !email.includes("@")) throw new Error("A valid email is required.");
     if (!displayName) throw new Error("A display name is required.");
     if (!validUserRole(body.role)) throw new Error("A valid role is required.");
+    const mode = body.mode === "create" ? "create" : "invite";
+    const password = typeof body.password === "string" ? body.password : "";
+    if (mode === "create") {
+      const passwordError = passwordValidationError(password);
+      if (passwordError) throw new Error(passwordError);
+    }
 
     const redirectTo = `${new URL(request.url).origin}/accept-invite`;
-    const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-      redirectTo,
-      data: { display_name: displayName },
-    });
+    const { data, error } =
+      mode === "create"
+        ? await admin.auth.admin.createUser({
+            email,
+            password,
+            email_confirm: true,
+            user_metadata: { display_name: displayName },
+          })
+        : await admin.auth.admin.inviteUserByEmail(email, {
+            redirectTo,
+            data: { display_name: displayName },
+          });
     if (error) throw new Error(error.message);
-    if (!data.user) throw new Error("Supabase did not create the invited user.");
+    if (!data.user) throw new Error("Supabase did not create the user.");
 
     const { error: profileError } = await admin.from("profiles").insert({
       id: data.user.id,
@@ -153,10 +177,13 @@ export async function POST(request: Request) {
       organizationId,
       userId,
       data.user.id,
-      "invited",
+      mode === "create" ? "created" : "invited",
       { displayName, email, role: body.role },
     );
-    return NextResponse.json({ invited: true }, { status: 201 });
+    return NextResponse.json(
+      mode === "create" ? { created: true } : { invited: true },
+      { status: 201 },
+    );
   } catch (caught) {
     return failure(caught);
   }

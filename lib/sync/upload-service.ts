@@ -6,6 +6,7 @@ import { announceDataChanged } from "@/lib/storage/data-events";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { reconcileAttendanceMutation } from "@/lib/sync/attendance-conflicts";
 import { reconcileVisitorMutation } from "@/lib/sync/visitor-conflicts";
+import { humanReadableSyncError } from "@/lib/sync/errors";
 
 export interface UploadTarget {
   upsert(
@@ -31,6 +32,7 @@ export interface UploadReceipt {
 export interface UploadResult {
   uploaded: number;
   errors: string[];
+  diagnostics?: string[];
   blockedConflicts: number;
 }
 
@@ -110,6 +112,7 @@ const UPLOAD_ORDER: SyncQueueItem["table"][] = [
   "organizations",
   "organization_settings",
   "people",
+  "member_private_details",
   "services",
   "service_attendance",
   "service_visitors",
@@ -382,8 +385,10 @@ export async function uploadPendingChanges(
   const result: UploadResult = {
     uploaded: 0,
     errors: [],
+    diagnostics: [],
     blockedConflicts: 0,
   };
+  const visibleErrors = new Set<string>();
   const servicesWithVisitorConflicts = new Set(
     queue
       .filter(
@@ -398,10 +403,22 @@ export async function uploadPendingChanges(
   for (const item of queue) {
     if (item.status === "conflict") {
       result.blockedConflicts += 1;
-      result.errors.push(
+      const conflictMessage =
         item.conflict
-          ? `${item.table}:${item.recordId}: ${item.conflict.visitorName} has changes from another device. Review them before finishing this service.`
-          : `${item.table}:${item.recordId}: ${item.lastError ?? "This change conflicts with a newer server record and requires review."}`,
+          ? `${item.conflict.visitorName} has changes from another device. Review them before finishing this service.`
+          : humanReadableSyncError({
+              item,
+              message:
+                item.lastError ??
+                "This change conflicts with a newer server record.",
+              code: "SYNC_CONFLICT",
+            });
+      if (!visibleErrors.has(conflictMessage)) {
+        visibleErrors.add(conflictMessage);
+        result.errors.push(conflictMessage);
+      }
+      result.diagnostics?.push(
+        item.lastError ?? `SYNC_CONFLICT: ${item.table}:${item.recordId}`,
       );
       continue;
     }
@@ -411,9 +428,12 @@ export async function uploadPendingChanges(
       servicesWithVisitorConflicts.has(item.recordId)
     ) {
       result.blockedConflicts += 1;
-      result.errors.push(
-        `services:${item.recordId}: A visitor conflict must be reviewed before this service can be completed.`,
-      );
+      const completionMessage =
+        "A visitor conflict must be reviewed before this service can be completed.";
+      if (!visibleErrors.has(completionMessage)) {
+        visibleErrors.add(completionMessage);
+        result.errors.push(completionMessage);
+      }
       continue;
     }
     const processing = {
@@ -504,6 +524,7 @@ export async function uploadPendingChanges(
           ? caught.code
           : undefined;
       const diagnostic = code ? `${code}: ${message}` : message;
+      result.diagnostics?.push(diagnostic);
       const current = await database.get("syncQueue", item.id);
       const mutationIsStillCurrent =
         current?.status === "processing" &&
@@ -549,7 +570,32 @@ export async function uploadPendingChanges(
           message,
         });
       }
-      result.errors.push(`${item.table}:${item.recordId}: ${diagnostic}`);
+      let recordName: string | undefined;
+      if (item.table === "people") {
+        recordName = (await database.get("people", item.recordId))?.displayName;
+      } else if (item.table === "service_visitors") {
+        recordName = (await database.get("visitors", item.recordId))?.displayName;
+      } else if (item.table === "services") {
+        const service = await database.get("services", item.recordId);
+        recordName = service?.customName || service?.serviceType;
+      } else if (item.table === "service_attendance") {
+        const attendance = await database.get("attendance", item.recordId);
+        if (attendance) {
+          recordName = (
+            await database.get("people", attendance.personId)
+          )?.displayName;
+        }
+      }
+      const visible = humanReadableSyncError({
+        item,
+        message,
+        code,
+        recordName,
+      });
+      if (!visibleErrors.has(visible)) {
+        visibleErrors.add(visible);
+        result.errors.push(visible);
+      }
     }
   }
 
