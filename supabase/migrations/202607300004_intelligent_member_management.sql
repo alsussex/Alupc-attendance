@@ -15,7 +15,7 @@ from (
     and action in ('reactivated', 'restored')
   group by entity_id
 ) history
-where person.id = history.entity_id
+where person.id::text = history.entity_id
   and person.restored_at is null;
 
 alter table public.people

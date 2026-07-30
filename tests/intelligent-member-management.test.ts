@@ -374,11 +374,28 @@ describe("member directory utilities", () => {
       ),
       "utf8",
     );
+    const stageOneSchema = readFileSync(
+      resolve("supabase/migrations/202607290001_stage_one.sql"),
+      "utf8",
+    );
+    const auditSchema = readFileSync(
+      resolve(
+        "supabase/migrations/202607290011_append_only_audit_log.sql",
+      ),
+      "utf8",
+    );
     expect(peopleSource).toContain("Possible existing members");
     expect(mergeSource).toContain("Preview merge");
     expect(mergeSource).toContain("oldest member record always survives");
     expect(migration).toContain("Only administrators can merge church members");
     expect(migration).toContain("private.is_privileged_database_context()");
+    expect(migration).toContain("person.id::text = history.entity_id");
+    expect(stageOneSchema).toMatch(/create table public\.people \(\s+id uuid primary key/i);
+    expect(stageOneSchema).toContain("unique (organization_id, id)");
+    expect(auditSchema).toContain("entity_id text not null");
+    expect(migration).toContain(
+      "foreign key (organization_id, merged_into_id)",
+    );
     expect(migration).not.toMatch(/disable row level security/i);
   });
 });
