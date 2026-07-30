@@ -57,8 +57,9 @@ export interface Person extends AuditedRecord {
   displayName: string;
   personType: PersonType;
   isActive: boolean;
+  duplicateNameAllowed?: boolean;
   inactiveAt?: string | null;
-  deletedAt?: string;
+  deletedAt?: string | null;
 }
 
 export interface ChurchService extends AuditedRecord {
@@ -69,7 +70,7 @@ export interface ChurchService extends AuditedRecord {
   status: ServiceStatus;
   unnamedVisitorCount?: number;
   isArchived: boolean;
-  deletedAt?: string;
+  deletedAt?: string | null;
 }
 
 export interface AttendanceRecord extends AuditedRecord {

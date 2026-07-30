@@ -26,7 +26,7 @@ create table public.audit_log (
       or entity_type in ('attendance', 'visitor')
       or (
         entity_type = 'member'
-        and action in ('added', 'edited')
+        and action in ('added', 'edited', 'reactivated', 'restored')
       )
       or (
         entity_type = 'service'

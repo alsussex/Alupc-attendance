@@ -58,7 +58,7 @@ describe("role permissions", () => {
     );
   });
 
-  it("blocks attendance takers from member lifecycle operations", async () => {
+  it("blocks destructive lifecycle actions but permits safe restoration while adding", async () => {
     const member = await saveMember(attendanceTaker, {
       firstName: "Morgan",
       lastName: "Lane",
@@ -68,9 +68,12 @@ describe("role permissions", () => {
     await expect(
       markMemberInactive(attendanceTaker, member.id),
     ).rejects.toThrow("administrator");
-    await expect(restoreMember(attendanceTaker, member.id)).rejects.toThrow(
-      "administrator",
-    );
+    await markMemberInactive(administrator, member.id);
+    await expect(restoreMember(attendanceTaker, member.id)).resolves.toMatchObject({
+      id: member.id,
+      isActive: true,
+      inactiveAt: null,
+    });
     await expect(removeMember(attendanceTaker, member.id)).rejects.toThrow(
       "administrator",
     );

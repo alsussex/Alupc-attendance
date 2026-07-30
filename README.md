@@ -37,6 +37,7 @@ Requirements: Node.js 22.13 or newer, npm, and a Supabase project.
    - `supabase/migrations/202607290009_bidirectional_reconciliation.sql`
    - `supabase/migrations/202607290010_unnamed_visitor_count.sql`
    - `supabase/migrations/202607290011_append_only_audit_log.sql`
+   - `supabase/migrations/202607300001_bulk_member_entry.sql`
 
 4. Create the first user and organization using the steps below.
 5. Put the project URL, browser-safe anon key, and server-only service-role key in `.env.local`. The service-role key must never have a `NEXT_PUBLIC_` prefix.
@@ -115,7 +116,7 @@ The default Vercel domain is sufficient. Use the exact stable production domain 
 
 ## Private Vercel deployment checklist
 
-1. Confirm all eleven migrations were applied in filename order.
+1. Confirm all twelve migrations were applied in filename order.
 2. Confirm the first Admin and organization profile exist.
 3. Confirm `.env.example` contains placeholders and `.env.local` is untracked.
 4. Import the existing `alsussex/Alupc-attendance` repository and select `main`.
@@ -352,6 +353,33 @@ views. CSV and JSON audit exports include timestamps, user and role snapshots,
 actions, entities, device identifiers, and details; they contain no
 authentication credentials.
 
+### Bulk member entry and intelligent restoration
+
+Authorized Admins and Attendance Takers can select **Add Multiple Members** in
+the People directory. The primary format is one `First name Last name` entry
+per line; the first word becomes the first name and all remaining words remain
+together as the last name. Single-word names and `Last name, First name` are
+also accepted. Names are parsed and reviewed locally before any record is
+created.
+
+The preview performs an organization-scoped, case-insensitive exact normalized
+match against active, inactive, and soft-deleted member records. Active matches
+are skipped, one inactive or removed match is offered for restoration, and
+multiple matches require an explicit selection or **Create separate person**.
+Restoration preserves the existing UUID, creation date, attendance history,
+and relationships. Confirmed rows use the ordinary IndexedDB-first repository
+and mutation queue, so bulk entry works offline and retries idempotently after
+reconnection. The unfinished entry/review draft is retained on the authorized
+device until the operation is completed.
+
+Migration `202607300001_bulk_member_entry.sql` permits blank last names, stores
+an indexed normalized name, and uses a transaction-scoped advisory lock to
+prevent concurrent devices from accidentally creating the same active member.
+Existing duplicate names are preserved and are never merged automatically.
+The migration permits Attendance Takers only the safe inactive/removed →
+active restoration transition; deactivation, archival, deletion, organization
+changes, and creation ownership changes remain blocked.
+
 ### Known limitations
 
 - Sync and Realtime reconciliation run while the app is open. There is no
@@ -405,7 +433,7 @@ This release does not include Excel export, reports, charts, import/restore, per
 
 Use fictional data such as **Alex Meadow** and **Robin Field**.
 
-1. Apply all eleven migrations and configure the same Supabase project.
+1. Apply all twelve migrations and configure the same Supabase project.
 2. Open Browser A as Admin, wait for **Online**, invite a fictional Attendance Taker, and complete that user's first sign-in online in Browser B.
 3. In Browser A, add Alex Meadow, create a draft service, check Alex present, and allow background sync to complete.
 4. In Browser B, focus the app and confirm Alex, the service, and attendance total of one.

@@ -149,6 +149,10 @@ export function fromCloudRecord(
       displayName: requiredString(row, "display_name"),
       personType,
       isActive: requiredBoolean(row, "is_active"),
+      duplicateNameAllowed: optionalBoolean(
+        row,
+        "duplicate_name_allowed",
+      ),
       inactiveAt: optionalString(row, "inactive_at"),
       deletedAt: optionalString(row, "deleted_at"),
     };

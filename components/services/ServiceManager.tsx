@@ -15,7 +15,6 @@ import { recordAuditEntry } from "@/lib/audit/audit-repository";
 import {
   SERVICE_TYPES,
   DEFAULT_APPLICATION_SETTINGS,
-  normalizeName,
   type ApplicationSettings,
   type ChurchService,
   type Person,
@@ -27,6 +26,7 @@ import {
   addServiceVisitor,
   adjustUnnamedVisitorCount,
   editServiceVisitor,
+  findExactMemberMatches,
   getServiceAttendance,
   listActiveMembers,
   listMembers,
@@ -433,13 +433,18 @@ export function ServiceManager() {
     allowDuplicate = false,
   ) {
     if (!user || !active || active.status === "completed") return undefined;
-    const displayName = `${firstName} ${lastName}`;
-    const match = (await listMembers(user.organizationId)).find(
-      (person) =>
-        normalizeName(person.displayName) === normalizeName(displayName),
-    );
+    const match = (
+      await findExactMemberMatches(
+        user.organizationId,
+        `${firstName} ${lastName}`,
+      )
+    )[0];
     if (match && !allowDuplicate) return match;
-    const member = await saveMember(user, { firstName, lastName });
+    const member = await saveMember(user, {
+      firstName,
+      lastName,
+      allowDuplicate,
+    });
     await setMemberAttendance(user, active.id, member.id, true);
     setAttendanceTab("members");
     setRecentMemberId(member.id);
@@ -452,11 +457,6 @@ export function ServiceManager() {
   async function useExistingQuickMember(person: Person) {
     if (!user || !active || active.status === "completed") return;
     if (!person.isActive) {
-      if (!isAdmin(user)) {
-        throw new Error(
-          "This member is inactive. An administrator must reactivate them before attendance can be recorded.",
-        );
-      }
       await restoreMember(user, person.id);
     }
     await setMemberAttendance(user, active.id, person.id, true);

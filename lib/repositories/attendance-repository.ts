@@ -52,6 +52,12 @@ export async function listActiveMembers(organizationId: string) {
 }
 
 export async function listMembers(organizationId: string) {
+  return (await listMemberCandidates(organizationId))
+    .filter((person) => !person.deletedAt)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
+export async function listMemberCandidates(organizationId: string) {
   const database = await getDatabase();
   const records = await database.getAllFromIndex(
     "people",
@@ -59,8 +65,11 @@ export async function listMembers(organizationId: string) {
     organizationId,
   );
   return records
-    .filter((person) => !person.deletedAt && person.personType === "member")
-    .sort((a, b) => a.displayName.localeCompare(b.displayName));
+    .filter(
+      (person) =>
+        person.organizationId === organizationId &&
+        person.personType === "member",
+    );
 }
 
 export async function getLastAttendanceDates(organizationId: string) {
@@ -100,9 +109,27 @@ export async function findDuplicateMember(
   );
 }
 
+export async function findExactMemberMatches(
+  organizationId: string,
+  displayName: string,
+  excludeId?: string,
+) {
+  const normalized = normalizeName(displayName);
+  return (await listMemberCandidates(organizationId)).filter(
+    (person) =>
+      person.id !== excludeId &&
+      normalizeName(person.displayName) === normalized,
+  );
+}
+
 export async function saveMember(
   user: UserContext,
-  input: { id?: string; firstName: string; lastName: string },
+  input: {
+    id?: string;
+    firstName: string;
+    lastName: string;
+    allowDuplicate?: boolean;
+  },
 ) {
   const database = await getDatabase();
   const existing = input.id ? await database.get("people", input.id) : undefined;
@@ -116,6 +143,8 @@ export async function saveMember(
     displayName: makeDisplayName(input.firstName, input.lastName),
     personType: "member",
     isActive: existing?.isActive ?? true,
+    duplicateNameAllowed:
+      input.allowDuplicate ?? existing?.duplicateNameAllowed ?? false,
     inactiveAt: existing?.inactiveAt,
     deletedAt: existing?.deletedAt,
     createdAt: existing?.createdAt ?? timestamp,
@@ -186,16 +215,20 @@ export async function markMemberInactive(user: UserContext, id: string) {
 }
 
 export async function restoreMember(user: UserContext, id: string) {
-  if (!isAdmin(user)) {
-    throw new Error("Only an administrator can restore church members.");
-  }
   const database = await getDatabase();
   const person = await database.get("people", id);
-  if (!person || person.deletedAt) throw new Error("Person not found");
+  if (
+    !person ||
+    person.organizationId !== user.organizationId ||
+    person.personType !== "member"
+  ) {
+    throw new Error("Person not found");
+  }
   const updated = {
     ...person,
     isActive: true,
     inactiveAt: null,
+    deletedAt: null,
     updatedAt: nowIso(),
     updatedBy: user.userId,
   };
@@ -210,7 +243,7 @@ export async function restoreMember(user: UserContext, id: string) {
     await recordAuditEntry(user, {
       entityType: "member",
       entityId: id,
-      action: "reactivated",
+      action: person.deletedAt ? "restored" : "reactivated",
       details: { name: updated.displayName },
     });
   }

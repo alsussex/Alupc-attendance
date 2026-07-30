@@ -94,9 +94,10 @@ describe("people lifecycle behavior", () => {
       markMemberInactive(attendanceTaker, member.id),
     ).rejects.toThrow("administrator");
     await markMemberInactive(administrator, member.id);
-    await expect(restoreMember(attendanceTaker, member.id)).rejects.toThrow(
-      "administrator",
-    );
+    await expect(restoreMember(attendanceTaker, member.id)).resolves.toMatchObject({
+      id: member.id,
+      isActive: true,
+    });
   });
 
   it("retries the failed inactive mutation without changing identity or history", async () => {

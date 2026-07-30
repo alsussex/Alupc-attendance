@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { AuditHistory } from "@/components/audit/AuditHistory";
+import { BulkMemberEntryModal } from "@/components/people/BulkMemberEntryModal";
 import { isAdmin } from "@/lib/auth/permissions";
 import type { Person } from "@/lib/domain";
 import {
@@ -16,10 +17,12 @@ import {
   filterDirectoryMembers,
   type MemberDirectoryView,
 } from "@/lib/people/member-directory";
+import { sortMembersByLastName } from "@/lib/people/bulk-member-entry";
 import {
-  findDuplicateMember,
+  findExactMemberMatches,
   getLastAttendanceDates,
   listActiveMembers,
+  listMemberCandidates,
   listMembers,
   markMemberInactive,
   removeMember,
@@ -49,6 +52,7 @@ function formatDate(value?: string | null) {
 export function PeopleDirectory() {
   const { user } = useAuth();
   const [people, setPeople] = useState<Person[]>([]);
+  const [memberCandidates, setMemberCandidates] = useState<Person[]>([]);
   const [lastAttendance, setLastAttendance] = useState<Map<string, string>>(
     new Map(),
   );
@@ -60,17 +64,21 @@ export function PeopleDirectory() {
   const [profile, setProfile] = useState<Person | null>(null);
   const [reactivateTarget, setReactivateTarget] = useState<Person | null>(null);
   const [duplicate, setDuplicate] = useState<Person | null>(null);
+  const [multipleMatches, setMultipleMatches] = useState<Person[]>([]);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!user) return;
-    const [members, dates] = await Promise.all([
+    const [members, candidates, dates] = await Promise.all([
       isAdmin(user)
         ? listMembers(user.organizationId)
         : listActiveMembers(user.organizationId),
+      listMemberCandidates(user.organizationId),
       getLastAttendanceDates(user.organizationId),
     ]);
     setPeople(members);
+    setMemberCandidates(candidates);
     setLastAttendance(dates);
     setProfile((current) =>
       current ? members.find((member) => member.id === current.id) ?? null : null,
@@ -88,26 +96,43 @@ export function PeopleDirectory() {
 
   const effectiveView = isAdmin(user) ? view : "active";
   const filtered = useMemo(
-    () => filterDirectoryMembers(people, effectiveView, query),
+    () =>
+      sortMembersByLastName(
+        filterDirectoryMembers(people, effectiveView, query),
+      ),
     [effectiveView, people, query],
   );
 
   const inactiveCount = people.filter((person) => !person.isActive).length;
 
-  async function submit(event: FormEvent, allowDuplicate = false) {
+  async function submit(
+    event: Pick<FormEvent, "preventDefault">,
+    allowDuplicate = false,
+  ) {
     event.preventDefault();
     if (!form || !user) return;
-    const match = await findDuplicateMember(
-      user.organizationId,
-      `${form.firstName} ${form.lastName}`,
-      form.id,
-    );
-    if (match && !allowDuplicate) {
-      setDuplicate(match);
-      return;
+    if (!form.id && !allowDuplicate) {
+      const matches = await findExactMemberMatches(
+        user.organizationId,
+        `${form.firstName} ${form.lastName}`,
+      );
+      if (matches.length > 1) {
+        setMultipleMatches(matches);
+        return;
+      }
+      const match = matches[0];
+      if (match?.isActive && !match.deletedAt) {
+        setDuplicate(match);
+        return;
+      }
+      if (match) {
+        setReactivateTarget(match);
+        setForm(null);
+        return;
+      }
     }
     setSaving(true);
-    await saveMember(user, form);
+    await saveMember(user, { ...form, allowDuplicate });
     setSaving(false);
     setForm(null);
     setDuplicate(null);
@@ -162,13 +187,25 @@ export function PeopleDirectory() {
           <h1>People</h1>
           <p>Active members appear automatically when you record a service.</p>
         </div>
-        <button
-          className="button primary"
-          type="button"
-          onClick={() => setForm(emptyForm)}
-        >
-          <span aria-hidden="true">＋</span> Add member
-        </button>
+        <div className="button-row people-add-actions">
+          <button
+            className="button secondary"
+            type="button"
+            onClick={() => setBulkOpen(true)}
+          >
+            Add Multiple Members
+          </button>
+          <button
+            className="button primary"
+            type="button"
+            onClick={() => {
+              setDuplicate(null);
+              setForm(emptyForm);
+            }}
+          >
+            <span aria-hidden="true">＋</span> Add member
+          </button>
+        </div>
       </div>
 
       <section className="panel">
@@ -342,11 +379,13 @@ export function PeopleDirectory() {
             <div>
               <p className="eyebrow">Member access</p>
               <h2 id="reactivate-title">
-                Reactivate {reactivateTarget.displayName}?
+                {reactivateTarget.deletedAt ? "Restore" : "Reactivate"}{" "}
+                {reactivateTarget.displayName}?
               </h2>
               <p id="reactivate-description">
-                Reactivate this member? They will return to the active member
-                list and attendance screens.
+                {reactivateTarget.deletedAt
+                  ? "A previously removed member with this name already exists. Would you like to restore them?"
+                  : "An inactive member with this name already exists. Would you like to reactivate the existing member instead?"}
               </p>
             </div>
             <div className="modal-actions">
@@ -365,7 +404,93 @@ export function PeopleDirectory() {
                 disabled={saving}
                 onClick={() => void reactivate()}
               >
-                Reactivate member
+                {reactivateTarget.deletedAt
+                  ? "Restore Existing Member"
+                  : "Reactivate Existing Member"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {multipleMatches.length > 0 && (
+        <div className="modal-backdrop">
+          <section
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="member-match-title"
+          >
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Possible matches</p>
+                <h2 id="member-match-title">Choose the correct member</h2>
+                <p>
+                  Multiple people share this name. Select an existing record or
+                  explicitly create a separate person.
+                </p>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Close member matches"
+                onClick={() => setMultipleMatches([])}
+              >
+                ×
+              </button>
+            </div>
+            <div className="member-match-list">
+              {multipleMatches.map((match) => (
+                <article key={match.id}>
+                  <div>
+                    <strong>{match.displayName}</strong>
+                    <span>
+                      {match.deletedAt
+                        ? "Removed"
+                        : match.isActive
+                          ? "Active"
+                          : "Inactive"}{" "}
+                      · Added {formatDate(match.createdAt)} · Last attendance{" "}
+                      {formatDate(lastAttendance.get(match.id))}
+                    </span>
+                  </div>
+                  <button
+                    className="button secondary"
+                    type="button"
+                    onClick={() => {
+                      setMultipleMatches([]);
+                      setForm(null);
+                      if (match.isActive && !match.deletedAt) {
+                        setProfile(match);
+                      } else {
+                        setReactivateTarget(match);
+                      }
+                    }}
+                  >
+                    {match.isActive && !match.deletedAt
+                      ? "Open member"
+                      : "Restore member"}
+                  </button>
+                </article>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button
+                className="button subtle"
+                type="button"
+                onClick={() => setMultipleMatches([])}
+              >
+                Cancel
+              </button>
+              <button
+                className="button primary"
+                type="button"
+                onClick={(event) => {
+                  setMultipleMatches([]);
+                  void submit(event, true);
+                }}
+              >
+                Create separate person
               </button>
             </div>
           </section>
@@ -391,7 +516,10 @@ export function PeopleDirectory() {
                 className="icon-button"
                 aria-label="Close"
                 type="button"
-                onClick={() => setForm(null)}
+                onClick={() => {
+                  setDuplicate(null);
+                  setForm(null);
+                }}
               >
                 ×
               </button>
@@ -403,9 +531,10 @@ export function PeopleDirectory() {
                   <input
                     autoFocus
                     value={form.firstName}
-                    onChange={(event) =>
-                      setForm({ ...form, firstName: event.target.value })
-                    }
+                    onChange={(event) => {
+                      setDuplicate(null);
+                      setForm({ ...form, firstName: event.target.value });
+                    }}
                     required
                   />
                 </label>
@@ -413,46 +542,61 @@ export function PeopleDirectory() {
                   Last name
                   <input
                     value={form.lastName}
-                    onChange={(event) =>
-                      setForm({ ...form, lastName: event.target.value })
-                    }
-                    required
+                    onChange={(event) => {
+                      setDuplicate(null);
+                      setForm({ ...form, lastName: event.target.value });
+                    }}
                   />
                 </label>
               </div>
               {duplicate && (
                 <div className="notice warning" role="alert">
-                  <strong>A similar active member already exists.</strong>
+                  <strong>This member already exists.</strong>
                   <span>
-                    {duplicate.displayName} is already in the directory. You may
-                    continue if these are different people.
+                    {duplicate.displayName} is already in the active directory.
                   </span>
+                  <button
+                    className="button subtle"
+                    type="button"
+                    onClick={() => {
+                      setForm(null);
+                      setProfile(duplicate);
+                      setDuplicate(null);
+                    }}
+                  >
+                    Open existing member
+                  </button>
                 </div>
               )}
               <div className="modal-actions">
                 <button
                   className="button subtle"
                   type="button"
-                  onClick={() => setForm(null)}
+                  onClick={() => {
+                    setDuplicate(null);
+                    setForm(null);
+                  }}
                 >
                   Cancel
                 </button>
-                <button className="button primary" disabled={saving}>
-                  {duplicate ? "Add anyway" : "Save member"}
+                <button
+                  className="button primary"
+                  disabled={saving || Boolean(duplicate)}
+                >
+                  Save member
                 </button>
               </div>
-              {duplicate && (
-                <button
-                  className="duplicate-confirm"
-                  type="button"
-                  onClick={(event) => void submit(event, true)}
-                >
-                  Confirm and save this separate person
-                </button>
-              )}
             </form>
           </section>
         </div>
+      )}
+      {bulkOpen && (
+        <BulkMemberEntryModal
+          candidates={memberCandidates}
+          lastAttendance={lastAttendance}
+          onClose={() => setBulkOpen(false)}
+          onCompleted={refresh}
+        />
       )}
     </div>
   );

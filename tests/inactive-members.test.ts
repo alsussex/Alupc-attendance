@@ -115,17 +115,18 @@ describe("inactive member directory", () => {
     });
   });
 
-  it("prevents an Attendance Taker from reactivating a member", async () => {
+  it("allows an Attendance Taker to restore an exact member while adding", async () => {
     const member = await saveMember(administrator, {
       firstName: "Casey",
       lastName: "Harbor",
     });
     await markMemberInactive(administrator, member.id);
 
-    await expect(restoreMember(attendanceTaker, member.id)).rejects.toThrow(
-      "administrator",
-    );
-    expect((await listMembers(organizationId))[0].isActive).toBe(false);
+    await expect(restoreMember(attendanceTaker, member.id)).resolves.toMatchObject({
+      id: member.id,
+      isActive: true,
+    });
+    expect((await listMembers(organizationId))[0].isActive).toBe(true);
   });
 });
 
