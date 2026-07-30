@@ -13,6 +13,9 @@ import {
   requestPasswordRecovery,
 } from "@/lib/auth/password";
 import {
+  authCallbackDestination,
+  invitationDestination,
+  isInvitationCallback,
   isPasswordRecoveryCallback,
   passwordRecoveryDestination,
 } from "@/lib/auth/callback-routing";
@@ -151,6 +154,58 @@ describe("password recovery and account setup", () => {
     ).toBeNull();
   });
 
+  it("moves invitation credentials from fallback app routes to password setup", () => {
+    const callback =
+      "https://attendance.example/dashboard#access_token=access&refresh_token=refresh&type=invite";
+    expect(isInvitationCallback(callback)).toBe(true);
+    expect(invitationDestination(callback)).toBe(
+      "/accept-invite#access_token=access&refresh_token=refresh&type=invite",
+    );
+    expect(authCallbackDestination(callback)).toBe(
+      "/accept-invite#access_token=access&refresh_token=refresh&type=invite",
+    );
+    expect(
+      invitationDestination(
+        "https://attendance.example/accept-invite#type=invite",
+      ),
+    ).toBeNull();
+    expect(
+      authCallbackDestination(
+        "https://attendance.example/login#type=magiclink&access_token=access",
+      ),
+    ).toBeNull();
+  });
+
+  it("verifies token-hash invitation callbacks as invitations", async () => {
+    const session = { access_token: "safe-test-token" };
+    const verifyOtp = vi.fn(async () => ({ error: null }));
+    const getSession = vi.fn(async () => ({
+      data: { session },
+      error: null,
+    }));
+    await expect(
+      preparePasswordSetupSession(
+        { auth: { verifyOtp, getSession } } as unknown as SupabaseClient,
+        "https://attendance.example/accept-invite?token_hash=hash&type=invite",
+        "invite",
+      ),
+    ).resolves.toBe(session);
+    expect(verifyOtp).toHaveBeenCalledWith({
+      token_hash: "hash",
+      type: "invite",
+    });
+  });
+
+  it("does not allow recovery credentials to enter invitation setup", async () => {
+    await expect(
+      preparePasswordSetupSession(
+        {} as SupabaseClient,
+        "https://attendance.example/accept-invite#type=recovery&access_token=access&refresh_token=refresh",
+        "invite",
+      ),
+    ).rejects.toThrow("invitation link is invalid");
+  });
+
   it("supports recovery templates that return a token hash directly", async () => {
     const session = { access_token: "safe-test-token" };
     const verifyOtp = vi.fn(async () => ({ error: null }));
@@ -214,8 +269,24 @@ describe("password recovery and account setup", () => {
     expect(reset).toContain("preparePasswordSetupSession");
     expect(invite).toContain("preparePasswordSetupSession");
     expect(invite).toContain("passwordConfirmationError");
+    expect(invite).toContain('"invite"');
+    expect(invite).toContain("Set your password");
+    expect(invite).toContain("auth.updateUser");
+    expect(invite).toContain('router.replace("/dashboard")');
     const layout = readFileSync(resolve("app/layout.tsx"), "utf8");
     expect(layout).toContain("<AuthCallbackRouter />");
+    const callbackRouter = readFileSync(
+      resolve("components/auth/AuthCallbackRouter.tsx"),
+      "utf8",
+    );
+    expect(callbackRouter).toContain("authCallbackDestination");
+    const settings = readFileSync(
+      resolve("components/settings/SettingsCenter.tsx"),
+      "utf8",
+    );
+    expect(settings).toContain(
+      "`${window.location.origin}/reset-password`",
+    );
   });
 });
 

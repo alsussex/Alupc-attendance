@@ -663,7 +663,7 @@ export function SettingsCenter() {
                 const { error: resetError } =
                   await getSupabaseClient().auth.resetPasswordForEmail(
                     user?.email ?? "",
-                    { redirectTo: `${window.location.origin}/accept-invite` },
+                    { redirectTo: `${window.location.origin}/reset-password` },
                   );
                 if (resetError) throw resetError;
                 setFeedback("Password-reset email sent.");

@@ -412,6 +412,12 @@ confirmation URL or use `{{ .RedirectTo }}` correctly; a link containing only
 detects valid recovery credentials that Supabase returns to the Site URL and
 forwards them safely to `/reset-password`.
 
+Keep the standard invitation email action linked through
+`{{ .ConfirmationURL }}` as well. Invitation credentials that arrive at the
+Site URL, login page, or protected application are redirected to
+`/accept-invite` before normal session restoration. The invited user must set
+and confirm a password there before continuing to the dashboard.
+
 The recovery form recognizes Supabase email rate limits, shows a clear
 temporary-limit message, and prevents immediate repeat requests on the same
 device. It continues to use a privacy-safe success message that does not reveal

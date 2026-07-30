@@ -58,21 +58,36 @@ export function passwordConfirmationError(
     (password !== confirmation ? "The passwords do not match." : null);
 }
 
+type PasswordSetupType = "invite" | "recovery";
+
+function invalidSetupLinkMessage(expectedType?: PasswordSetupType) {
+  return expectedType === "invite"
+    ? "This invitation link is invalid, expired, or has already been used. Ask an administrator to resend it."
+    : "This account setup link is invalid, expired, or has already been used. Request a new link and try again.";
+}
+
 export async function preparePasswordSetupSession(
   client: SupabaseClient,
   currentUrl: string,
+  expectedType?: PasswordSetupType,
 ) {
   const url = new URL(currentUrl);
   const hash = new URLSearchParams(url.hash.replace(/^#/, ""));
+  const callbackType = url.searchParams.get("type") ?? hash.get("type");
+  if (
+    expectedType &&
+    callbackType &&
+    callbackType !== expectedType
+  ) {
+    throw new Error(invalidSetupLinkMessage(expectedType));
+  }
   const callbackError =
     url.searchParams.get("error_description") ??
     hash.get("error_description") ??
     url.searchParams.get("error") ??
     hash.get("error");
   if (callbackError) {
-    throw new Error(
-      "This account setup link is invalid, expired, or has already been used. Request a new link and try again.",
-    );
+    throw new Error(invalidSetupLinkMessage(expectedType));
   }
 
   const code = url.searchParams.get("code");
@@ -80,39 +95,31 @@ export async function preparePasswordSetupSession(
   if (code) {
     const { error } = await client.auth.exchangeCodeForSession(code);
     if (error) {
-      throw new Error(
-        "This account setup link is invalid, expired, or has already been used. Request a new link and try again.",
-      );
+      throw new Error(invalidSetupLinkMessage(expectedType));
     }
   } else if (
     tokenHash &&
-    url.searchParams.get("type") === "recovery"
+    (callbackType === "recovery" || callbackType === "invite")
   ) {
     const { error } = await client.auth.verifyOtp({
       token_hash: tokenHash,
-      type: "recovery",
+      type: callbackType,
     });
     if (error) {
-      throw new Error(
-        "This account setup link is invalid, expired, or has already been used. Request a new link and try again.",
-      );
+      throw new Error(invalidSetupLinkMessage(expectedType));
     }
   } else {
     const accessToken = hash.get("access_token");
     const refreshToken = hash.get("refresh_token");
     if (!accessToken || !refreshToken) {
-      throw new Error(
-        "This account setup link is invalid, expired, or has already been used. Request a new link and try again.",
-      );
+      throw new Error(invalidSetupLinkMessage(expectedType));
     }
     const { error } = await client.auth.setSession({
       access_token: accessToken,
       refresh_token: refreshToken,
     });
     if (error) {
-      throw new Error(
-        "This account setup link is invalid, expired, or has already been used. Request a new link and try again.",
-      );
+      throw new Error(invalidSetupLinkMessage(expectedType));
     }
   }
 
@@ -121,9 +128,7 @@ export async function preparePasswordSetupSession(
     error,
   } = await client.auth.getSession();
   if (error || !session) {
-    throw new Error(
-      "This account setup link is invalid, expired, or has already been used. Request a new link and try again.",
-    );
+    throw new Error(invalidSetupLinkMessage(expectedType));
   }
   return session;
 }

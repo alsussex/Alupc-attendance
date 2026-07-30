@@ -28,6 +28,7 @@ export default function AcceptInvitePage() {
     void preparePasswordSetupSession(
       getSupabaseClient(),
       window.location.href,
+      "invite",
     )
       .then(() => setReady(true))
       .catch((caught) =>
@@ -47,6 +48,7 @@ export default function AcceptInvitePage() {
       return;
     }
     setSaving(true);
+    setError("");
     const { error: updateError } = await getSupabaseClient().auth.updateUser({
       password,
     });
@@ -99,7 +101,7 @@ export default function AcceptInvitePage() {
         </div>
         <div>
           <p className="eyebrow">Authorized attendance access</p>
-          <h1 id="invite-title">Finish setting up your account</h1>
+          <h1 id="invite-title">Set your password</h1>
           <p className="muted">
             Choose a password for Church Attendance. Your first setup must be
             completed online.
@@ -132,7 +134,7 @@ export default function AcceptInvitePage() {
           </label>
           {error && <div className="notice error" role="alert">{error}</div>}
           <button className="button primary large full" disabled={!ready || saving}>
-            {saving ? "Saving…" : "Complete account setup"}
+            {saving ? "Saving…" : "Set password and continue"}
           </button>
         </form>
       </section>

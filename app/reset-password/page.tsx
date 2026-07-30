@@ -28,6 +28,7 @@ export default function ResetPasswordPage() {
     void preparePasswordSetupSession(
       getSupabaseClient(),
       window.location.href,
+      "recovery",
     )
       .then(() => setReady(true))
       .catch((caught) =>
