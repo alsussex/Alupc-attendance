@@ -31,6 +31,7 @@ import {
   editServiceVisitor,
   findExactMemberMatches,
   getLastAttendanceDates,
+  getOrganizationService,
   getServiceAttendance,
   listActiveMembers,
   listMembers,
@@ -251,18 +252,24 @@ export function ServiceManager() {
       return;
     }
     const serviceId = parameters.get("service");
-    const requestedService = services.find(
+    const visibleService = services.find(
       (service) => service.id === serviceId,
     );
-    if (!requestedService) return;
-    handledDashboardIntent.current = query;
-    void openService(requestedService).then(() => {
+    if (!serviceId || !user) return;
+    const openRequestedService = async () => {
+      const requestedService =
+        visibleService ??
+        (await getOrganizationService(user.organizationId, serviceId));
+      if (!requestedService) return;
+      handledDashboardIntent.current = query;
+      await openService(requestedService);
       if (parameters.get("visitor") === "1") {
         setAttendanceTab("visitors");
         setVisitorOpen(true);
       }
-    });
-  }, [openService, services]);
+    };
+    void openRequestedService();
+  }, [openService, services, user]);
 
   useEffect(() => {
     if (!recentMemberId && !recentVisitorId) return;

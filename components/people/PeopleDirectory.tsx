@@ -10,6 +10,7 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { AuditHistory } from "@/components/audit/AuditHistory";
 import { BulkMemberEntryModal } from "@/components/people/BulkMemberEntryModal";
+import { MemberAttendanceHistory } from "@/components/people/MemberAttendanceHistory";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { useConfirmation } from "@/components/feedback/ConfirmationProvider";
 import { EmptyState } from "@/components/feedback/EmptyState";
@@ -720,6 +721,17 @@ function MemberProfileModal({
   onEdit: () => void;
   onReactivate: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<"profile" | "attendance">(
+    "profile",
+  );
+
+  function selectTab(next: "profile" | "attendance") {
+    setActiveTab(next);
+    window.requestAnimationFrame(() =>
+      document.getElementById(`member-${next}-tab`)?.focus(),
+    );
+  }
+
   return (
     <div className="modal-backdrop">
       <section
@@ -746,58 +758,113 @@ function MemberProfileModal({
             ×
           </button>
         </div>
-        <dl className="member-profile-details">
-          <div>
-            <dt>Status</dt>
-            <dd>
-              <span
-                className={
-                  person.isActive
-                    ? "member-status active"
-                    : "member-status inactive"
-                }
-              >
-                {person.isActive ? "Active" : "Inactive"}
-              </span>
-            </dd>
+        <div
+          className="member-profile-tabs"
+          role="tablist"
+          aria-label={`${person.displayName} profile sections`}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+              event.preventDefault();
+              selectTab(activeTab === "profile" ? "attendance" : "profile");
+            }
+          }}
+        >
+          <button
+            id="member-profile-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "profile"}
+            aria-controls="member-profile-panel"
+            tabIndex={activeTab === "profile" ? 0 : -1}
+            onClick={() => setActiveTab("profile")}
+          >
+            Profile
+          </button>
+          <button
+            id="member-attendance-tab"
+            type="button"
+            role="tab"
+            aria-selected={activeTab === "attendance"}
+            aria-controls="member-attendance-panel"
+            tabIndex={activeTab === "attendance" ? 0 : -1}
+            onClick={() => setActiveTab("attendance")}
+          >
+            Attendance History
+          </button>
+        </div>
+        {activeTab === "profile" && (
+          <div
+            id="member-profile-panel"
+            role="tabpanel"
+            aria-labelledby="member-profile-tab"
+          >
+            <dl className="member-profile-details">
+              <div>
+                <dt>Status</dt>
+                <dd>
+                  <span
+                    className={
+                      person.isActive
+                        ? "member-status active"
+                        : "member-status inactive"
+                    }
+                  >
+                    {person.isActive ? "Active" : "Inactive"}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>Last attendance</dt>
+                <dd>{formatDate(lastAttendanceDate)}</dd>
+              </div>
+              {!person.isActive && (
+                <div>
+                  <dt>Date made inactive</dt>
+                  <dd>{formatDate(person.inactiveAt)}</dd>
+                </div>
+              )}
+              {person.email && (
+                <div>
+                  <dt>Email</dt>
+                  <dd>
+                    <a href={`mailto:${person.email}`}>{person.email}</a>
+                  </dd>
+                </div>
+              )}
+              {person.phone && (
+                <div>
+                  <dt>Phone</dt>
+                  <dd>
+                    <a href={`tel:${person.phone}`}>{person.phone}</a>
+                  </dd>
+                </div>
+              )}
+              {canManageLifecycle && notes && (
+                <div className="member-profile-notes">
+                  <dt>Administrative notes</dt>
+                  <dd>{notes}</dd>
+                </div>
+              )}
+            </dl>
+            {canManageLifecycle && (
+              <div className="member-history">
+                <h3>Member activity</h3>
+                <AuditHistory relatedEntityId={person.id} compact />
+              </div>
+            )}
           </div>
-          <div>
-            <dt>Last attendance</dt>
-            <dd>{formatDate(lastAttendanceDate)}</dd>
-          </div>
-          {!person.isActive && (
-            <div>
-              <dt>Date made inactive</dt>
-              <dd>{formatDate(person.inactiveAt)}</dd>
-            </div>
-          )}
-          {person.email && (
-            <div>
-              <dt>Email</dt>
-              <dd>
-                <a href={`mailto:${person.email}`}>{person.email}</a>
-              </dd>
-            </div>
-          )}
-          {person.phone && (
-            <div>
-              <dt>Phone</dt>
-              <dd>
-                <a href={`tel:${person.phone}`}>{person.phone}</a>
-              </dd>
-            </div>
-          )}
-          {canManageLifecycle && notes && (
-            <div className="member-profile-notes">
-              <dt>Administrative notes</dt>
-              <dd>{notes}</dd>
-            </div>
-          )}
-        </dl>
-        {canManageLifecycle && (
-          <div className="member-history">
-            <h3>History</h3>
-            <AuditHistory relatedEntityId={person.id} compact />
+        )}
+        {activeTab === "attendance" && (
+          <div
+            id="member-attendance-panel"
+            role="tabpanel"
+            aria-labelledby="member-attendance-tab"
+          >
+            <MemberAttendanceHistory
+              organizationId={person.organizationId}
+              personId={person.id}
+              memberName={person.displayName}
+            />
           </div>
         )}
         <div className="modal-actions">

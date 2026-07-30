@@ -384,6 +384,17 @@ export async function listServices(
     .sort((a, b) => b.serviceDate.localeCompare(a.serviceDate));
 }
 
+export async function getOrganizationService(
+  organizationId: string,
+  serviceId: string,
+) {
+  const database = await getDatabase();
+  const service = await database.get("services", serviceId);
+  return service?.organizationId === organizationId && !service.deletedAt
+    ? service
+    : undefined;
+}
+
 export async function saveService(
   user: UserContext,
   input: {
