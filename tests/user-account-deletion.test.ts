@@ -13,6 +13,7 @@ import {
   validateUserDeletion,
   type DeletableUserProfile,
 } from "@/lib/users/user-deletion";
+import { buildUserAuditRecord } from "@/lib/users/user-audit";
 
 const organizationId = "20000000-0000-4000-8000-000000000620";
 const otherOrganizationId = "20000000-0000-4000-8000-000000000621";
@@ -156,6 +157,34 @@ describe("secure account deletion endpoint and interface", () => {
     expect(route).toContain("validateUserDeletion({");
     expect(client).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
     expect(client).not.toContain("serviceRoleKey");
+  });
+
+  it("writes a complete deletion audit record with the required occurrence time", () => {
+    const occurredAt = "2026-07-30T22:15:00.000Z";
+    expect(
+      buildUserAuditRecord({
+        id: "90000000-0000-4000-8000-000000000624",
+        organizationId,
+        actorId,
+        actorDisplayName: "Fictional Admin",
+        actorRole: "admin",
+        entityId: "10000000-0000-4000-8000-000000000622",
+        action: "deleted",
+        details: { historyDeleted: false },
+        occurredAt,
+      }),
+    ).toMatchObject({
+      organization_id: organizationId,
+      entity_type: "user",
+      entity_id: "10000000-0000-4000-8000-000000000622",
+      action: "deleted",
+      user_id: actorId,
+      user_display_name: "Fictional Admin",
+      role: "admin",
+      occurred_at: occurredAt,
+      details: { historyDeleted: false },
+    });
+    expect(route).toContain("buildUserAuditRecord({");
   });
 
   it("defaults to preserved history and requires DELETE for destructive history removal", () => {

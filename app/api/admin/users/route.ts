@@ -5,10 +5,12 @@ import {
   validUserRole,
 } from "@/lib/supabase/admin-server";
 import { passwordValidationError } from "@/lib/auth/password";
+import type { UserRole } from "@/lib/domain";
 import {
   userDeletionMode,
   validateUserDeletion,
 } from "@/lib/users/user-deletion";
+import { buildUserAuditRecord } from "@/lib/users/user-audit";
 
 function failure(caught: unknown, status = 400) {
   let message =
@@ -55,7 +57,7 @@ async function recordUserAudit(
   entityId: string,
   action: string,
   details: Record<string, unknown>,
-  actorSnapshot?: { display_name: string | null; role: string },
+  actorSnapshot?: { display_name: string | null; role: UserRole },
 ) {
   let actor = actorSnapshot;
   if (!actor) {
@@ -69,19 +71,18 @@ async function recordUserAudit(
     actor = data;
   }
   const id = crypto.randomUUID();
-  const { error } = await admin.from("audit_log").insert({
-    id,
-    organization_id: organizationId,
-    entity_type: "user",
-    entity_id: entityId,
-    action,
-    user_id: actorId,
-    user_display_name: actor.display_name || "Administrator",
-    role: actor.role,
-    details,
-    version: 1,
-    last_mutation_id: id,
-  });
+  const { error } = await admin.from("audit_log").insert(
+    buildUserAuditRecord({
+      id,
+      organizationId,
+      actorId,
+      actorDisplayName: actor.display_name,
+      actorRole: actor.role,
+      entityId,
+      action,
+      details,
+    }),
+  );
   if (error) throw new Error(`User change was applied, but its audit entry failed: ${error.message}`);
 }
 
