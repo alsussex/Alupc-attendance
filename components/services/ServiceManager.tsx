@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type FormEvent,
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -13,6 +14,7 @@ import { useSynchronization } from "@/components/sync/SyncProvider";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { useConfirmation } from "@/components/feedback/ConfirmationProvider";
 import { EmptyState } from "@/components/feedback/EmptyState";
+import { ServicesCalendar } from "@/components/services/ServicesCalendar";
 import { AuditHistory } from "@/components/audit/AuditHistory";
 import { recordAuditEntry } from "@/lib/audit/audit-repository";
 import {
@@ -75,6 +77,12 @@ import {
 import { getPendingChanges } from "@/lib/sync/queue";
 import { formatDateTime, formatTime } from "@/lib/format/date-time";
 import { useEscapeKey } from "@/lib/ui/keyboard";
+import {
+  getPreferredServicesView,
+  getServerServicesView,
+  setPreferredServicesView,
+  subscribeToServicesView,
+} from "@/lib/services/view-preference";
 
 type AttendanceTab = "members" | "visitors" | "history";
 
@@ -96,6 +104,11 @@ export function ServiceManager() {
   const { syncNow } = useSynchronization();
   const { showToast } = useToast();
   const confirmAction = useConfirmation();
+  const servicesView = useSyncExternalStore(
+    subscribeToServicesView,
+    getPreferredServicesView,
+    getServerServicesView,
+  );
   const [services, setServices] = useState<ChurchService[]>([]);
   const [serviceDirectory, setServiceDirectory] = useState<
     ServiceDirectoryItem[]
@@ -1335,6 +1348,30 @@ export function ServiceManager() {
         </div>
         <button className="button primary" type="button" onClick={() => setCreateOpen(true)}>＋ Create service</button>
       </div>
+      <div
+        className="services-view-switcher"
+        role="group"
+        aria-label="Services view"
+      >
+        <button
+          type="button"
+          className={servicesView === "list" ? "active" : ""}
+          aria-pressed={servicesView === "list"}
+          onClick={() => setPreferredServicesView("list")}
+        >
+          List View
+        </button>
+        <button
+          type="button"
+          className={servicesView === "calendar" ? "active" : ""}
+          aria-pressed={servicesView === "calendar"}
+          onClick={() => setPreferredServicesView("calendar")}
+        >
+          Calendar View
+        </button>
+      </div>
+      {servicesView === "list" ? (
+        <>
       <section className="panel service-directory-toolbar">
         <label className="search-field">
           <span className="sr-only">Search organization services</span>
@@ -1548,6 +1585,15 @@ export function ServiceManager() {
           </section>
         )}
       </section>
+        </>
+      ) : (
+        <ServicesCalendar
+          items={serviceDirectory}
+          currentMonthKey={localDate(settings.timezone).slice(0, 7)}
+          todayKey={localDate(settings.timezone)}
+          onOpenService={openService}
+        />
+      )}
       {createOpen && <ServiceModal settings={settings} onClose={() => setCreateOpen(false)} onSaved={async (service) => { setCreateOpen(false); await refreshLists(); await openService(service); showToast("Service created.", { key: `service-created:${service.id}` }); }} />}
     </div>
   );
