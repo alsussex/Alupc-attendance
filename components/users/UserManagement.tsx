@@ -187,7 +187,6 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
           <span>Status</span>
           <span>Last sign-in</span>
           <span>Added</span>
-          <span>Actions</span>
         </div>
         {loading ? (
           <LoadingSkeleton label="Loading authorized users" rows={4} />
@@ -254,7 +253,11 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
                   <span className="user-date">
                     {formatDateTime(managedUser.createdAt, "Not yet")}
                   </span>
-                  <div className="user-actions">
+                  <div
+                    className="user-actions"
+                    aria-label={`Account actions for ${managedUser.displayName}`}
+                  >
+                    <span className="user-actions-label">Account actions</span>
                     <button
                       className="button subtle"
                       type="button"
@@ -304,7 +307,7 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
                         </button>
                       ))}
                     <button
-                      className="button danger-text"
+                      className="button danger user-delete-button"
                       type="button"
                       disabled={working || managedUser.id === user?.userId}
                       title={
@@ -316,6 +319,11 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
                     >
                       Delete User
                     </button>
+                    {managedUser.id === user?.userId && (
+                      <span className="user-self-delete-note">
+                        Your currently signed-in account cannot be deleted here.
+                      </span>
+                    )}
                   </div>
                 </article>
               );
