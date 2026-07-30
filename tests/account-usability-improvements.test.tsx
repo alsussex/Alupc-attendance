@@ -9,6 +9,10 @@ import {
   preparePasswordSetupSession,
   requestPasswordRecovery,
 } from "@/lib/auth/password";
+import {
+  isPasswordRecoveryCallback,
+  passwordRecoveryDestination,
+} from "@/lib/auth/callback-routing";
 import type { UserContext } from "@/lib/domain";
 import { buildAttendanceReportRows } from "@/lib/reports/attendance-report";
 import {
@@ -82,6 +86,44 @@ describe("password recovery and account setup", () => {
     expect(exchangeCodeForSession).toHaveBeenCalledWith("recovery-code");
   });
 
+  it("moves recovery credentials from a fallback login URL to the reset screen", () => {
+    const callback =
+      "https://attendance.example/login#access_token=access&refresh_token=refresh&type=recovery";
+    expect(isPasswordRecoveryCallback(callback)).toBe(true);
+    expect(passwordRecoveryDestination(callback)).toBe(
+      "/reset-password#access_token=access&refresh_token=refresh&type=recovery",
+    );
+    expect(
+      passwordRecoveryDestination(
+        "https://attendance.example/login#type=invite&access_token=access",
+      ),
+    ).toBeNull();
+    expect(
+      passwordRecoveryDestination(
+        "https://attendance.example/reset-password#type=recovery",
+      ),
+    ).toBeNull();
+  });
+
+  it("supports recovery templates that return a token hash directly", async () => {
+    const session = { access_token: "safe-test-token" };
+    const verifyOtp = vi.fn(async () => ({ error: null }));
+    const getSession = vi.fn(async () => ({
+      data: { session },
+      error: null,
+    }));
+    await expect(
+      preparePasswordSetupSession(
+        { auth: { verifyOtp, getSession } } as unknown as SupabaseClient,
+        "https://attendance.example/login?token_hash=hash&type=recovery",
+      ),
+    ).resolves.toBe(session);
+    expect(verifyOtp).toHaveBeenCalledWith({
+      token_hash: "hash",
+      type: "recovery",
+    });
+  });
+
   it("rejects invalid, expired, or already-used callback links", async () => {
     await expect(
       preparePasswordSetupSession(
@@ -124,6 +166,8 @@ describe("password recovery and account setup", () => {
     expect(reset).toContain("preparePasswordSetupSession");
     expect(invite).toContain("preparePasswordSetupSession");
     expect(invite).toContain("passwordConfirmationError");
+    const layout = readFileSync(resolve("app/layout.tsx"), "utf8");
+    expect(layout).toContain("<AuthCallbackRouter />");
   });
 });
 

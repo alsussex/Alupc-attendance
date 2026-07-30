@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { AuthProvider } from "@/components/auth/AuthProvider";
+import { AuthCallbackRouter } from "@/components/auth/AuthCallbackRouter";
 import { ToastProvider } from "@/components/feedback/ToastProvider";
 import { ConfirmationProvider } from "@/components/feedback/ConfirmationProvider";
 import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body>
         <AuthProvider>
+          <AuthCallbackRouter />
           <ToastProvider>
             <ConfirmationProvider>
               <ServiceWorkerRegistration />

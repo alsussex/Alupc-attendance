@@ -22,7 +22,20 @@ export async function preparePasswordSetupSession(
   currentUrl: string,
 ) {
   const url = new URL(currentUrl);
+  const hash = new URLSearchParams(url.hash.replace(/^#/, ""));
+  const callbackError =
+    url.searchParams.get("error_description") ??
+    hash.get("error_description") ??
+    url.searchParams.get("error") ??
+    hash.get("error");
+  if (callbackError) {
+    throw new Error(
+      "This account setup link is invalid, expired, or has already been used. Request a new link and try again.",
+    );
+  }
+
   const code = url.searchParams.get("code");
+  const tokenHash = url.searchParams.get("token_hash");
   if (code) {
     const { error } = await client.auth.exchangeCodeForSession(code);
     if (error) {
@@ -30,8 +43,20 @@ export async function preparePasswordSetupSession(
         "This account setup link is invalid, expired, or has already been used. Request a new link and try again.",
       );
     }
+  } else if (
+    tokenHash &&
+    url.searchParams.get("type") === "recovery"
+  ) {
+    const { error } = await client.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: "recovery",
+    });
+    if (error) {
+      throw new Error(
+        "This account setup link is invalid, expired, or has already been used. Request a new link and try again.",
+      );
+    }
   } else {
-    const hash = new URLSearchParams(url.hash.replace(/^#/, ""));
     const accessToken = hash.get("access_token");
     const refreshToken = hash.get("refresh_token");
     if (!accessToken || !refreshToken) {

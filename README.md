@@ -396,6 +396,22 @@ revealing whether an account exists. Recovery links return to
 exchange the callback code, require matching password confirmation, and handle
 expired or reused links without entering the protected application.
 
+For the production project, Supabase **Authentication → URL Configuration**
+must use `https://alupc-attendance.vercel.app` as the Site URL and include these
+exact Redirect URLs:
+
+- `https://alupc-attendance.vercel.app/reset-password`
+- `https://alupc-attendance.vercel.app/accept-invite`
+- `http://localhost:3000/reset-password`
+- `http://localhost:3000/accept-invite`
+
+Keep the standard recovery email action linked through
+`{{ .ConfirmationURL }}`. A customized template must preserve Supabase's
+confirmation URL or use `{{ .RedirectTo }}` correctly; a link containing only
+`{{ .SiteURL }}` does not carry a recovery credential. The application also
+detects valid recovery credentials that Supabase returns to the Site URL and
+forwards them safely to `/reset-password`.
+
 Settings → Users separates **Invite User** from **Create User**. Direct account
 creation calls the authenticated `/api/admin/users` server route. The route
 verifies the caller's access token, reloads the active Admin profile, derives
