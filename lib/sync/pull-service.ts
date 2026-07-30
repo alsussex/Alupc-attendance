@@ -3,6 +3,7 @@
 import {
   PULL_TABLES,
   attendanceId,
+  type AuditLogEntry,
   type PullTable,
   type SyncCursor,
   type UserContext,
@@ -115,6 +116,27 @@ async function putLocalRecord(
     case "visitors":
       return database.put("visitors", record as AttendanceDatabase["visitors"]["value"]);
     case "auditLog":
+      {
+        const auditEntry = record as AuditLogEntry;
+        if (
+          auditEntry.entityType === "user" &&
+          auditEntry.action === "deleted" &&
+          auditEntry.details?.historyDeleted === true
+        ) {
+          const cached = await database.getAllFromIndex(
+            "auditLog",
+            "organizationId",
+            auditEntry.organizationId,
+          );
+          const transaction = database.transaction("auditLog", "readwrite");
+          for (const entry of cached) {
+            if (entry.userId === auditEntry.entityId) {
+              await transaction.store.delete(entry.id);
+            }
+          }
+          await transaction.done;
+        }
+      }
       return database.put(
         "auditLog",
         record as AttendanceDatabase["auditLog"]["value"],

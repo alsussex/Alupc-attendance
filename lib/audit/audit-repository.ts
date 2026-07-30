@@ -159,6 +159,26 @@ export async function listAuditEntries(
   return results;
 }
 
+export async function removeLocalAuditEntriesForUser(
+  organizationId: string,
+  userId: string,
+) {
+  const database = await getDatabase();
+  const entries = await database.getAllFromIndex(
+    "auditLog",
+    "organizationId",
+    organizationId,
+  );
+  const transaction = database.transaction("auditLog", "readwrite");
+  for (const entry of entries) {
+    if (entry.userId === userId) {
+      await transaction.store.delete(entry.id);
+    }
+  }
+  await transaction.done;
+  announceDataChanged();
+}
+
 export async function buildAuditExport(
   user: UserContext,
   format: "csv" | "json",

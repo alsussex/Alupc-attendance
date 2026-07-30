@@ -5,6 +5,10 @@ import {
   validUserRole,
 } from "@/lib/supabase/admin-server";
 import { passwordValidationError } from "@/lib/auth/password";
+import {
+  userDeletionMode,
+  validateUserDeletion,
+} from "@/lib/users/user-deletion";
 
 function failure(caught: unknown, status = 400) {
   let message =
@@ -323,15 +327,101 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   try {
     const { admin, organizationId, userId } = await authorizeAdministrator(request);
-    const targetId = new URL(request.url).searchParams.get("userId");
+    const parameters = new URL(request.url).searchParams;
+    const targetId = parameters.get("userId");
+    const action = parameters.get("action");
     if (!targetId) throw new Error("A target user is required.");
     const { data: profile, error: profileError } = await admin
       .from("profiles")
-      .select("id, display_name")
+      .select("id, organization_id, display_name, role, is_active")
       .eq("id", targetId)
       .eq("organization_id", organizationId)
       .single();
     if (profileError || !profile) throw new Error("The user was not found.");
+
+    if (action === "delete") {
+      const body = (await request.json().catch(() => ({}))) as {
+        mode?: unknown;
+        confirmation?: unknown;
+      };
+      const mode = userDeletionMode(body.mode);
+      const confirmation =
+        typeof body.confirmation === "string" ? body.confirmation : "";
+      const adminCount = await activeAdminCount(admin, organizationId);
+      validateUserDeletion({
+        actorId: userId,
+        actorOrganizationId: organizationId,
+        target: {
+          id: profile.id,
+          organizationId: profile.organization_id,
+          role: profile.role,
+          isActive: profile.is_active,
+        },
+        mode,
+        confirmation,
+        activeAdminCount: adminCount,
+      });
+
+      const { data: actorSnapshot, error: actorSnapshotError } = await admin
+        .from("profiles")
+        .select("display_name, role")
+        .eq("id", userId)
+        .eq("organization_id", organizationId)
+        .single();
+      if (actorSnapshotError || !actorSnapshot) {
+        throw new Error("The administrator profile was not found.");
+      }
+
+      const { error: authDeleteError } = await admin.auth.admin.deleteUser(
+        targetId,
+        false,
+      );
+      if (authDeleteError) throw new Error(authDeleteError.message);
+
+      // profiles.id cascades from auth.users. This scoped delete is an
+      // idempotent safeguard for projects applying the migration to older data.
+      const { error: profileDeleteError } = await admin
+        .from("profiles")
+        .delete()
+        .eq("id", targetId)
+        .eq("organization_id", organizationId);
+      if (profileDeleteError) throw new Error(profileDeleteError.message);
+
+      if (mode === "delete_history") {
+        const { error: historyDeleteError } = await admin.rpc(
+          "purge_user_audit_history",
+          {
+            p_organization_id: organizationId,
+            p_user_id: targetId,
+          },
+        );
+        if (historyDeleteError) {
+          throw new Error(
+            `The account was deleted, but its audit-history cleanup failed: ${historyDeleteError.message}`,
+          );
+        }
+      }
+
+      await recordUserAudit(
+        admin,
+        organizationId,
+        userId,
+        targetId,
+        "deleted",
+        {
+          targetName: profile.display_name || "Authorized user",
+          targetRole: profile.role,
+          historyDeleted: mode === "delete_history",
+        },
+        actorSnapshot,
+      );
+
+      return NextResponse.json({
+        deleted: true,
+        historyDeleted: mode === "delete_history",
+      });
+    }
+
     const { data: authUser, error: authError } =
       await admin.auth.admin.getUserById(targetId);
     if (authError || !authUser.user) throw new Error("The invitation was not found.");

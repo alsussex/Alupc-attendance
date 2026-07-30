@@ -1999,6 +1999,54 @@ a.dashboard-focus-card:hover {
 .account-pill.disabled { background: #f1eeee; color: #735858; }
 .user-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .3rem; }
 .user-actions .button { min-height: 38px; padding: .4rem .6rem; font-size: .73rem; }
+.delete-user-modal { max-width: 680px; }
+.deletion-options {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: .7rem;
+  border: 0;
+}
+.deletion-options legend {
+  margin-bottom: .55rem;
+  font-size: .88rem;
+  font-weight: 780;
+}
+.deletion-option {
+  min-height: 86px;
+  padding: .9rem 1rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: .8rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fbfcfb;
+  cursor: pointer;
+}
+.deletion-option.selected {
+  border-color: #75a78f;
+  background: #f1f8f4;
+  box-shadow: 0 0 0 2px rgb(47 101 81 / 8%);
+}
+.deletion-option.destructive.selected {
+  border-color: #ce8b8b;
+  background: #fff7f7;
+  box-shadow: 0 0 0 2px rgb(160 68 68 / 8%);
+}
+.deletion-option input {
+  width: 20px;
+  min-height: 20px;
+  margin-top: .12rem;
+  accent-color: var(--brand);
+}
+.deletion-option > span { min-width: 0; display: grid; gap: .2rem; }
+.deletion-option small {
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.45;
+}
 .centered-state { min-height: 100vh; padding: 2rem; display: grid; place-items: center; align-content: center; text-align: center; }
 .spinner { width: 36px; height: 36px; border: 3px solid var(--line); border-top-color: var(--brand); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

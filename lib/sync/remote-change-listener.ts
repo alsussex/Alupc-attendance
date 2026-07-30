@@ -5,6 +5,8 @@ import type {
   SupabaseClient,
 } from "@supabase/supabase-js";
 import type { UserContext } from "@/lib/domain";
+import { getDatabase } from "@/lib/storage/database";
+import { announceDataChanged } from "@/lib/storage/data-events";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
 type RemoteChangeListener = () => void;
@@ -65,7 +67,19 @@ export function subscribeToRemoteOrganizationChanges(
           table,
           filter: `organization_id=eq.${user.organizationId}`,
         },
-        notify,
+        (payload) => {
+          if (
+            table === "audit_log" &&
+            payload.eventType === "DELETE" &&
+            typeof payload.old?.id === "string"
+          ) {
+            void getDatabase().then(async (database) => {
+              await database.delete("auditLog", payload.old.id as string);
+              announceDataChanged();
+            });
+          }
+          notify();
+        },
       );
     }
     channel.subscribe();

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { AuditHistory } from "@/components/audit/AuditHistory";
+import { removeLocalAuditEntriesForUser } from "@/lib/audit/audit-repository";
 import type { UserRole } from "@/lib/domain";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { passwordConfirmationError } from "@/lib/auth/password";
@@ -56,16 +57,18 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [historyUser, setHistoryUser] = useState<ManagedUser | null>(null);
+  const [deletingUser, setDeletingUser] = useState<ManagedUser | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   useEscapeKey(
     () => {
-      if (historyUser) setHistoryUser(null);
+      if (deletingUser) setDeletingUser(null);
+      else if (historyUser) setHistoryUser(null);
       else if (createOpen) setCreateOpen(false);
       else if (inviteOpen) setInviteOpen(false);
     },
-    Boolean(historyUser || createOpen || inviteOpen),
+    Boolean(deletingUser || historyUser || createOpen || inviteOpen),
   );
 
   const refresh = useCallback(async () => {
@@ -300,6 +303,19 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
                           Restore
                         </button>
                       ))}
+                    <button
+                      className="button danger-text"
+                      type="button"
+                      disabled={working || managedUser.id === user?.userId}
+                      title={
+                        managedUser.id === user?.userId
+                          ? "You cannot delete your currently signed-in account."
+                          : undefined
+                      }
+                      onClick={() => setDeletingUser(managedUser)}
+                    >
+                      Delete User
+                    </button>
                   </div>
                 </article>
               );
@@ -347,6 +363,27 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
         </div>
       )}
 
+      {deletingUser && (
+        <DeleteUserModal
+          target={deletingUser}
+          organizationId={user?.organizationId ?? ""}
+          onClose={() => setDeletingUser(null)}
+          onDeleted={async (historyDeleted) => {
+            const deleted = deletingUser;
+            setDeletingUser(null);
+            setMessage(
+              historyDeleted
+                ? `${deleted.displayName}'s account and audit history were permanently deleted.`
+                : `${deleted.displayName}'s account was deleted. Audit history was preserved.`,
+            );
+            showToast("User account deleted.", {
+              key: `deleted-user:${deleted.id}`,
+            });
+            await refresh();
+          }}
+        />
+      )}
+
       {inviteOpen && (
         <InviteUserModal
           onClose={() => setInviteOpen(false)}
@@ -369,6 +406,193 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function DeleteUserModal({
+  target,
+  organizationId,
+  onClose,
+  onDeleted,
+}: {
+  target: ManagedUser;
+  organizationId: string;
+  onClose: () => void;
+  onDeleted: (historyDeleted: boolean) => Promise<void>;
+}) {
+  const [mode, setMode] = useState<
+    "preserve_history" | "delete_history"
+  >("preserve_history");
+  const [confirmation, setConfirmation] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (mode === "delete_history" && confirmation !== "DELETE") {
+      setError("Type DELETE to permanently remove this user's history.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await adminRequest(
+        `?userId=${encodeURIComponent(target.id)}&action=delete`,
+        {
+          method: "DELETE",
+          body: JSON.stringify({ mode, confirmation }),
+        },
+      );
+      if (mode === "delete_history") {
+        try {
+          await removeLocalAuditEntriesForUser(organizationId, target.id);
+        } catch (caught) {
+          if (process.env.NODE_ENV === "development") {
+            console.warn(
+              "[users] account deleted; local audit cleanup will retry from the server marker",
+              caught,
+            );
+          }
+        }
+      }
+      await onDeleted(mode === "delete_history");
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "The user account could not be deleted.",
+      );
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <section
+        className="modal delete-user-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-user-title"
+      >
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">Permanent account deletion</p>
+            <h2 id="delete-user-title">Delete {target.displayName}?</h2>
+            <p>
+              This permanently removes the authentication account and church
+              user profile. Member, service, attendance, visitor, and note data
+              will not be changed.
+            </p>
+          </div>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Close account deletion"
+            disabled={saving}
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        <form className="form-stack" onSubmit={submit}>
+          <fieldset className="deletion-options">
+            <legend>Choose how history should be handled</legend>
+            <label
+              className={
+                mode === "preserve_history"
+                  ? "deletion-option selected"
+                  : "deletion-option"
+              }
+            >
+              <input
+                autoFocus
+                type="radio"
+                name="history-mode"
+                value="preserve_history"
+                checked={mode === "preserve_history"}
+                onChange={() => {
+                  setMode("preserve_history");
+                  setConfirmation("");
+                  setError("");
+                }}
+              />
+              <span>
+                <strong>Delete account and keep audit history</strong>
+                <small>
+                  Recommended. Past actions keep the recorded user name and
+                  remain understandable.
+                </small>
+              </span>
+            </label>
+            <label
+              className={
+                mode === "delete_history"
+                  ? "deletion-option destructive selected"
+                  : "deletion-option destructive"
+              }
+            >
+              <input
+                type="radio"
+                name="history-mode"
+                value="delete_history"
+                checked={mode === "delete_history"}
+                onChange={() => {
+                  setMode("delete_history");
+                  setError("");
+                }}
+              />
+              <span>
+                <strong>Delete account and delete audit history</strong>
+                <small>
+                  Permanently removes every audit entry created by this user.
+                  This cannot be undone.
+                </small>
+              </span>
+            </label>
+          </fieldset>
+          {mode === "delete_history" && (
+            <label>
+              Type DELETE to confirm permanent history deletion
+              <input
+                value={confirmation}
+                autoComplete="off"
+                onChange={(event) => setConfirmation(event.target.value)}
+                required
+              />
+            </label>
+          )}
+          {error && (
+            <div className="notice error" role="alert">
+              {error}
+            </div>
+          )}
+          <div className="modal-actions">
+            <button
+              className="button subtle"
+              type="button"
+              disabled={saving}
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button
+              className="button danger"
+              type="submit"
+              disabled={
+                saving ||
+                (mode === "delete_history" && confirmation !== "DELETE")
+              }
+            >
+              {saving
+                ? "Deleting…"
+                : mode === "delete_history"
+                  ? "Delete Account and History"
+                  : "Delete Account"}
+            </button>
+          </div>
+        </form>
+      </section>
     </div>
   );
 }

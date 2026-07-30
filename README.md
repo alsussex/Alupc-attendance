@@ -43,6 +43,7 @@ Requirements: Node.js 22.13 or newer, npm, and a Supabase project.
    - `supabase/migrations/202607300003_advanced_service_management.sql`
    - `supabase/migrations/202607300004_intelligent_member_management.sql`
    - `supabase/migrations/202607300005_fix_audit_log_sync.sql`
+   - `supabase/migrations/202607300006_secure_user_account_deletion.sql`
 
 4. Create the first user and organization using the steps below.
 5. Put the project URL, browser-safe anon key, and server-only service-role key in `.env.local`. The service-role key must never have a `NEXT_PUBLIC_` prefix.
@@ -123,7 +124,7 @@ The default Vercel domain is sufficient. Use the exact stable production domain 
 
 ## Private Vercel deployment checklist
 
-1. Confirm all sixteen migrations were applied in filename order.
+1. Confirm all seventeen migrations were applied in filename order.
 2. Confirm the first Admin and organization profile exist.
 3. Confirm `.env.example` contains placeholders and `.env.local` is untracked.
 4. Import the existing `alsussex/Alupc-attendance` repository and select `main`.
@@ -466,7 +467,7 @@ This release does not include Excel export, charts, import/restore, permanent or
 
 Use fictional data such as **Alex Meadow** and **Robin Field**.
 
-1. Apply all sixteen migrations and configure the same Supabase project.
+1. Apply all seventeen migrations and configure the same Supabase project.
 2. Open Browser A as Admin, wait for **Online**, invite a fictional Attendance Taker, and complete that user's first sign-in online in Browser B.
 3. In Browser A, add Alex Meadow, create a draft service, check Alex present, and allow background sync to complete.
 4. In Browser B, focus the app and confirm Alex, the service, and attendance total of one.
