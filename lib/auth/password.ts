@@ -1,6 +1,47 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const PASSWORD_MIN_LENGTH = 8;
+export const PASSWORD_RECOVERY_COOLDOWN_SECONDS = 60;
+
+type AuthErrorDetails = {
+  code?: string;
+  message?: string;
+  status?: number;
+};
+
+export class PasswordRecoveryRateLimitError extends Error {
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds = PASSWORD_RECOVERY_COOLDOWN_SECONDS) {
+    super(
+      "Supabase's email service has reached its temporary sending limit. Use the most recent recovery email, or wait before requesting another.",
+    );
+    this.name = "PasswordRecoveryRateLimitError";
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
+function retryDelayFromMessage(message: string | undefined) {
+  const match = message?.match(
+    /(?:after|in|wait)\s+(\d+)\s*(?:second|seconds|sec|secs|s)\b/i,
+  );
+  if (!match) return PASSWORD_RECOVERY_COOLDOWN_SECONDS;
+  return Math.max(PASSWORD_RECOVERY_COOLDOWN_SECONDS, Number(match[1]));
+}
+
+export function isPasswordRecoveryRateLimit(
+  error: unknown,
+): error is AuthErrorDetails {
+  if (!error || typeof error !== "object") return false;
+  const details = error as AuthErrorDetails;
+  return (
+    details.status === 429 ||
+    details.code === "over_email_send_rate_limit" ||
+    /rate.?limit|too many|security purposes.*(?:after|wait)/i.test(
+      details.message ?? "",
+    )
+  );
+}
 
 export function passwordValidationError(password: string) {
   if (password.length < PASSWORD_MIN_LENGTH) {
@@ -97,6 +138,11 @@ export async function requestPasswordRecovery(
     { redirectTo },
   );
   if (error) {
+    if (isPasswordRecoveryRateLimit(error)) {
+      throw new PasswordRecoveryRateLimitError(
+        retryDelayFromMessage(error.message),
+      );
+    }
     throw new Error(
       "The recovery email could not be requested right now. Check your connection and try again.",
     );

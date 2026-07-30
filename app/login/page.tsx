@@ -4,10 +4,27 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
+  PASSWORD_RECOVERY_COOLDOWN_SECONDS,
+  PasswordRecoveryRateLimitError,
   requestPasswordRecovery,
 } from "@/lib/auth/password";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { useEscapeKey } from "@/lib/ui/keyboard";
+
+const RECOVERY_COOLDOWN_STORAGE_KEY =
+  "church-attendance-password-recovery-retry-at";
+
+function storedRecoveryRetryAt() {
+  if (typeof window === "undefined") return 0;
+  const value = Number(
+    window.localStorage.getItem(RECOVERY_COOLDOWN_STORAGE_KEY),
+  );
+  if (!Number.isFinite(value) || value <= Date.now()) {
+    window.localStorage.removeItem(RECOVERY_COOLDOWN_STORAGE_KEY);
+    return 0;
+  }
+  return value;
+}
 
 export default function LoginPage() {
   const { loading, user, error, signIn } = useAuth();
@@ -20,12 +37,44 @@ export default function LoginPage() {
   const [recoverySaving, setRecoverySaving] = useState(false);
   const [recoveryMessage, setRecoveryMessage] = useState("");
   const [recoveryError, setRecoveryError] = useState("");
+  const [recoveryRetryAt, setRecoveryRetryAt] = useState(0);
+  const [recoveryClock, setRecoveryClock] = useState(0);
 
   useEscapeKey(() => setRecoveryOpen(false), recoveryOpen);
 
   useEffect(() => {
     if (!loading && user) router.replace("/dashboard");
   }, [loading, user, router]);
+
+  useEffect(() => {
+    if (!recoveryOpen || recoveryRetryAt <= recoveryClock) return;
+    const timer = window.setInterval(() => setRecoveryClock(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [recoveryOpen, recoveryRetryAt, recoveryClock]);
+
+  const recoverySecondsRemaining = Math.max(
+    0,
+    Math.ceil((recoveryRetryAt - recoveryClock) / 1_000),
+  );
+
+  function startRecoveryCooldown(seconds: number) {
+    const retryAt = Date.now() + seconds * 1_000;
+    window.localStorage.setItem(
+      RECOVERY_COOLDOWN_STORAGE_KEY,
+      String(retryAt),
+    );
+    setRecoveryClock(Date.now());
+    setRecoveryRetryAt(retryAt);
+  }
+
+  function openRecovery() {
+    setRecoveryEmail(email);
+    setRecoveryError("");
+    setRecoveryMessage("");
+    setRecoveryClock(Date.now());
+    setRecoveryRetryAt(storedRecoveryRetryAt());
+    setRecoveryOpen(true);
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -42,6 +91,7 @@ export default function LoginPage() {
 
   async function recoverPassword(event: FormEvent) {
     event.preventDefault();
+    if (recoverySecondsRemaining > 0) return;
     setRecoverySaving(true);
     setRecoveryError("");
     try {
@@ -53,7 +103,11 @@ export default function LoginPage() {
       setRecoveryMessage(
         "If an account exists for that email, a password-recovery link is on its way.",
       );
+      startRecoveryCooldown(PASSWORD_RECOVERY_COOLDOWN_SECONDS);
     } catch (caught) {
+      if (caught instanceof PasswordRecoveryRateLimitError) {
+        startRecoveryCooldown(caught.retryAfterSeconds);
+      }
       setRecoveryError(
         caught instanceof Error
           ? caught.message
@@ -100,10 +154,7 @@ export default function LoginPage() {
           <button
             className="login-text-action"
             type="button"
-            onClick={() => {
-              setRecoveryEmail(email);
-              setRecoveryOpen(true);
-            }}
+            onClick={openRecovery}
           >
             Forgot password?
           </button>
@@ -174,14 +225,18 @@ export default function LoginPage() {
                 >
                   Close
                 </button>
-                {!recoveryMessage && (
-                  <button
-                    className="button primary"
-                    disabled={recoverySaving}
-                  >
-                    {recoverySaving ? "Sending…" : "Send recovery email"}
-                  </button>
-                )}
+                <button
+                  className="button primary"
+                  disabled={recoverySaving || recoverySecondsRemaining > 0}
+                >
+                  {recoverySaving
+                    ? "Sending…"
+                    : recoverySecondsRemaining > 0
+                      ? `Send again in ${recoverySecondsRemaining}s`
+                      : recoveryMessage
+                        ? "Send another email"
+                        : "Send recovery email"}
+                </button>
               </div>
             </form>
           </section>

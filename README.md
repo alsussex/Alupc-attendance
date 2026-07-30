@@ -412,6 +412,15 @@ confirmation URL or use `{{ .RedirectTo }}` correctly; a link containing only
 detects valid recovery credentials that Supabase returns to the Site URL and
 forwards them safely to `/reset-password`.
 
+The recovery form recognizes Supabase email rate limits, shows a clear
+temporary-limit message, and prevents immediate repeat requests on the same
+device. It continues to use a privacy-safe success message that does not reveal
+whether an email address has an account. Supabase's built-in email provider is
+intended for testing and has a very small project-wide sending allowance.
+Configure **Authentication → Email → SMTP Settings** with a trusted SMTP
+provider before relying on password recovery in production; application code
+cannot safely bypass an email-provider quota.
+
 Settings → Users separates **Invite User** from **Create User**. Direct account
 creation calls the authenticated `/api/admin/users` server route. The route
 verifies the caller's access token, reloads the active Admin profile, derives

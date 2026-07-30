@@ -5,6 +5,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ToastProvider, useToast } from "@/components/feedback/ToastProvider";
 import {
+  PASSWORD_RECOVERY_COOLDOWN_SECONDS,
+  PasswordRecoveryRateLimitError,
+  isPasswordRecoveryRateLimit,
   passwordConfirmationError,
   preparePasswordSetupSession,
   requestPasswordRecovery,
@@ -66,6 +69,49 @@ describe("password recovery and account setup", () => {
       "user@example.test",
       { redirectTo: "https://attendance.example/reset-password" },
     );
+  });
+
+  it("identifies Supabase recovery-email rate limits without blaming the connection", async () => {
+    const resetPasswordForEmail = vi.fn(async () => ({
+      error: {
+        code: "over_email_send_rate_limit",
+        message:
+          "For security purposes, you can only request this after 75 seconds.",
+        status: 429,
+      },
+    }));
+    const request = requestPasswordRecovery(
+      { auth: { resetPasswordForEmail } } as unknown as SupabaseClient,
+      "user@example.test",
+      "https://attendance.example/reset-password",
+    );
+    await expect(request).rejects.toMatchObject({
+      name: "PasswordRecoveryRateLimitError",
+      retryAfterSeconds: 75,
+      message: expect.stringContaining("temporary sending limit"),
+    });
+  });
+
+  it("recognizes documented and message-only email rate-limit responses", () => {
+    expect(
+      isPasswordRecoveryRateLimit({
+        code: "over_email_send_rate_limit",
+      }),
+    ).toBe(true);
+    expect(
+      isPasswordRecoveryRateLimit({
+        message: "Email rate limit exceeded",
+      }),
+    ).toBe(true);
+    expect(
+      isPasswordRecoveryRateLimit({
+        status: 503,
+        message: "Temporary server problem",
+      }),
+    ).toBe(false);
+    expect(
+      new PasswordRecoveryRateLimitError().retryAfterSeconds,
+    ).toBe(PASSWORD_RECOVERY_COOLDOWN_SECONDS);
   });
 
   it("adopts a callback session and exchanges a PKCE code when needed", async () => {
@@ -162,6 +208,8 @@ describe("password recovery and account setup", () => {
     const invite = readFileSync(resolve("app/accept-invite/page.tsx"), "utf8");
     expect(login).toContain("Forgot password?");
     expect(login).toContain("/reset-password");
+    expect(login).toContain("Send again in");
+    expect(login).toContain("RECOVERY_COOLDOWN_STORAGE_KEY");
     expect(reset).toContain("Set a new password");
     expect(reset).toContain("preparePasswordSetupSession");
     expect(invite).toContain("preparePasswordSetupSession");
