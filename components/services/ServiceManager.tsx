@@ -26,6 +26,7 @@ import {
   type ServiceType,
   type ServiceVisitor,
   type SyncQueueItem,
+  type UserContext,
 } from "@/lib/domain";
 import {
   addServiceVisitor,
@@ -264,8 +265,8 @@ export function ServiceManager() {
     const parameters = new URLSearchParams(query);
     if (parameters.get("new") === "1") {
       handledDashboardIntent.current = query;
-      setCreateOpen(true);
-      return;
+      const timer = window.setTimeout(() => setCreateOpen(true), 0);
+      return () => window.clearTimeout(timer);
     }
     const serviceId = parameters.get("service");
     const visibleService = services.find(
@@ -1355,8 +1356,10 @@ export function ServiceManager() {
             </section>
           </div>
         )}
-        {editOpen && !serviceLocked && (
+        {editOpen && user && !serviceLocked && (
           <ServiceModal
+            user={user}
+            settings={settings}
             existing={active}
             onClose={() => setEditOpen(false)}
             onSaved={async (service) => {
@@ -1677,79 +1680,185 @@ export function ServiceManager() {
           onOpenService={openService}
         />
       )}
-      {createOpen && <ServiceModal settings={settings} onClose={() => setCreateOpen(false)} onSaved={async (service) => { setCreateOpen(false); await refreshLists(); await openService(service); showToast("Service created.", { key: `service-created:${service.id}` }); }} />}
+      {createOpen && user && (
+        <ServiceModal
+          user={user}
+          settings={settings}
+          onClose={() => setCreateOpen(false)}
+          onSaved={async (service) => {
+            setCreateOpen(false);
+            await refreshLists();
+            await openService(service);
+            showToast("Service created.", {
+              key: `service-created:${service.id}`,
+            });
+          }}
+        />
+      )}
     </div>
   );
 
-  function ServiceModal({ onClose, onSaved, existing, settings: modalSettings = settings }: { onClose: () => void; onSaved: (service: ChurchService) => void; existing?: ChurchService; settings?: ApplicationSettings }) {
-    const enabledTypes = modalSettings.serviceTypes.filter((item) => item.enabled);
-    const availableTypes =
-      existing && !enabledTypes.some((item) => item.name === existing.serviceType)
-        ? [
-            ...enabledTypes,
-            {
-              id: `historical-${existing.serviceType}`,
-              name: existing.serviceType,
-              enabled: false,
-              system: false,
-            },
-          ]
-        : enabledTypes;
-    const initialType = existing?.serviceType ?? availableTypes[0]?.name ?? SERVICE_TYPES[0];
-    const [date, setDate] = useState(
-      existing?.serviceDate ?? localDate(modalSettings.timezone),
-    );
-    const [type, setType] = useState<ServiceType>(initialType);
-    const [serviceTime, setServiceTime] = useState(
-      existing?.serviceTime ??
-        availableTypes.find((item) => item.name === initialType)?.defaultTime ??
-        "",
-    );
-    const [customName, setCustomName] = useState(existing?.customName ?? "");
-    const [notes, setNotes] = useState(existing?.notes ?? "");
-    async function submit(event: FormEvent) {
-      event.preventDefault();
-      if (!user) return;
-      const service = await saveService(user, {
-        id: existing?.id,
-        serviceDate: date,
-        serviceType: type,
-        customName,
-        serviceTime,
-        notes,
-        status: existing?.status ?? modalSettings.defaultServiceStatus,
-      });
-      onSaved(service);
-    }
-    return (
-      <div className="modal-backdrop">
-        <section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-service-title">
-          <div className="modal-heading"><div><p className="eyebrow">{existing ? "Service details" : "New attendance list"}</p><h2 id="create-service-title">{existing ? "Edit service" : "Create a service"}</h2></div><button className="icon-button" aria-label="Close" type="button" onClick={onClose}>×</button></div>
-          <form className="form-stack" onSubmit={submit}>
-            <label>Service date<input type="date" value={date} onChange={(event) => setDate(event.target.value)} required /></label>
-            <label>Service type<select value={type} onChange={(event) => {
-              const nextType = event.target.value;
-              setType(nextType);
-              setServiceTime(availableTypes.find((item) => item.name === nextType)?.defaultTime ?? "");
-            }}>{availableTypes.map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}</select></label>
-            <label>Service time <span className="optional">(optional)</span><input type="time" value={serviceTime} onChange={(event) => setServiceTime(event.target.value)} /></label>
-            {(availableTypes.find((item) => item.name === type)?.id === "special-service" || type === "Other") && <label>Custom service name <span className="optional">(optional)</span><input value={customName} onChange={(event) => setCustomName(event.target.value)} placeholder="e.g. Christmas Eve" /></label>}
+}
+
+export function ServiceModal({
+  user,
+  onClose,
+  onSaved,
+  existing,
+  settings,
+}: {
+  user: UserContext;
+  onClose: () => void;
+  onSaved: (service: ChurchService) => void | Promise<void>;
+  existing?: ChurchService;
+  settings: ApplicationSettings;
+}) {
+  const [modalSettings] = useState(settings);
+  const enabledTypes = modalSettings.serviceTypes.filter((item) => item.enabled);
+  const availableTypes =
+    existing &&
+    !enabledTypes.some((item) => item.name === existing.serviceType)
+      ? [
+          ...enabledTypes,
+          {
+            id: `historical-${existing.serviceType}`,
+            name: existing.serviceType,
+            enabled: false,
+            system: false,
+          },
+        ]
+      : enabledTypes;
+  const initialType =
+    existing?.serviceType ?? availableTypes[0]?.name ?? SERVICE_TYPES[0];
+  const [date, setDate] = useState(
+    existing?.serviceDate ?? localDate(modalSettings.timezone),
+  );
+  const [type, setType] = useState<ServiceType>(initialType);
+  const [serviceTime, setServiceTime] = useState(
+    existing?.serviceTime ??
+      availableTypes.find((item) => item.name === initialType)?.defaultTime ??
+      "",
+  );
+  const [customName, setCustomName] = useState(existing?.customName ?? "");
+  const [notes, setNotes] = useState(existing?.notes ?? "");
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const service = await saveService(user, {
+      id: existing?.id,
+      serviceDate: date,
+      serviceType: type,
+      customName,
+      serviceTime,
+      notes,
+      status: existing?.status ?? modalSettings.defaultServiceStatus,
+    });
+    await onSaved(service);
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <section
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-service-title"
+      >
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">
+              {existing ? "Service details" : "New attendance list"}
+            </p>
+            <h2 id="create-service-title">
+              {existing ? "Edit service" : "Create a service"}
+            </h2>
+          </div>
+          <button
+            className="icon-button"
+            aria-label="Close"
+            type="button"
+            onClick={onClose}
+          >
+            ×
+          </button>
+        </div>
+        <form className="form-stack" onSubmit={submit}>
+          <label>
+            Service date
+            <input
+              type="date"
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Service type
+            <select
+              value={type}
+              onChange={(event) => {
+                const nextType = event.target.value;
+                setType(nextType);
+                setServiceTime(
+                  availableTypes.find((item) => item.name === nextType)
+                    ?.defaultTime ?? "",
+                );
+              }}
+            >
+              {availableTypes.map((option) => (
+                <option key={option.id} value={option.name}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Service time <span className="optional">(optional)</span>
+            <input
+              type="time"
+              value={serviceTime}
+              onChange={(event) => setServiceTime(event.target.value)}
+            />
+          </label>
+          {(availableTypes.find((item) => item.name === type)?.id ===
+            "special-service" ||
+            type === "Other") && (
             <label>
-              Service notes <span className="optional">(optional)</span>
-              <textarea
-                value={notes}
-                maxLength={4000}
-                rows={4}
-                onChange={(event) => setNotes(event.target.value)}
-                placeholder="Add setup details, reminders, or a short service note"
+              Custom service name{" "}
+              <span className="optional">(optional)</span>
+              <input
+                value={customName}
+                onChange={(event) => setCustomName(event.target.value)}
+                placeholder="e.g. Christmas Eve"
               />
             </label>
-            <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose}>Cancel</button><button className="button primary">{existing ? "Save changes" : "Create and take attendance"}</button></div>
-          </form>
-        </section>
-      </div>
-    );
-  }
+          )}
+          <label>
+            Service notes <span className="optional">(optional)</span>
+            <textarea
+              value={notes}
+              maxLength={4000}
+              rows={4}
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Add setup details, reminders, or a short service note"
+            />
+          </label>
+          <div className="modal-actions">
+            <button
+              className="button subtle"
+              type="button"
+              onClick={onClose}
+            >
+              Cancel
+            </button>
+            <button className="button primary">
+              {existing ? "Save changes" : "Create and take attendance"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 const VISITOR_CONFLICT_LABELS: Record<string, string> = {
