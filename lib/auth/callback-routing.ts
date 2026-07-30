@@ -1,5 +1,5 @@
 const RECOVERY_PATH = "/reset-password";
-const INVITATION_PATH = "/accept-invite";
+const INVITATION_PATH = "/auth/setup-password";
 
 function callbackParameters(url: URL) {
   return {

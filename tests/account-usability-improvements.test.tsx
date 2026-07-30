@@ -19,6 +19,12 @@ import {
   isPasswordRecoveryCallback,
   passwordRecoveryDestination,
 } from "@/lib/auth/callback-routing";
+import {
+  INVITATION_SETUP_PATH,
+  PRODUCTION_APP_ORIGIN,
+  resolveApplicationOrigin,
+  safeInvitationNext,
+} from "@/lib/auth/invitation-flow";
 import type { UserContext } from "@/lib/domain";
 import { buildAttendanceReportRows } from "@/lib/reports/attendance-report";
 import {
@@ -159,14 +165,14 @@ describe("password recovery and account setup", () => {
       "https://attendance.example/dashboard#access_token=access&refresh_token=refresh&type=invite";
     expect(isInvitationCallback(callback)).toBe(true);
     expect(invitationDestination(callback)).toBe(
-      "/accept-invite#access_token=access&refresh_token=refresh&type=invite",
+      "/auth/setup-password#access_token=access&refresh_token=refresh&type=invite",
     );
     expect(authCallbackDestination(callback)).toBe(
-      "/accept-invite#access_token=access&refresh_token=refresh&type=invite",
+      "/auth/setup-password#access_token=access&refresh_token=refresh&type=invite",
     );
     expect(
       invitationDestination(
-        "https://attendance.example/accept-invite#type=invite",
+        "https://attendance.example/auth/setup-password#type=invite",
       ),
     ).toBeNull();
     expect(
@@ -174,6 +180,41 @@ describe("password recovery and account setup", () => {
         "https://attendance.example/login#type=magiclink&access_token=access",
       ),
     ).toBeNull();
+  });
+
+  it("uses the canonical production origin instead of a Vercel project alias", () => {
+    expect(
+      resolveApplicationOrigin({
+        production: true,
+        requestUrl:
+          "https://alupc-attendance-alsussexs-projects.vercel.app/api/admin/users",
+      }),
+    ).toBe(PRODUCTION_APP_ORIGIN);
+    expect(`${PRODUCTION_APP_ORIGIN}${INVITATION_SETUP_PATH}`).toBe(
+      "https://alupc-attendance.vercel.app/auth/setup-password",
+    );
+    expect(
+      resolveApplicationOrigin({
+        production: true,
+        configuredUrl: PRODUCTION_APP_ORIGIN,
+      }),
+    ).toBe(PRODUCTION_APP_ORIGIN);
+  });
+
+  it("restricts invitation confirmation redirects to setup-password", () => {
+    expect(safeInvitationNext("/auth/setup-password")).toBe(
+      "/auth/setup-password",
+    );
+    expect(safeInvitationNext("/auth/setup-password?source=invite")).toBe(
+      "/auth/setup-password?source=invite",
+    );
+    expect(safeInvitationNext("https://malicious.example/steal")).toBe(
+      "/auth/setup-password",
+    );
+    expect(safeInvitationNext("//malicious.example/steal")).toBe(
+      "/auth/setup-password",
+    );
+    expect(safeInvitationNext("/dashboard")).toBe("/auth/setup-password");
   });
 
   it("verifies token-hash invitation callbacks as invitations", async () => {
@@ -186,7 +227,7 @@ describe("password recovery and account setup", () => {
     await expect(
       preparePasswordSetupSession(
         { auth: { verifyOtp, getSession } } as unknown as SupabaseClient,
-        "https://attendance.example/accept-invite?token_hash=hash&type=invite",
+        "https://attendance.example/auth/setup-password?token_hash=hash&type=invite",
         "invite",
       ),
     ).resolves.toBe(session);
@@ -200,7 +241,7 @@ describe("password recovery and account setup", () => {
     await expect(
       preparePasswordSetupSession(
         {} as SupabaseClient,
-        "https://attendance.example/accept-invite#type=recovery&access_token=access&refresh_token=refresh",
+        "https://attendance.example/auth/setup-password#type=recovery&access_token=access&refresh_token=refresh",
         "invite",
       ),
     ).rejects.toThrow("invitation link is invalid");
@@ -260,7 +301,10 @@ describe("password recovery and account setup", () => {
       resolve("app/reset-password/page.tsx"),
       "utf8",
     );
-    const invite = readFileSync(resolve("app/accept-invite/page.tsx"), "utf8");
+    const invite = readFileSync(
+      resolve("app/auth/setup-password/page.tsx"),
+      "utf8",
+    );
     expect(login).toContain("Forgot password?");
     expect(login).toContain("/reset-password");
     expect(login).toContain("Send again in");
@@ -273,6 +317,7 @@ describe("password recovery and account setup", () => {
     expect(invite).toContain("Set your password");
     expect(invite).toContain("auth.updateUser");
     expect(invite).toContain('router.replace("/dashboard")');
+    expect(invite).toContain('"/auth/setup-password"');
     const layout = readFileSync(resolve("app/layout.tsx"), "utf8");
     expect(layout).toContain("<AuthCallbackRouter />");
     const callbackRouter = readFileSync(
@@ -280,6 +325,23 @@ describe("password recovery and account setup", () => {
       "utf8",
     );
     expect(callbackRouter).toContain("authCallbackDestination");
+    const confirmationRoute = readFileSync(
+      resolve("app/auth/confirm/route.ts"),
+      "utf8",
+    );
+    expect(confirmationRoute).toContain("supabase.auth.verifyOtp");
+    expect(confirmationRoute).toContain('type: "invite"');
+    expect(confirmationRoute).toContain("safeInvitationNext");
+    expect(confirmationRoute).toContain("response.cookies.set");
+    expect(confirmationRoute).toContain("session.refresh_token");
+    const usersRoute = readFileSync(
+      resolve("app/api/admin/users/route.ts"),
+      "utf8",
+    );
+    expect(usersRoute).toContain("invitationSetupUrl(request.url)");
+    expect(usersRoute).not.toContain(
+      '`${new URL(request.url).origin}/accept-invite`',
+    );
     const settings = readFileSync(
       resolve("components/settings/SettingsCenter.tsx"),
       "utf8",

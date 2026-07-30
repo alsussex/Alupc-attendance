@@ -67,6 +67,7 @@ npm audit --omit=dev
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Existing anon/publishable key; browser-safe and protected by RLS |
 | `NEXT_PUBLIC_ENABLE_DEMO_SEED` | `false` in production |
 | `SUPABASE_SERVICE_ROLE_KEY` | Existing service-role key; server-only |
+| `APP_URL` | `https://alupc-attendance.vercel.app`; server-only canonical auth origin |
 
 The service-role key is used only after an Admin API route verifies the caller's Supabase access token and active Admin profile. Never paste it into source code, chat, a client-side variable, or GitHub.
 
@@ -112,15 +113,18 @@ If invitation email delivery is unavailable, create and confirm the additional u
 
 In **Supabase > Authentication > URL Configuration**, configure:
 
-- Site URL: `https://<assigned-production-domain>.vercel.app`
-- Production login redirect: `https://<assigned-production-domain>.vercel.app/login`
-- Production invitation redirect: `https://<assigned-production-domain>.vercel.app/accept-invite`
-- Production password-recovery redirect: `https://<assigned-production-domain>.vercel.app/reset-password`
+- Site URL: `https://alupc-attendance.vercel.app`
+- Production login redirect: `https://alupc-attendance.vercel.app/login`
+- Production invitation confirmation: `https://alupc-attendance.vercel.app/auth/confirm`
+- Production invitation setup: `https://alupc-attendance.vercel.app/auth/setup-password`
+- Production password-recovery redirect: `https://alupc-attendance.vercel.app/reset-password`
 - Local login redirect: `http://localhost:3000/login`
-- Local invitation redirect: `http://localhost:3000/accept-invite`
+- Local invitation confirmation: `http://localhost:3000/auth/confirm`
+- Local invitation setup: `http://localhost:3000/auth/setup-password`
 - Local password-recovery redirect: `http://localhost:3000/reset-password`
 
-The default Vercel domain is sufficient. Use the exact stable production domain Vercel assigns. Add preview wildcards only if preview authentication is genuinely needed.
+Do not use the long Vercel project alias in authentication settings. Add
+preview wildcards only if preview authentication is genuinely needed.
 
 ## Private Vercel deployment checklist
 
@@ -129,7 +133,7 @@ The default Vercel domain is sufficient. Use the exact stable production domain 
 3. Confirm `.env.example` contains placeholders and `.env.local` is untracked.
 4. Import the existing `alsussex/Alupc-attendance` repository and select `main`.
 5. Use the Next.js preset, repository root, default install command, and `npm run build`.
-6. Add the four environment variables above; set demo seed to `false`.
+6. Add the five environment variables above; set demo seed to `false`.
 7. Deploy, copy the assigned production domain, and configure the exact Supabase URLs.
 8. Enable Vercel Deployment Protection if desired for private testing.
 9. Sign in, wait for **Synced**, and use fictional records for verification.
@@ -392,7 +396,8 @@ changes, and creation ownership changes remain blocked.
 
 The sign-in page can request a Supabase password-recovery email without
 revealing whether an account exists. Recovery links return to
-`/reset-password`; invitation links return to `/accept-invite`. Both routes
+`/reset-password`; invitation links pass through `/auth/confirm` and continue
+to `/auth/setup-password`. Both flows
 exchange the callback code, require matching password confirmation, and handle
 expired or reused links without entering the protected application.
 
@@ -401,9 +406,11 @@ must use `https://alupc-attendance.vercel.app` as the Site URL and include these
 exact Redirect URLs:
 
 - `https://alupc-attendance.vercel.app/reset-password`
-- `https://alupc-attendance.vercel.app/accept-invite`
+- `https://alupc-attendance.vercel.app/auth/confirm`
+- `https://alupc-attendance.vercel.app/auth/setup-password`
 - `http://localhost:3000/reset-password`
-- `http://localhost:3000/accept-invite`
+- `http://localhost:3000/auth/confirm`
+- `http://localhost:3000/auth/setup-password`
 
 Keep the standard recovery email action linked through
 `{{ .ConfirmationURL }}`. A customized template must preserve Supabase's
@@ -412,11 +419,19 @@ confirmation URL or use `{{ .RedirectTo }}` correctly; a link containing only
 detects valid recovery credentials that Supabase returns to the Site URL and
 forwards them safely to `/reset-password`.
 
-Keep the standard invitation email action linked through
-`{{ .ConfirmationURL }}` as well. Invitation credentials that arrive at the
-Site URL, login page, or protected application are redirected to
-`/accept-invite` before normal session restoration. The invited user must set
-and confirm a password there before continuing to the dashboard.
+For the **Invite user** email template, replace the button URL with this exact
+token-hash callback:
+
+```text
+{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite&next=/auth/setup-password
+```
+
+The confirmation route accepts only `type=invite`, verifies the token hash on
+the server, writes the authenticated Supabase cookies, validates the next
+destination, and transfers the verified session to the existing browser auth
+store. The invited user must set and confirm a password before continuing to
+the dashboard. Legacy invitation callbacks arriving at the Site URL, login
+page, or old `/accept-invite` route are forwarded to the same setup screen.
 
 The recovery form recognizes Supabase email rate limits, shows a clear
 temporary-limit message, and prevents immediate repeat requests on the same

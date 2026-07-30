@@ -11,6 +11,7 @@ import {
   validateUserDeletion,
 } from "@/lib/users/user-deletion";
 import { buildUserAuditRecord } from "@/lib/users/user-audit";
+import { invitationSetupUrl } from "@/lib/auth/invitation-flow";
 
 function failure(caught: unknown, status = 400) {
   let message =
@@ -150,7 +151,7 @@ export async function POST(request: Request) {
       if (passwordError) throw new Error(passwordError);
     }
 
-    const redirectTo = `${new URL(request.url).origin}/accept-invite`;
+    const redirectTo = invitationSetupUrl(request.url);
     const { data, error } =
       mode === "create"
         ? await admin.auth.admin.createUser({
@@ -284,7 +285,7 @@ export async function PATCH(request: Request) {
         type: "signup",
         email: authUser.user.email,
         options: {
-          emailRedirectTo: `${new URL(request.url).origin}/accept-invite`,
+          emailRedirectTo: invitationSetupUrl(request.url),
         },
       });
       if (error) throw new Error(error.message);
