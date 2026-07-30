@@ -431,7 +431,7 @@ describe("multi-device upload and retry", () => {
 
     const result = await uploadPendingChanges(organizationId, target);
 
-    expect(result.uploaded).toBe(1);
+    expect(result.uploaded).toBe(2);
     expect(await getPendingChanges(organizationId)).toHaveLength(0);
   });
 

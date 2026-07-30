@@ -132,7 +132,7 @@ describe("attendance conflict queue recovery", () => {
     const result = await uploadPendingChanges(organizationId, target);
 
     expect(result).toMatchObject({
-      uploaded: 1,
+      uploaded: 2,
       errors: [],
       blockedConflicts: 0,
     });
@@ -178,7 +178,8 @@ describe("attendance conflict queue recovery", () => {
     const { local } = await queuedAttendanceEdit();
     let calls = 0;
     const target: UploadTarget = {
-      async upsert() {
+      async upsert(table) {
+        if (table === "audit_log") return { version: 1 };
         calls += 1;
         throw new AttendanceSynchronizationConflictError(local.id);
       },

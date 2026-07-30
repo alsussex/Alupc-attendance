@@ -8,6 +8,7 @@ import {
   type FormEvent,
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { AuditHistory } from "@/components/audit/AuditHistory";
 import { isAdmin } from "@/lib/auth/permissions";
 import type { Person } from "@/lib/domain";
 import {
@@ -524,6 +525,12 @@ function MemberProfileModal({
             </div>
           )}
         </dl>
+        {canManageLifecycle && (
+          <div className="member-history">
+            <h3>History</h3>
+            <AuditHistory relatedEntityId={person.id} compact />
+          </div>
+        )}
         <div className="modal-actions">
           <button className="button subtle" type="button" onClick={onEdit}>
             Edit details

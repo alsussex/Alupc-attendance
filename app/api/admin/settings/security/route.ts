@@ -11,6 +11,13 @@ export async function PATCH(request: Request) {
     if (!displayName || displayName.length > 120) {
       throw new Error("Display name must contain 1 to 120 characters.");
     }
+    const { data: existing, error: existingError } = await admin
+      .from("profiles")
+      .select("display_name, role")
+      .eq("id", userId)
+      .eq("organization_id", organizationId)
+      .single();
+    if (existingError || !existing) throw new Error("The administrator profile was not found.");
     const { error: profileError } = await admin
       .from("profiles")
       .update({ display_name: displayName })
@@ -21,6 +28,29 @@ export async function PATCH(request: Request) {
       user_metadata: { display_name: displayName },
     });
     if (authError) throw new Error(authError.message);
+    if (existing.display_name !== displayName) {
+      const auditId = crypto.randomUUID();
+      const { error: auditError } = await admin.from("audit_log").insert({
+        id: auditId,
+        organization_id: organizationId,
+        entity_type: "settings",
+        entity_id: userId,
+        action: "security_settings_changed",
+        user_id: userId,
+        user_display_name: displayName,
+        role: existing.role,
+        details: {
+          field: "displayName",
+          from: existing.display_name,
+          to: displayName,
+        },
+        version: 1,
+        last_mutation_id: auditId,
+      });
+      if (auditError) {
+        throw new Error(`Profile updated, but its audit entry failed: ${auditError.message}`);
+      }
+    }
     return NextResponse.json({ updated: true, displayName });
   } catch (caught) {
     const message =

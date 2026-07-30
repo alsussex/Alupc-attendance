@@ -3,6 +3,7 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
 import type {
   AttendanceRecord,
+  AuditLogEntry,
   ChurchService,
   Organization,
   OrganizationSettings,
@@ -49,6 +50,17 @@ export interface AttendanceDatabase extends DBSchema {
     value: ServiceVisitor;
     indexes: { serviceId: string; organizationId: string };
   };
+  auditLog: {
+    key: string;
+    value: AuditLogEntry;
+    indexes: {
+      organizationId: string;
+      entityId: string;
+      occurredAt: string;
+      organizationOccurredAt: [string, string];
+      organizationOccurredAtId: [string, string, string];
+    };
+  };
   syncQueue: {
     key: string;
     value: SyncQueueItem;
@@ -70,7 +82,7 @@ let databasePromise: Promise<IDBPDatabase<AttendanceDatabase>> | null = null;
 
 export function getDatabase() {
   if (!databasePromise) {
-    databasePromise = openDB<AttendanceDatabase>("church-attendance", 3, {
+    databasePromise = openDB<AttendanceDatabase>("church-attendance", 4, {
       upgrade(database, oldVersion) {
         if (oldVersion < 1) {
           const people = database.createObjectStore("people", { keyPath: "id" });
@@ -120,6 +132,22 @@ export function getDatabase() {
             "organizationId",
           );
         }
+        if (oldVersion < 4) {
+          const auditLog = database.createObjectStore("auditLog", {
+            keyPath: "id",
+          });
+          auditLog.createIndex("organizationId", "organizationId");
+          auditLog.createIndex("entityId", "entityId");
+          auditLog.createIndex("occurredAt", "occurredAt");
+          auditLog.createIndex(
+            "organizationOccurredAt",
+            ["organizationId", "occurredAt"],
+          );
+          auditLog.createIndex(
+            "organizationOccurredAtId",
+            ["organizationId", "occurredAt", "id"],
+          );
+        }
       },
     });
   }
@@ -144,6 +172,7 @@ export async function clearLocalDatabase() {
       "services",
       "attendance",
       "visitors",
+      "auditLog",
       "syncQueue",
       "syncCursors",
       "syncStatus",
@@ -158,6 +187,7 @@ export async function clearLocalDatabase() {
     transaction.objectStore("services").clear(),
     transaction.objectStore("attendance").clear(),
     transaction.objectStore("visitors").clear(),
+    transaction.objectStore("auditLog").clear(),
     transaction.objectStore("syncQueue").clear(),
     transaction.objectStore("syncCursors").clear(),
     transaction.objectStore("syncStatus").clear(),

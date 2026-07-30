@@ -323,7 +323,10 @@ describe("visitor conflict queue and manual resolution", () => {
     };
     await uploadPendingChanges(organizationId, target);
     await uploadPendingChanges(organizationId, target);
-    expect(rows.size).toBe(2); // one service and one visitor, never duplicates
+    const businessRows = [...rows.keys()].filter(
+      (key) => !key.startsWith("audit_log:"),
+    );
+    expect(businessRows).toHaveLength(2); // one service and one visitor
     expect(rows.has(`service_visitors:${visitor.id}`)).toBe(true);
     expect(await getPendingChanges(organizationId)).toHaveLength(0);
   });

@@ -36,6 +36,7 @@ Requirements: Node.js 22.13 or newer, npm, and a Supabase project.
    - `supabase/migrations/202607290008_application_settings.sql`
    - `supabase/migrations/202607290009_bidirectional_reconciliation.sql`
    - `supabase/migrations/202607290010_unnamed_visitor_count.sql`
+   - `supabase/migrations/202607290011_append_only_audit_log.sql`
 
 4. Create the first user and organization using the steps below.
 5. Put the project URL, browser-safe anon key, and server-only service-role key in `.env.local`. The service-role key must never have a `NEXT_PUBLIC_` prefix.
@@ -114,7 +115,7 @@ The default Vercel domain is sufficient. Use the exact stable production domain 
 
 ## Private Vercel deployment checklist
 
-1. Confirm all ten migrations were applied in filename order.
+1. Confirm all eleven migrations were applied in filename order.
 2. Confirm the first Admin and organization profile exist.
 3. Confirm `.env.example` contains placeholders and `.env.local` is untracked.
 4. Import the existing `alsussex/Alupc-attendance` repository and select `main`.
@@ -327,6 +328,30 @@ The general people SELECT policy includes active and inactive rows in the author
 
 A mutation that previously failed RLS remains in IndexedDB with `error` status. Applying the corrective migration is sufficient: the open app retries on its existing backoff schedule, reconnection, focus, or a new mutation. Reopening the app also retries it. **Sync now** is available as a secondary fallback; the member must not be recreated.
 
+### Permanent audit history
+
+Migration `202607290011_append_only_audit_log.sql` creates the
+organization-scoped `audit_log` table. Each entry captures the actor snapshot,
+role, UTC occurrence time, entity, action, device identifier when available,
+and meaningful before/after details. Database triggers reject every UPDATE and
+DELETE, so application users cannot rewrite history. RLS permits active
+organization users to append only entries attributed to themselves; only
+Admins may read the organization history.
+
+Audit entries are written to IndexedDB beside the domain change and placed in
+the existing idempotent mutation queue. They survive browser closure, upload
+after reconnection, download through Realtime and the incremental polling
+fallback, and use stable UUIDs to prevent duplicate entries. Audit metadata is
+not counted as an extra user-facing pending change, although it remains part of
+the synchronization run.
+
+Admins can open **Settings > Audit History** to search by user, action, entity,
+or details and filter by date and entity type. Results load newest-first in
+bounded pages. Service, member, visitor, and user screens expose scoped history
+views. CSV and JSON audit exports include timestamps, user and role snapshots,
+actions, entities, device identifiers, and details; they contain no
+authentication credentials.
+
 ### Known limitations
 
 - Sync and Realtime reconciliation run while the app is open. There is no
@@ -360,9 +385,11 @@ components/services/         services, attendance, and visitors
 components/users/            Admin-only user management
 components/shell/            responsive navigation and sync status
 components/sync/             startup and automatic synchronization
+components/audit/            Admin-only paginated audit history views
 components/pwa/              service-worker registration
 lib/auth/                    role permission helpers
 lib/repositories/            local-first domain repositories
+lib/audit/                   local-first audit recording, filtering, and export
 lib/storage/                 IndexedDB schema and data events
 lib/sync/                    queue, upload, pull, conflict, and retry services
 lib/supabase/                browser client and server-only Admin authorization
@@ -378,7 +405,7 @@ This release does not include Excel export, reports, charts, import/restore, per
 
 Use fictional data such as **Alex Meadow** and **Robin Field**.
 
-1. Apply all nine migrations and configure the same Supabase project.
+1. Apply all eleven migrations and configure the same Supabase project.
 2. Open Browser A as Admin, wait for **Online**, invite a fictional Attendance Taker, and complete that user's first sign-in online in Browser B.
 3. In Browser A, add Alex Meadow, create a draft service, check Alex present, and allow background sync to complete.
 4. In Browser B, focus the app and confirm Alex, the service, and attendance total of one.

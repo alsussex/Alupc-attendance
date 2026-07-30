@@ -123,7 +123,7 @@ describe("session-aware synchronization recovery", () => {
     });
 
     expect(recoverAccess).toHaveBeenCalledTimes(1);
-    expect(attempts).toBe(2);
+    expect(attempts).toBe(3);
     expect(result.upload.errors).toEqual([]);
     expect(await getPendingChanges(organizationId)).toHaveLength(0);
   });
@@ -145,7 +145,7 @@ describe("session-aware synchronization recovery", () => {
     });
 
     expect(recoverAccess).toHaveBeenCalledTimes(1);
-    expect(result.upload.errors).toHaveLength(1);
+    expect(result.upload.errors).toHaveLength(2);
     expect(await getPendingChanges(organizationId)).toHaveLength(1);
   });
 
@@ -259,7 +259,7 @@ describe("incremental remote reconciliation", () => {
       }),
     );
     expect(await listServiceVisitors(serviceId)).toHaveLength(0);
-    expect((await getDatabase()).get("profiles", user.userId)).resolves.toMatchObject({
+    await expect((await getDatabase()).get("profiles", user.userId)).resolves.toMatchObject({
       role: "attendance_taker",
       isActive: false,
     });
@@ -280,7 +280,7 @@ describe("incremental remote reconciliation", () => {
         ],
       }),
     );
-    expect((await getDatabase()).get("profiles", user.userId)).resolves.toMatchObject({
+    await expect((await getDatabase()).get("profiles", user.userId)).resolves.toMatchObject({
       role: "admin",
       isActive: true,
     });
@@ -334,7 +334,7 @@ describe("remote subscription lifecycle", () => {
     const stopA = subscribeToRemoteOrganizationChanges(user, vi.fn(), fake.client);
     const stopB = subscribeToRemoteOrganizationChanges(user, vi.fn(), fake.client);
     expect(activeRemoteSubscriptionCount()).toBe(1);
-    expect(fake.filters).toHaveLength(7);
+    expect(fake.filters).toHaveLength(8);
     expect(
       fake.filters.every((filter) =>
         filter.filter?.includes(organizationId),
@@ -398,8 +398,10 @@ describe("database conflict safeguards", () => {
     });
     const contexts: Array<{ expectedVersion?: number }> = [];
     const target: UploadTarget = {
-      async upsert(_table, _payload, _conflict, context) {
-        contexts.push({ expectedVersion: context?.expectedVersion });
+      async upsert(table, _payload, _conflict, context) {
+        if (table === "people") {
+          contexts.push({ expectedVersion: context?.expectedVersion });
+        }
         return { version: 8, updatedAt: now };
       },
     };

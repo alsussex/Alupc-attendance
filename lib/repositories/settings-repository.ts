@@ -12,6 +12,7 @@ import { getDatabase } from "@/lib/storage/database";
 import { announceDataChanged } from "@/lib/storage/data-events";
 import { enqueueChange } from "@/lib/sync/queue";
 import { toCloudRecord } from "@/lib/sync/serialization";
+import { recordAuditEntry } from "@/lib/audit/audit-repository";
 import {
   defaultApplicationSettings,
   mergeApplicationSettings,
@@ -75,6 +76,73 @@ export async function saveOrganizationSettings(
     recordId: record.id,
     payload: toCloudRecord(record),
   });
+  const previousSettings = existing
+    ? mergeApplicationSettings(existing.settings)
+    : defaultApplicationSettings();
+  const changes = Object.fromEntries(
+    Object.entries(record.settings)
+      .filter(
+        ([key, value]) =>
+          JSON.stringify(previousSettings[key as keyof ApplicationSettings]) !==
+          JSON.stringify(value),
+      )
+      .map(([key, value]) => [
+        key,
+        {
+          from: previousSettings[key as keyof ApplicationSettings],
+          to: value,
+        },
+      ]),
+  );
+  const changedKeys = Object.keys(changes);
+  if (changedKeys.length > 0) {
+    const attendanceKeys = new Set([
+      "attendanceSort",
+      "showAttendanceTotals",
+      "showPresentCount",
+      "showAbsentCount",
+      "showTotalMemberCount",
+      "warnZeroAttendance",
+      "showInactiveInAttendance",
+    ]);
+    const visitorKeys = new Set([
+      "requireVisitorName",
+      "allowVisitorNotes",
+      "confirmVisitorRemoval",
+      "visitorLabel",
+      "showVisitorsSeparately",
+      "includeVisitorsInTotal",
+    ]);
+    const groups = [
+      {
+        action: "attendance_settings_changed",
+        keys: changedKeys.filter((key) => attendanceKeys.has(key)),
+      },
+      {
+        action: "visitor_settings_changed",
+        keys: changedKeys.filter((key) => visitorKeys.has(key)),
+      },
+      {
+        action: "organization_settings_changed",
+        keys: changedKeys.filter(
+          (key) => !attendanceKeys.has(key) && !visitorKeys.has(key),
+        ),
+      },
+    ];
+    for (const group of groups) {
+      if (group.keys.length === 0) continue;
+      await recordAuditEntry(user, {
+        entityType: "settings",
+        entityId: user.organizationId,
+        action: group.action,
+        details: {
+          changes: Object.fromEntries(
+            group.keys.map((key) => [key, changes[key]]),
+          ),
+        },
+      });
+    }
+  }
   announceDataChanged();
   return record;
 }
@@ -110,6 +178,23 @@ export async function saveOrganizationIdentity(
     recordId: updated.id,
     payload: toCloudRecord(updated),
   });
+  if (existing.name !== updated.name || existing.slug !== updated.slug) {
+    await recordAuditEntry(user, {
+      entityType: "settings",
+      entityId: user.organizationId,
+      action: "organization_settings_changed",
+      details: {
+        changes: {
+          ...(existing.name !== updated.name
+            ? { churchName: { from: existing.name, to: updated.name } }
+            : {}),
+          ...(existing.slug !== updated.slug
+            ? { churchSlug: { from: existing.slug, to: updated.slug } }
+            : {}),
+        },
+      },
+    });
+  }
   announceDataChanged();
   return updated;
 }

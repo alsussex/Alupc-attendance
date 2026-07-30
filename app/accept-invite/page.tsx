@@ -48,6 +48,33 @@ export default function AcceptInvitePage() {
       setSaving(false);
       return;
     }
+    const client = getSupabaseClient();
+    const {
+      data: { user },
+    } = await client.auth.getUser();
+    if (user) {
+      const { data: profile } = await client
+        .from("profiles")
+        .select("organization_id, display_name, role")
+        .eq("id", user.id)
+        .single();
+      if (profile) {
+        const auditId = crypto.randomUUID();
+        await client.from("audit_log").insert({
+          id: auditId,
+          organization_id: profile.organization_id,
+          entity_type: "user",
+          entity_id: user.id,
+          action: "invitation_accepted",
+          user_id: user.id,
+          user_display_name: profile.display_name || user.email || "Church user",
+          role: profile.role,
+          details: {},
+          version: 1,
+          last_mutation_id: auditId,
+        });
+      }
+    }
     router.replace("/dashboard");
   }
 

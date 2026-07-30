@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { AuditHistory } from "@/components/audit/AuditHistory";
 import type { UserRole } from "@/lib/domain";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
@@ -55,6 +56,7 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [historyUser, setHistoryUser] = useState<ManagedUser | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -224,6 +226,14 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
                     {formatDate(managedUser.createdAt)}
                   </span>
                   <div className="user-actions">
+                    <button
+                      className="button subtle"
+                      type="button"
+                      disabled={working}
+                      onClick={() => setHistoryUser(managedUser)}
+                    >
+                      History
+                    </button>
                     {pending && (
                       <>
                         <button
@@ -271,6 +281,37 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
           </div>
         )}
       </section>
+
+      {historyUser && (
+        <div className="modal-backdrop">
+          <section
+            className="modal audit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="user-history-title"
+          >
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">User history</p>
+                <h2 id="user-history-title">{historyUser.displayName}</h2>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Close user history"
+                onClick={() => setHistoryUser(null)}
+              >
+                ×
+              </button>
+            </div>
+            <AuditHistory
+              entityType="user"
+              entityId={historyUser.id}
+              compact
+            />
+          </section>
+        </div>
+      )}
 
       {inviteOpen && (
         <InviteUserModal

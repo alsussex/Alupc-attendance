@@ -19,6 +19,7 @@ import { announceDataChanged } from "@/lib/storage/data-events";
 import { isAdmin } from "@/lib/auth/permissions";
 import { enqueueChange } from "@/lib/sync/queue";
 import { toCloudRecord } from "@/lib/sync/serialization";
+import { recordAuditEntry } from "@/lib/audit/audit-repository";
 
 const attendanceWriteChains = new Map<string, Promise<AttendanceRecord>>();
 const unnamedVisitorWriteChains = new Map<string, Promise<ChurchService>>();
@@ -129,6 +130,23 @@ export async function saveMember(
     recordId: person.id,
     payload: toCloudRecord(person),
   });
+  if (
+    !existing ||
+    existing.firstName !== person.firstName ||
+    existing.lastName !== person.lastName
+  ) {
+    await recordAuditEntry(user, {
+      entityType: "member",
+      entityId: person.id,
+      action: existing ? "edited" : "added",
+      details: {
+        name: person.displayName,
+        ...(existing
+          ? { from: existing.displayName, to: person.displayName }
+          : {}),
+      },
+    });
+  }
   announceDataChanged();
   return person;
 }
@@ -155,6 +173,14 @@ export async function markMemberInactive(user: UserContext, id: string) {
     recordId: id,
     payload: toCloudRecord(updated),
   });
+  if (person.isActive) {
+    await recordAuditEntry(user, {
+      entityType: "member",
+      entityId: id,
+      action: "deactivated",
+      details: { name: updated.displayName },
+    });
+  }
   announceDataChanged();
   return updated;
 }
@@ -180,6 +206,14 @@ export async function restoreMember(user: UserContext, id: string) {
     recordId: id,
     payload: toCloudRecord(updated),
   });
+  if (!person.isActive) {
+    await recordAuditEntry(user, {
+      entityType: "member",
+      entityId: id,
+      action: "reactivated",
+      details: { name: updated.displayName },
+    });
+  }
   announceDataChanged();
   return updated;
 }
@@ -206,6 +240,12 @@ export async function removeMember(user: UserContext, id: string) {
     table: "people",
     recordId: id,
     payload: toCloudRecord(updated),
+  });
+  await recordAuditEntry(user, {
+    entityType: "member",
+    entityId: id,
+    action: "removed",
+    details: { name: updated.displayName },
   });
   announceDataChanged();
   return updated;
@@ -290,6 +330,29 @@ export async function saveService(
     recordId: service.id,
     payload: toCloudRecord(service),
   });
+  const serviceAction = !existing
+    ? "created"
+    : existing.status !== service.status
+      ? service.status === "completed"
+        ? "completed"
+        : "reopened"
+      : existing.serviceDate !== service.serviceDate ||
+          existing.serviceType !== service.serviceType ||
+          existing.customName !== service.customName ||
+          existing.serviceTime !== service.serviceTime
+        ? "edited"
+        : undefined;
+  if (serviceAction) {
+    await recordAuditEntry(user, {
+      entityType: "service",
+      entityId: service.id,
+      action: serviceAction,
+      details: {
+        name: service.customName || service.serviceType,
+        status: service.status,
+      },
+    });
+  }
   announceDataChanged();
   return service;
 }
@@ -314,6 +377,18 @@ export async function setUnnamedVisitorCount(
     recordId: updated.id,
     payload: toCloudRecord(updated),
   });
+  if ((service.unnamedVisitorCount ?? 0) !== updated.unnamedVisitorCount) {
+    await recordAuditEntry(user, {
+      entityType: "visitor",
+      entityId: serviceId,
+      action: "unnamed_count_changed",
+      details: {
+        serviceId,
+        from: service.unnamedVisitorCount ?? 0,
+        to: updated.unnamedVisitorCount ?? 0,
+      },
+    });
+  }
   announceDataChanged();
   return updated;
 }
@@ -368,6 +443,12 @@ export async function setServiceArchived(
     recordId: id,
     payload: toCloudRecord(updated),
   });
+  await recordAuditEntry(user, {
+    entityType: "service",
+    entityId: id,
+    action: isArchived ? "archived" : "restored",
+    details: { name: updated.customName || updated.serviceType },
+  });
   announceDataChanged();
   return updated;
 }
@@ -393,6 +474,12 @@ export async function removeService(user: UserContext, id: string) {
     table: "services",
     recordId: id,
     payload: toCloudRecord(updated),
+  });
+  await recordAuditEntry(user, {
+    entityType: "service",
+    entityId: id,
+    action: "deleted",
+    details: { name: updated.customName || updated.serviceType },
   });
   announceDataChanged();
   return updated;
@@ -437,6 +524,21 @@ export function setMemberAttendance(
         payload: toCloudRecord(record),
         basePayload: existing ? toCloudRecord(existing) : undefined,
       });
+      const person = await database.get("people", personId);
+      if (!existing || existing.present !== present) {
+        await recordAuditEntry(user, {
+          entityType: "attendance",
+          entityId: id,
+          action: present ? "marked_present" : "marked_absent",
+          details: {
+            serviceId,
+            personId,
+            personName: person?.displayName,
+            from: existing?.present ?? false,
+            to: present,
+          },
+        });
+      }
       announceDataChanged();
       return record;
     },
@@ -500,6 +602,16 @@ export async function addServiceVisitor(
     recordId: visitor.id,
     payload: toCloudRecord(visitor),
   });
+  await recordAuditEntry(user, {
+    entityType: "visitor",
+    entityId: visitor.id,
+    action: "added",
+    details: {
+      serviceId,
+      name: visitor.displayName,
+      notes: visitor.notes,
+    },
+  });
   announceDataChanged();
   return { visitor, member };
 }
@@ -552,6 +664,28 @@ export async function editServiceVisitor(
     payload: toCloudRecord(updated),
     basePayload: toCloudRecord(visitor),
   });
+  if (
+    visitor.displayName !== updated.displayName ||
+    visitor.notes !== updated.notes
+  ) {
+    await recordAuditEntry(user, {
+      entityType: "visitor",
+      entityId: updated.id,
+      action: "edited",
+      details: {
+        serviceId: updated.serviceId,
+        name: updated.displayName,
+        from: {
+          name: visitor.displayName,
+          notes: visitor.notes,
+        },
+        to: {
+          name: updated.displayName,
+          notes: updated.notes,
+        },
+      },
+    });
+  }
   announceDataChanged();
   return updated;
 }
@@ -581,6 +715,15 @@ export async function removeServiceVisitor(user: UserContext, id: string) {
     recordId: updated.id,
     payload: toCloudRecord(updated),
     basePayload: toCloudRecord(visitor),
+  });
+  await recordAuditEntry(user, {
+    entityType: "visitor",
+    entityId: updated.id,
+    action: "removed",
+    details: {
+      serviceId: visitor.serviceId,
+      name: visitor.displayName,
+    },
   });
   if (visitor.memberPersonId) {
     await setMemberAttendance(

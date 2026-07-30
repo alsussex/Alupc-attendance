@@ -9,6 +9,7 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useSynchronization } from "@/components/sync/SyncProvider";
 import { UserManagement } from "@/components/users/UserManagement";
+import { AuditHistory } from "@/components/audit/AuditHistory";
 import {
   type ApplicationSettings,
   type Organization,
@@ -38,6 +39,7 @@ type SettingsSection =
   | "attendance"
   | "visitors"
   | "users"
+  | "audit"
   | "data"
   | "sync"
   | "security";
@@ -53,6 +55,7 @@ const sections: Array<{
   { id: "attendance", label: "Attendance", description: "Lists, totals, and completion" },
   { id: "visitors", label: "Visitors", description: "Names, notes, and totals" },
   { id: "users", label: "Users", description: "Invitations and permissions" },
+  { id: "audit", label: "Audit History", description: "Accountability and change history" },
   { id: "data", label: "Data & Export", description: "CSV and organization backup" },
   { id: "sync", label: "Device & Sync", description: "This device and saved changes" },
   { id: "security", label: "Security", description: "Profile, password, and sessions" },
@@ -523,6 +526,11 @@ export function SettingsCenter() {
             <div className="page-stack">
               <PermissionSummary />
               <UserManagement embedded />
+            </div>
+          )}
+          {section === "audit" && (
+            <div className="settings-card">
+              <AuditHistory />
             </div>
           )}
           {section === "data" && (

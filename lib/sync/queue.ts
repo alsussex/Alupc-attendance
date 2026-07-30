@@ -49,12 +49,16 @@ export async function enqueueChange(
   return item;
 }
 
-export async function getPendingChanges(organizationId?: string) {
+export async function getPendingChanges(
+  organizationId?: string,
+  includeAudit = false,
+) {
   const database = await getDatabase();
   const all = await database.getAll("syncQueue");
   return all.filter(
     (item) =>
-      !organizationId || item.organizationId === organizationId,
+      (!organizationId || item.organizationId === organizationId) &&
+      (includeAudit || item.table !== "audit_log"),
   );
 }
 

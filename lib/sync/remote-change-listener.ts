@@ -23,6 +23,7 @@ const REMOTE_TABLES = [
   "service_attendance",
   "service_visitors",
   "organization_settings",
+  "audit_log",
 ] as const;
 
 export function activeRemoteSubscriptionCount() {

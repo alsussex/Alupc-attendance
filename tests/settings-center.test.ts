@@ -114,7 +114,7 @@ describe("organization settings repository", () => {
     });
     expect(updated.id).toBe(organizationId);
     expect(updated.name).toBe("Fictional Church Updated");
-    expect(
+    await expect(
       (await getDatabase()).get("organizations", otherOrganizationId),
     ).resolves.toMatchObject({ name: "Other Church" });
     await expect(
@@ -165,7 +165,7 @@ describe("workflow settings", () => {
           : type,
       ),
     });
-    expect(
+    await expect(
       (await getDatabase()).get("services", historical.id),
     ).resolves.toMatchObject({ serviceTime: "10:30" });
   });

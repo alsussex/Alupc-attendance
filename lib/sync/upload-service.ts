@@ -113,6 +113,7 @@ const UPLOAD_ORDER: SyncQueueItem["table"][] = [
   "services",
   "service_attendance",
   "service_visitors",
+  "audit_log",
 ];
 
 function uploadRank(item: SyncQueueItem) {

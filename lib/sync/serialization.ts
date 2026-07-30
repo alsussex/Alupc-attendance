@@ -1,5 +1,6 @@
 import type {
   AttendanceRecord,
+  AuditLogEntry,
   ChurchService,
   Organization,
   OrganizationSettings,
@@ -16,7 +17,8 @@ export type LocalPullRecord =
   | Person
   | ChurchService
   | AttendanceRecord
-  | ServiceVisitor;
+  | ServiceVisitor
+  | AuditLogEntry;
 
 export function toCloudRecord<T extends object>(value: T) {
   return Object.fromEntries(
@@ -95,6 +97,30 @@ export function fromCloudRecord(
       displayName: optionalString(row, "display_name"),
       role,
       isActive: requiredBoolean(row, "is_active"),
+      createdAt: requiredString(row, "created_at"),
+      updatedAt: requiredString(row, "updated_at"),
+    };
+  }
+
+  if (table === "audit_log") {
+    const role = requiredString(row, "role");
+    const entityType = requiredString(row, "entity_type");
+    const details = row.details;
+    return {
+      id: requiredString(row, "id"),
+      organizationId: requiredString(row, "organization_id"),
+      entityType: entityType as AuditLogEntry["entityType"],
+      entityId: requiredString(row, "entity_id"),
+      action: requiredString(row, "action"),
+      userId: requiredString(row, "user_id"),
+      userDisplayName: requiredString(row, "user_display_name"),
+      role: role === "admin" ? "admin" : "attendance_taker",
+      occurredAt: requiredString(row, "occurred_at"),
+      deviceId: optionalString(row, "device_id"),
+      details:
+        details && typeof details === "object" && !Array.isArray(details)
+          ? (details as Record<string, unknown>)
+          : undefined,
       createdAt: requiredString(row, "created_at"),
       updatedAt: requiredString(row, "updated_at"),
     };

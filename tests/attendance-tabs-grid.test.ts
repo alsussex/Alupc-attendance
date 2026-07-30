@@ -51,8 +51,8 @@ describe("attendance people tabs", () => {
 
   it("uses accessible tab semantics and keyboard arrow navigation", () => {
     expect(source).toContain('role="tablist"');
-    expect(source.match(/role="tab"/g)).toHaveLength(2);
-    expect(source.match(/role="tabpanel"/g)).toHaveLength(2);
+    expect(source.match(/role="tab"/g)).toHaveLength(3);
+    expect(source.match(/role="tabpanel"/g)).toHaveLength(3);
     expect(source).toContain('aria-selected={attendanceTab === "members"}');
     expect(source).toContain('aria-selected={attendanceTab === "visitors"}');
     expect(source).toContain('event.key !== "ArrowRight"');

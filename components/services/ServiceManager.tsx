@@ -10,6 +10,8 @@ import {
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useSynchronization } from "@/components/sync/SyncProvider";
+import { AuditHistory } from "@/components/audit/AuditHistory";
+import { recordAuditEntry } from "@/lib/audit/audit-repository";
 import {
   SERVICE_TYPES,
   DEFAULT_APPLICATION_SETTINGS,
@@ -65,7 +67,7 @@ import {
 } from "@/lib/sync/visitor-conflicts";
 import { getPendingChanges } from "@/lib/sync/queue";
 
-type AttendanceTab = "members" | "visitors";
+type AttendanceTab = "members" | "visitors" | "history";
 
 function localDate(timeZone: string) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -125,6 +127,8 @@ export function ServiceManager() {
   const [memberOpen, setMemberOpen] = useState(false);
   const [editingVisitor, setEditingVisitor] =
     useState<ServiceVisitor | null>(null);
+  const [historyVisitor, setHistoryVisitor] =
+    useState<ServiceVisitor | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [serviceAction, setServiceAction] = useState<
     "draft" | "completed" | null
@@ -150,9 +154,11 @@ export function ServiceManager() {
   const tabScrollPositions = useRef<Record<AttendanceTab, number>>({
     members: 0,
     visitors: 0,
+    history: 0,
   });
   const memberTabRef = useRef<HTMLButtonElement>(null);
   const visitorTabRef = useRef<HTMLButtonElement>(null);
+  const historyTabRef = useRef<HTMLButtonElement>(null);
 
   const refreshLists = useCallback(async () => {
     if (!user) return;
@@ -288,6 +294,15 @@ export function ServiceManager() {
         setMemberAttendance(user, active.id, personId, false),
       ),
     );
+    await recordAuditEntry(user, {
+      entityType: "attendance",
+      entityId: active.id,
+      action: "attendance_cleared",
+      details: {
+        serviceId: active.id,
+        count: previouslySelected.length,
+      },
+    });
   }
 
   async function setStatus(status: "draft" | "completed") {
@@ -384,7 +399,13 @@ export function ServiceManager() {
     window.requestAnimationFrame(() => {
       window.scrollTo({ top: tabScrollPositions.current[tab] });
       if (focus) {
-        (tab === "members" ? memberTabRef : visitorTabRef).current?.focus();
+        (
+          tab === "members"
+            ? memberTabRef
+            : tab === "visitors"
+              ? visitorTabRef
+              : historyTabRef
+        ).current?.focus();
       }
     });
   }
@@ -737,14 +758,39 @@ export function ServiceManager() {
               className={attendanceTab === "visitors" ? "active" : ""}
               onClick={() => selectAttendanceTab("visitors")}
               onKeyDown={(event) => {
-                if (event.key !== "ArrowLeft") return;
-                event.preventDefault();
-                selectAttendanceTab("members", true);
+                if (event.key === "ArrowLeft") {
+                  event.preventDefault();
+                  selectAttendanceTab("members", true);
+                } else if (event.key === "ArrowRight" && isAdmin(user)) {
+                  event.preventDefault();
+                  selectAttendanceTab("history", true);
+                }
               }}
             >
               <strong>{settings.visitorLabel}s</strong>
               <span>{presentCounts.visitors}</span>
             </button>
+            {isAdmin(user) && (
+              <button
+                ref={historyTabRef}
+                id="attendance-history-tab"
+                role="tab"
+                type="button"
+                aria-selected={attendanceTab === "history"}
+                aria-controls="attendance-history-panel"
+                tabIndex={attendanceTab === "history" ? 0 : -1}
+                className={attendanceTab === "history" ? "active" : ""}
+                onClick={() => selectAttendanceTab("history")}
+                onKeyDown={(event) => {
+                  if (event.key !== "ArrowLeft") return;
+                  event.preventDefault();
+                  selectAttendanceTab("visitors", true);
+                }}
+              >
+                <strong>History</strong>
+                <span>Audit trail</span>
+              </button>
+            )}
           </div>
 
           {attendanceTab === "members" && (
@@ -981,6 +1027,19 @@ export function ServiceManager() {
                       )}
                     </span>
                     <span className="visitor-actions">
+                      {isAdmin(user) && (
+                        <button
+                          className="button subtle"
+                          type="button"
+                          aria-label={`View history for ${visitor.displayName}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setHistoryVisitor(visitor);
+                          }}
+                        >
+                          History
+                        </button>
+                      )}
                       <button
                         className="button subtle"
                         type="button"
@@ -1034,6 +1093,19 @@ export function ServiceManager() {
                   </span>
                 </div>
               )}
+            </div>
+          )}
+          {attendanceTab === "history" && isAdmin(user) && (
+            <div
+              id="attendance-history-panel"
+              role="tabpanel"
+              aria-labelledby="attendance-history-tab"
+              className="attendance-tab-panel service-history-panel"
+            >
+              <AuditHistory
+                relatedEntityId={active.id}
+                compact
+              />
             </div>
           )}
         </section>
@@ -1132,6 +1204,38 @@ export function ServiceManager() {
               await openService(active, { resetView: false });
             }}
           />
+        )}
+        {historyVisitor && isAdmin(user) && (
+          <div className="modal-backdrop">
+            <section
+              className="modal audit-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="visitor-history-title"
+            >
+              <div className="modal-heading">
+                <div>
+                  <p className="eyebrow">Visitor history</p>
+                  <h2 id="visitor-history-title">
+                    {historyVisitor.displayName}
+                  </h2>
+                </div>
+                <button
+                  className="icon-button"
+                  type="button"
+                  aria-label="Close visitor history"
+                  onClick={() => setHistoryVisitor(null)}
+                >
+                  ×
+                </button>
+              </div>
+              <AuditHistory
+                entityType="visitor"
+                entityId={historyVisitor.id}
+                compact
+              />
+            </section>
+          </div>
         )}
         {editOpen && !serviceLocked && (
           <ServiceModal

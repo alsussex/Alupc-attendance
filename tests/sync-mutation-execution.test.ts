@@ -103,7 +103,7 @@ describe("queued mutation execution", () => {
 
     await markMemberInactive(administrator, member.id);
 
-    expect(queued).toHaveBeenCalledTimes(1);
+    expect(queued).toHaveBeenCalledTimes(2);
     expect(await getPendingChanges(organizationId)).toEqual([
       expect.objectContaining({
         table: "people",
@@ -242,8 +242,8 @@ describe("queued mutation execution", () => {
     await Promise.all([first, second]);
 
     expect(first).toBe(second);
-    expect(target.attempts).toBe(1);
-    expect(target.rows.size).toBe(1);
+    expect(target.attempts).toBe(2);
+    expect(target.rows.size).toBe(2);
   });
 
   it("keeps a newer inactive payload queued when it arrives during an upload", async () => {

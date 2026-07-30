@@ -34,7 +34,7 @@ export async function buildOrganizationExport(
   if (!isAdmin(user)) throw new Error("Administrator access is required.");
   const database = await getDatabase();
   const organizationId = user.organizationId;
-  const [organization, settings, profiles, people, services, attendance, visitors] =
+  const [organization, settings, profiles, people, services, attendance, visitors, auditLog] =
     await Promise.all([
       database.get("organizations", organizationId),
       database.get("organizationSettings", organizationId),
@@ -43,6 +43,7 @@ export async function buildOrganizationExport(
       database.getAllFromIndex("services", "organizationId", organizationId),
       database.getAllFromIndex("attendance", "organizationId", organizationId),
       database.getAllFromIndex("visitors", "organizationId", organizationId),
+      database.getAllFromIndex("auditLog", "organizationId", organizationId),
     ]);
   const reportRows = buildAttendanceReportRows(
     services,
@@ -64,6 +65,7 @@ export async function buildOrganizationExport(
         services,
         attendance,
         visitors,
+        auditLog,
         serviceAttendanceSummaries: services.map((service) => {
           const summary = serviceSummaries.get(service.id)!;
           return {

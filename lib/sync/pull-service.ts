@@ -27,7 +27,8 @@ type LocalStore =
   | "people"
   | "services"
   | "attendance"
-  | "visitors";
+  | "visitors"
+  | "auditLog";
 
 export interface PullPage {
   rows: Record<string, unknown>[];
@@ -55,6 +56,7 @@ function storeFor(table: PullTable): LocalStore {
   if (table === "service_attendance") return "attendance";
   if (table === "service_visitors") return "visitors";
   if (table === "organization_settings") return "organizationSettings";
+  if (table === "audit_log") return "auditLog";
   return table;
 }
 
@@ -105,6 +107,11 @@ async function putLocalRecord(
       );
     case "visitors":
       return database.put("visitors", record as AttendanceDatabase["visitors"]["value"]);
+    case "auditLog":
+      return database.put(
+        "auditLog",
+        record as AttendanceDatabase["auditLog"]["value"],
+      );
   }
 }
 

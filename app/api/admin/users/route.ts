@@ -36,6 +36,43 @@ async function activeAdminCount(
   return count ?? 0;
 }
 
+async function recordUserAudit(
+  admin: Awaited<ReturnType<typeof authorizeAdministrator>>["admin"],
+  organizationId: string,
+  actorId: string,
+  entityId: string,
+  action: string,
+  details: Record<string, unknown>,
+  actorSnapshot?: { display_name: string | null; role: string },
+) {
+  let actor = actorSnapshot;
+  if (!actor) {
+    const { data, error: actorError } = await admin
+      .from("profiles")
+      .select("display_name, role")
+      .eq("id", actorId)
+      .eq("organization_id", organizationId)
+      .single();
+    if (actorError || !data) throw new Error("The administrator profile was not found.");
+    actor = data;
+  }
+  const id = crypto.randomUUID();
+  const { error } = await admin.from("audit_log").insert({
+    id,
+    organization_id: organizationId,
+    entity_type: "user",
+    entity_id: entityId,
+    action,
+    user_id: actorId,
+    user_display_name: actor.display_name || "Administrator",
+    role: actor.role,
+    details,
+    version: 1,
+    last_mutation_id: id,
+  });
+  if (error) throw new Error(`User change was applied, but its audit entry failed: ${error.message}`);
+}
+
 export async function GET(request: Request) {
   try {
     const { admin, organizationId } = await authorizeAdministrator(request);
@@ -78,7 +115,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { admin, organizationId } = await authorizeAdministrator(request);
+    const { admin, organizationId, userId } = await authorizeAdministrator(request);
     const body = (await request.json()) as {
       email?: unknown;
       displayName?: unknown;
@@ -111,6 +148,14 @@ export async function POST(request: Request) {
       await admin.auth.admin.deleteUser(data.user.id);
       throw new Error(profileError.message);
     }
+    await recordUserAudit(
+      admin,
+      organizationId,
+      userId,
+      data.user.id,
+      "invited",
+      { displayName, email, role: body.role },
+    );
     return NextResponse.json({ invited: true }, { status: 201 });
   } catch (caught) {
     return failure(caught);
@@ -119,7 +164,7 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const { admin, organizationId } = await authorizeAdministrator(request);
+    const { admin, organizationId, userId } = await authorizeAdministrator(request);
     const body = (await request.json()) as {
       userId?: unknown;
       action?: unknown;
@@ -130,7 +175,7 @@ export async function PATCH(request: Request) {
     if (!targetId) throw new Error("A target user is required.");
     const { data: target, error: targetError } = await admin
       .from("profiles")
-      .select("id, role, is_active")
+      .select("id, display_name, role, is_active")
       .eq("id", targetId)
       .eq("organization_id", organizationId)
       .single();
@@ -143,6 +188,15 @@ export async function PATCH(request: Request) {
         (action === "role" && body.role !== "admin"));
     if (removingActiveAdmin && (await activeAdminCount(admin, organizationId)) <= 1) {
       throw new Error("The church must keep at least one active administrator.");
+    }
+    const { data: actorSnapshot, error: actorSnapshotError } = await admin
+      .from("profiles")
+      .select("display_name, role")
+      .eq("id", userId)
+      .eq("organization_id", organizationId)
+      .single();
+    if (actorSnapshotError || !actorSnapshot) {
+      throw new Error("The administrator profile was not found.");
     }
 
     if (action === "role") {
@@ -206,6 +260,33 @@ export async function PATCH(request: Request) {
       throw new Error("The requested user action is not supported.");
     }
 
+    await recordUserAudit(
+      admin,
+      organizationId,
+      userId,
+      targetId,
+      action === "role"
+        ? "role_changed"
+        : action === "disable"
+          ? "disabled"
+          : action === "restore"
+            ? "restored"
+            : "invitation_resent",
+      {
+        targetName: target.display_name || "Authorized user",
+        fromRole: target.role,
+        toRole: action === "role" ? body.role : target.role,
+        fromActive: target.is_active,
+        toActive:
+          action === "disable"
+            ? false
+            : action === "restore"
+              ? true
+          : target.is_active,
+      },
+      actorSnapshot,
+    );
+
     return NextResponse.json({ updated: true });
   } catch (caught) {
     return failure(caught);
@@ -214,12 +295,12 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
-    const { admin, organizationId } = await authorizeAdministrator(request);
+    const { admin, organizationId, userId } = await authorizeAdministrator(request);
     const targetId = new URL(request.url).searchParams.get("userId");
     if (!targetId) throw new Error("A target user is required.");
     const { data: profile, error: profileError } = await admin
       .from("profiles")
-      .select("id")
+      .select("id, display_name")
       .eq("id", targetId)
       .eq("organization_id", organizationId)
       .single();
@@ -232,6 +313,14 @@ export async function DELETE(request: Request) {
     }
     const { error } = await admin.auth.admin.deleteUser(targetId);
     if (error) throw new Error(error.message);
+    await recordUserAudit(
+      admin,
+      organizationId,
+      userId,
+      targetId,
+      "invitation_cancelled",
+      { targetName: profile.display_name || "Authorized user" },
+    );
     return NextResponse.json({ cancelled: true });
   } catch (caught) {
     return failure(caught);

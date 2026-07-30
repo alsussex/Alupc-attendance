@@ -89,6 +89,30 @@ export interface ServiceVisitor extends AuditedRecord {
   deletedAt?: string;
 }
 
+export type AuditEntityType =
+  | "service"
+  | "attendance"
+  | "visitor"
+  | "member"
+  | "user"
+  | "settings";
+
+export interface AuditLogEntry {
+  id: string;
+  organizationId: string;
+  entityType: AuditEntityType;
+  entityId: string;
+  action: string;
+  userId: string;
+  userDisplayName: string;
+  role: UserRole;
+  occurredAt: string;
+  deviceId?: string;
+  details?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ServiceTypeSetting {
   id: string;
   name: string;
@@ -142,7 +166,8 @@ export interface SyncQueueItem {
     | "people"
     | "services"
     | "service_attendance"
-    | "service_visitors";
+    | "service_visitors"
+    | "audit_log";
   operation: "upsert";
   recordId: string;
   payload: Record<string, unknown>;
@@ -187,6 +212,7 @@ export const PULL_TABLES = [
   "services",
   "service_attendance",
   "service_visitors",
+  "audit_log",
 ] as const;
 
 export type PullTable = (typeof PULL_TABLES)[number];
