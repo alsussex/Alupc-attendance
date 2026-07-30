@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_APPLICATION_SETTINGS,
+  type Person,
+  type ServiceVisitor,
   type UserContext,
 } from "@/lib/domain";
 import {
@@ -22,6 +24,10 @@ import {
   getDatabase,
 } from "@/lib/storage/database";
 import { getPendingChanges } from "@/lib/sync/queue";
+import {
+  visibleServiceMembers,
+  visibleServiceVisitors,
+} from "@/lib/services/attendance-view";
 
 const organizationId = "20000000-0000-4000-8000-000000000190";
 const admin: UserContext = {
@@ -182,6 +188,50 @@ describe("completed service interface lock", () => {
     "utf8",
   );
   const styles = readFileSync(resolve("app/globals.css"), "utf8");
+  const members: Person[] = [
+    {
+      id: "member-present",
+      organizationId,
+      firstName: "Avery",
+      lastName: "Stone",
+      displayName: "Avery Stone",
+      personType: "member",
+      isActive: true,
+      createdBy: admin.userId,
+      updatedBy: admin.userId,
+      createdAt: "2026-12-01T00:00:00.000Z",
+      updatedAt: "2026-12-01T00:00:00.000Z",
+    },
+    {
+      id: "member-absent",
+      organizationId,
+      firstName: "Jordan",
+      lastName: "West",
+      displayName: "Jordan West",
+      personType: "member",
+      isActive: true,
+      createdBy: admin.userId,
+      updatedBy: admin.userId,
+      createdAt: "2026-12-01T00:00:00.000Z",
+      updatedAt: "2026-12-01T00:00:00.000Z",
+    },
+  ];
+  const visitors: ServiceVisitor[] = [
+    {
+      id: "visitor-present",
+      organizationId,
+      serviceId: "service-completed",
+      firstName: "Morgan",
+      lastName: "Lane",
+      displayName: "Morgan Lane",
+      savedAsMember: false,
+      createdBy: admin.userId,
+      updatedBy: admin.userId,
+      createdAt: "2026-12-01T00:00:00.000Z",
+      updatedAt: "2026-12-01T00:00:00.000Z",
+    },
+  ];
+  const selected = new Set(["member-present"]);
 
   it("announces the completed lock and retains the permission-aware reopen action", () => {
     expect(source).toContain(
@@ -204,5 +254,44 @@ describe("completed service interface lock", () => {
     expect(source).toContain("editingVisitor && !serviceLocked");
     expect(styles).toContain(".attendance-person-card.locked");
     expect(styles).toContain(".completed-service-lock");
+  });
+
+  it("shows only present members and recorded visitors while completed", () => {
+    expect(
+      visibleServiceMembers(members, selected, true, "all", "").map(
+        (member) => member.id,
+      ),
+    ).toEqual(["member-present"]);
+    expect(
+      visibleServiceVisitors(visitors, true, "a name that does not match"),
+    ).toEqual(visitors);
+    expect(source).toContain("No members were marked present.");
+    expect(source).toContain("No named visitors were recorded.");
+    expect(source).toContain("<strong>Service note:</strong> {active.notes}");
+  });
+
+  it("restores the full checklist after reopening and returns to attendees after finishing again", () => {
+    const reopened = visibleServiceMembers(
+      members,
+      selected,
+      false,
+      "all",
+      "",
+    );
+    const finishedAgain = visibleServiceMembers(
+      members,
+      selected,
+      true,
+      "all",
+      "",
+    );
+
+    expect(reopened.map((member) => member.id)).toEqual([
+      "member-present",
+      "member-absent",
+    ]);
+    expect(finishedAgain.map((member) => member.id)).toEqual([
+      "member-present",
+    ]);
   });
 });

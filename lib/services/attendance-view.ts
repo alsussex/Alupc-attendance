@@ -37,6 +37,19 @@ export function filterAttendanceMembers(
   });
 }
 
+export function visibleServiceMembers(
+  members: Person[],
+  presentMemberIds: ReadonlySet<string>,
+  completed: boolean,
+  filter: AttendanceFilter,
+  query: string,
+) {
+  if (completed) {
+    return members.filter((member) => presentMemberIds.has(member.id));
+  }
+  return filterAttendanceMembers(members, presentMemberIds, filter, query);
+}
+
 export function attendancePresentCounts(
   presentMemberIds: ReadonlySet<string>,
   visitors: ServiceVisitor[],
@@ -63,4 +76,12 @@ export function filterAttendanceVisitors(
       !visitor.deletedAt &&
       visitor.displayName.toLocaleLowerCase().includes(normalizedQuery),
   );
+}
+
+export function visibleServiceVisitors(
+  visitors: ServiceVisitor[],
+  completed: boolean,
+  query: string,
+) {
+  return filterAttendanceVisitors(visitors, "all", completed ? "" : query);
 }

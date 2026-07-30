@@ -58,9 +58,9 @@ import {
 import {
   attendanceCounts,
   attendancePresentCounts,
-  filterAttendanceMembers,
-  filterAttendanceVisitors,
   type AttendanceFilter,
+  visibleServiceMembers,
+  visibleServiceVisitors,
 } from "@/lib/services/attendance-view";
 import {
   filterServiceDirectory,
@@ -219,9 +219,13 @@ export function ServiceManager() {
       service: ChurchService,
       options: { resetView?: boolean } = {},
     ) => {
-      const [attendance, nextVisitors] = await Promise.all([
+      const [attendance, nextVisitors, serviceMembers] = await Promise.all([
         getServiceAttendance(service.id),
         listServiceVisitors(service.id),
+        service.status === "completed" ||
+        settings.showInactiveInAttendance
+          ? listMembers(service.organizationId)
+          : listActiveMembers(service.organizationId),
       ]);
       activeRef.current = service;
       setActive(service);
@@ -230,6 +234,7 @@ export function ServiceManager() {
       );
       selectedRef.current = nextSelected;
       setSelected(nextSelected);
+      setMembers(serviceMembers);
       setVisitors(nextVisitors);
       if (options.resetView !== false) {
         setMemberSearch("");
@@ -238,7 +243,7 @@ export function ServiceManager() {
         setAttendanceTab("members");
       }
     },
-    [],
+    [settings.showInactiveInAttendance],
   );
 
   useEffect(() => {
@@ -396,13 +401,15 @@ export function ServiceManager() {
   }
 
   const filteredMembers = useMemo(() => {
-    return filterAttendanceMembers(
+    return visibleServiceMembers(
       sortAttendanceMembers(members, settings.attendanceSort),
       selected,
+      active?.status === "completed",
       attendanceFilter,
       memberSearch,
     );
   }, [
+    active?.status,
     attendanceFilter,
     memberSearch,
     members,
@@ -432,8 +439,13 @@ export function ServiceManager() {
   );
 
   const filteredVisitors = useMemo(
-    () => filterAttendanceVisitors(visitors, "all", visitorSearch),
-    [visitorSearch, visitors],
+    () =>
+      visibleServiceVisitors(
+        visitors,
+        active?.status === "completed",
+        visitorSearch,
+      ),
+    [active?.status, visitorSearch, visitors],
   );
 
   function selectAttendanceTab(tab: AttendanceTab, focus = false) {
@@ -863,64 +875,76 @@ export function ServiceManager() {
               aria-labelledby="attendance-members-tab"
               className="attendance-tab-panel"
             >
-              <div className="panel-toolbar attendance-tab-toolbar">
-                <label className="search-field">
-                  <span className="sr-only">Search members</span>
-                  <span aria-hidden="true">⌕</span>
-                  <input
-                    type="search"
-                    placeholder="Search members"
-                    value={memberSearch}
-                    onChange={(event) => setMemberSearch(event.target.value)}
-                  />
-                </label>
-                <button
-                  className="button secondary"
-                  type="button"
-                  disabled={serviceLocked}
-                  onClick={() => setMemberOpen(true)}
-                >
-                  + Add Member
-                </button>
-              </div>
-              <div className="attendance-controls">
-                <div
-                  className="attendance-filters"
-                  role="group"
-                  aria-label="Filter members"
-                >
-                  {(["all", "present", "absent"] as const).map((filter) => (
-                    <button
-                      className={
-                        attendanceFilter === filter
-                          ? "attendance-filter active"
-                          : "attendance-filter"
-                      }
-                      type="button"
-                      key={filter}
-                      aria-pressed={attendanceFilter === filter}
-                      onClick={() => setAttendanceFilter(filter)}
-                    >
-                      {filter === "all"
-                        ? `All (${memberCounts.total})`
-                        : filter === "present"
-                          ? `Present (${memberCounts.present})`
-                          : `Absent (${memberCounts.absent})`}
-                    </button>
-                  ))}
+              {serviceLocked && (
+                <div className="attendance-context-count completed-attendee-count">
+                  {memberCounts.present} members attended this service
                 </div>
-                <span className="attendance-context-count">
-                  {memberCounts.present} of {memberCounts.total} members present
-                </span>
-                <button
-                  className="button subtle mark-absent-button"
-                  type="button"
-                  disabled={serviceLocked || memberCounts.present === 0}
-                  onClick={() => void markAllAbsent()}
-                >
-                  Mark all absent
-                </button>
-              </div>
+              )}
+              {!serviceLocked && (
+                <>
+                  <div className="panel-toolbar attendance-tab-toolbar">
+                    <label className="search-field">
+                      <span className="sr-only">Search members</span>
+                      <span aria-hidden="true">⌕</span>
+                      <input
+                        type="search"
+                        placeholder="Search members"
+                        value={memberSearch}
+                        onChange={(event) =>
+                          setMemberSearch(event.target.value)
+                        }
+                      />
+                    </label>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={serviceLocked}
+                      onClick={() => setMemberOpen(true)}
+                    >
+                      + Add Member
+                    </button>
+                  </div>
+                  <div className="attendance-controls">
+                    <div
+                      className="attendance-filters"
+                      role="group"
+                      aria-label="Filter members"
+                    >
+                      {(["all", "present", "absent"] as const).map((filter) => (
+                        <button
+                          className={
+                            attendanceFilter === filter
+                              ? "attendance-filter active"
+                              : "attendance-filter"
+                          }
+                          type="button"
+                          key={filter}
+                          aria-pressed={attendanceFilter === filter}
+                          onClick={() => setAttendanceFilter(filter)}
+                        >
+                          {filter === "all"
+                            ? `All (${memberCounts.total})`
+                            : filter === "present"
+                              ? `Present (${memberCounts.present})`
+                              : `Absent (${memberCounts.absent})`}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="attendance-context-count">
+                      {memberCounts.present} of {memberCounts.total} members
+                      present
+                    </span>
+                    <button
+                      className="button subtle mark-absent-button"
+                      type="button"
+                      disabled={serviceLocked || memberCounts.present === 0}
+                      onClick={() => void markAllAbsent()}
+                    >
+                      Mark all absent
+                    </button>
+                  </div>
+                </>
+              )}
               <div className="member-card-grid">
                 {filteredMembers.map((member) => {
                   const checked = selected.has(member.id);
@@ -962,11 +986,7 @@ export function ServiceManager() {
                         />
                       </span>
                       <span className="attendance-card-state">
-                        {checked
-                          ? "Present"
-                          : serviceLocked
-                            ? "Absent"
-                            : "Mark Present"}
+                        {checked ? "Present" : "Mark Present"}
                       </span>
                       {pending && (
                         <span className="card-sync-pending">
@@ -979,8 +999,14 @@ export function ServiceManager() {
               </div>
               {filteredMembers.length === 0 && (
                 <div className="attendance-empty">
-                  <strong>No members match this view.</strong>
-                  <span>Try another filter or clear the search.</span>
+                  <strong>
+                    {serviceLocked
+                      ? "No members were marked present."
+                      : "No members match this view."}
+                  </strong>
+                  {!serviceLocked && (
+                    <span>Try another filter or clear the search.</span>
+                  )}
                 </div>
               )}
             </div>
@@ -993,59 +1019,68 @@ export function ServiceManager() {
               aria-labelledby="attendance-visitors-tab"
               className="attendance-tab-panel"
             >
-              <div className="panel-toolbar attendance-tab-toolbar">
-                <label className="search-field">
-                  <span className="sr-only">Search named visitors</span>
-                  <span aria-hidden="true">⌕</span>
-                  <input
-                    type="search"
-                    placeholder={`Search ${settings.visitorLabel.toLocaleLowerCase()}s`}
-                    value={visitorSearch}
-                    onChange={(event) => setVisitorSearch(event.target.value)}
-                  />
-                </label>
-                <button
-                  className="button primary"
-                  type="button"
-                  disabled={serviceLocked}
-                  onClick={() => setVisitorOpen(true)}
-                >
-                  + Add Visitor
-                </button>
-              </div>
+              {!serviceLocked && (
+                <div className="panel-toolbar attendance-tab-toolbar">
+                  <label className="search-field">
+                    <span className="sr-only">Search named visitors</span>
+                    <span aria-hidden="true">⌕</span>
+                    <input
+                      type="search"
+                      placeholder={`Search ${settings.visitorLabel.toLocaleLowerCase()}s`}
+                      value={visitorSearch}
+                      onChange={(event) => setVisitorSearch(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    className="button primary"
+                    type="button"
+                    disabled={serviceLocked}
+                    onClick={() => setVisitorOpen(true)}
+                  >
+                    + Add Visitor
+                  </button>
+                </div>
+              )}
               <section className="unnamed-visitor-counter">
                 <div>
                   <h2>Unnamed Visitors</h2>
                   <p>People attending whose names were not recorded.</p>
                 </div>
-                <div
-                  className="visitor-stepper"
-                  role="group"
-                  aria-label="Unnamed visitor count"
-                >
-                  <button
-                    type="button"
-                    aria-label="Remove one unnamed visitor"
-                    disabled={
-                      serviceLocked ||
-                      (active.unnamedVisitorCount ?? 0) === 0
-                    }
-                    onClick={() => void changeUnnamedVisitorCount(-1)}
+                {!serviceLocked && (
+                  <div
+                    className="visitor-stepper"
+                    role="group"
+                    aria-label="Unnamed visitor count"
                   >
-                    −
-                  </button>
-                  <strong aria-live="polite">
+                    <button
+                      type="button"
+                      aria-label="Remove one unnamed visitor"
+                      disabled={
+                        serviceLocked ||
+                        (active.unnamedVisitorCount ?? 0) === 0
+                      }
+                      onClick={() => void changeUnnamedVisitorCount(-1)}
+                    >
+                      −
+                    </button>
+                    <strong aria-live="polite">
+                      {active.unnamedVisitorCount ?? 0}
+                    </strong>
+                    <button
+                      type="button"
+                      aria-label="Add one unnamed visitor"
+                      disabled={serviceLocked}
+                      onClick={() => void changeUnnamedVisitorCount(1)}
+                    >
+                      +
+                    </button>
+                  </div>
+                )}
+                {serviceLocked && (
+                  <strong className="completed-unnamed-visitor-count">
                     {active.unnamedVisitorCount ?? 0}
                   </strong>
-                  <button
-                    type="button"
-                    aria-label="Add one unnamed visitor"
-                    disabled={serviceLocked}
-                    onClick={() => void changeUnnamedVisitorCount(1)}
-                  >
-                    +
-                  </button>
-                </div>
+                )}
               </section>
               <div className="visitor-tab-summary">
                 <strong>{presentCounts.visitors} visitors</strong>
@@ -1103,44 +1138,48 @@ export function ServiceManager() {
                           History
                         </button>
                       )}
-                      <button
-                        className="button subtle"
-                        type="button"
-                        aria-label={`Edit ${visitor.displayName}`}
-                        disabled={serviceLocked}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setEditingVisitor(visitor);
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="button danger-text"
-                        type="button"
-                        aria-label={`Remove ${visitor.displayName}`}
-                        disabled={serviceLocked}
-                        onClick={async (event) => {
-                          event.stopPropagation();
-                          if (!user) return;
-                          if (
-                            settings.confirmVisitorRemoval &&
-                            !(await confirmAction({
-                              title: `Remove ${visitor.displayName}?`,
-                              message:
-                                "This will remove their attendance entry from this service. Permanent member records are not affected.",
-                              confirmLabel: "Remove visitor",
-                              tone: "danger",
-                            }))
-                          ) {
-                            return;
-                          }
-                          await removeServiceVisitor(user, visitor.id);
-                          await openService(active, { resetView: false });
-                        }}
-                      >
-                        Remove
-                      </button>
+                      {!serviceLocked && (
+                        <>
+                          <button
+                            className="button subtle"
+                            type="button"
+                            aria-label={`Edit ${visitor.displayName}`}
+                            disabled={serviceLocked}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setEditingVisitor(visitor);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="button danger-text"
+                            type="button"
+                            aria-label={`Remove ${visitor.displayName}`}
+                            disabled={serviceLocked}
+                            onClick={async (event) => {
+                              event.stopPropagation();
+                              if (!user) return;
+                              if (
+                                settings.confirmVisitorRemoval &&
+                                !(await confirmAction({
+                                  title: `Remove ${visitor.displayName}?`,
+                                  message:
+                                    "This will remove their attendance entry from this service. Permanent member records are not affected.",
+                                  confirmLabel: "Remove visitor",
+                                  tone: "danger",
+                                }))
+                              ) {
+                                return;
+                              }
+                              await removeServiceVisitor(user, visitor.id);
+                              await openService(active, { resetView: false });
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </>
+                      )}
                     </span>
                   </article>
                 ))}
@@ -1148,15 +1187,19 @@ export function ServiceManager() {
               {filteredVisitors.length === 0 && (
                 <div className="attendance-empty">
                   <strong>
-                    {visitorSearch
+                    {serviceLocked
+                      ? "No named visitors were recorded."
+                      : visitorSearch
                       ? `No ${settings.visitorLabel.toLocaleLowerCase()}s match your search.`
                       : `No named ${settings.visitorLabel.toLocaleLowerCase()}s yet.`}
                   </strong>
-                  <span>
-                    {visitorSearch
-                      ? "Try another name or clear the search."
-                      : "Use Add Visitor when a name is available."}
-                  </span>
+                  {!serviceLocked && (
+                    <span>
+                      {visitorSearch
+                        ? "Try another name or clear the search."
+                        : "Use Add Visitor when a name is available."}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
