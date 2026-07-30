@@ -11,8 +11,11 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { AuditHistory } from "@/components/audit/AuditHistory";
 import { BulkMemberEntryModal } from "@/components/people/BulkMemberEntryModal";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { useConfirmation } from "@/components/feedback/ConfirmationProvider";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import { isAdmin } from "@/lib/auth/permissions";
 import type { Person } from "@/lib/domain";
+import { formatDate } from "@/lib/format/date-time";
 import {
   DEFAULT_MEMBER_DIRECTORY_VIEW,
   filterDirectoryMembers,
@@ -33,6 +36,7 @@ import {
   saveMemberPrivateDetails,
 } from "@/lib/repositories/attendance-repository";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
+import { useEscapeKey } from "@/lib/ui/keyboard";
 
 interface FormState {
   id?: string;
@@ -51,19 +55,10 @@ const emptyForm: FormState = {
   notes: "",
 };
 
-function formatDate(value?: string | null) {
-  if (!value) return "Not available";
-  const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 export function PeopleDirectory() {
   const { user } = useAuth();
   const { showToast } = useToast();
+  const confirmAction = useConfirmation();
   const [people, setPeople] = useState<Person[]>([]);
   const [memberCandidates, setMemberCandidates] = useState<Person[]>([]);
   const [lastAttendance, setLastAttendance] = useState<Map<string, string>>(
@@ -119,6 +114,22 @@ export function PeopleDirectory() {
 
   const inactiveCount = people.filter((person) => !person.isActive).length;
 
+  useEscapeKey(
+    () => {
+      if (form) {
+        setDuplicate(null);
+        setForm(null);
+      } else if (multipleMatches.length > 0) {
+        setMultipleMatches([]);
+      } else if (reactivateTarget) {
+        setReactivateTarget(null);
+      } else if (profile) {
+        setProfile(null);
+      }
+    },
+    Boolean(form || multipleMatches.length || reactivateTarget || profile),
+  );
+
   async function submit(
     event: Pick<FormEvent, "preventDefault">,
     allowDuplicate = false,
@@ -160,7 +171,18 @@ export function PeopleDirectory() {
   }
 
   async function deactivate(person: Person) {
-    if (!user || !confirm(`Mark ${person.displayName} inactive?`)) return;
+    if (
+      !user ||
+      !(await confirmAction({
+        title: `Make ${person.displayName} inactive?`,
+        message:
+          "They will leave active attendance lists, but their history will remain available.",
+        confirmLabel: "Make inactive",
+        tone: "danger",
+      }))
+    ) {
+      return;
+    }
     await markMemberInactive(user, person.id);
     await refresh();
   }
@@ -179,9 +201,13 @@ export function PeopleDirectory() {
   async function remove(person: Person) {
     if (
       !user ||
-      !confirm(
-        `Remove ${person.displayName}? Their historical attendance will remain preserved.`,
-      )
+      !(await confirmAction({
+        title: `Remove ${person.displayName}?`,
+        message:
+          "The member will be removed from the directory. Their historical attendance will remain preserved.",
+        confirmLabel: "Remove member",
+        tone: "danger",
+      }))
     ) {
       return;
     }
@@ -364,20 +390,22 @@ export function PeopleDirectory() {
             </article>
           ))}
           {!filtered.length && (
-            <div className="empty-list">
-              <h2>
-                {effectiveView === "inactive"
+            <EmptyState
+              compact
+              icon={query ? "⌕" : "+"}
+              title={
+                effectiveView === "inactive"
                   ? "No inactive members"
-                  : "No members found"}
-              </h2>
-              <p>
-                {query
-                  ? "Try a different search."
+                  : "No members found"
+              }
+              message={
+                query
+                  ? "Try another name or clear the search."
                   : effectiveView === "inactive"
                     ? "Members made inactive will appear here."
-                    : "Add your first member to begin."}
-              </p>
-            </div>
+                    : "Add your first member to begin taking attendance."
+              }
+            />
           )}
         </div>
       </section>

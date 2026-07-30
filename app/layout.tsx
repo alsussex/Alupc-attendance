@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ToastProvider } from "@/components/feedback/ToastProvider";
+import { ConfirmationProvider } from "@/components/feedback/ConfirmationProvider";
 import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
 import "./globals.css";
 
@@ -48,8 +49,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <AuthProvider>
           <ToastProvider>
-            <ServiceWorkerRegistration />
-            {children}
+            <ConfirmationProvider>
+              <ServiceWorkerRegistration />
+              {children}
+            </ConfirmationProvider>
           </ToastProvider>
         </AuthProvider>
       </body>

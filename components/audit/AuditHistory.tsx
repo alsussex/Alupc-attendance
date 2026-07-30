@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { EmptyState } from "@/components/feedback/EmptyState";
+import { LoadingSkeleton } from "@/components/feedback/LoadingSkeleton";
 import {
   buildAuditExport,
   listAuditEntries,
@@ -16,6 +18,7 @@ import type {
 import { downloadText } from "@/lib/settings/exports";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
 import { getDatabase } from "@/lib/storage/database";
+import { formatDateTime } from "@/lib/format/date-time";
 
 const entityLabels: Record<AuditEntityType, string> = {
   service: "Service",
@@ -74,10 +77,7 @@ function detailSummary(entry: AuditLogEntry) {
 }
 
 function formatTimestamp(value: string) {
-  return new Date(value).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  return formatDateTime(value);
 }
 
 export function AuditHistory({
@@ -309,14 +309,14 @@ export function AuditHistory({
         </div>
       )}
       {loading ? (
-        <div className="audit-empty" role="status">
-          Loading history…
-        </div>
+        <LoadingSkeleton label="Loading history" rows={3} />
       ) : entries.length === 0 ? (
-        <div className="audit-empty">
-          <strong>No history yet</strong>
-          <span>Meaningful changes will appear here as they are made.</span>
-        </div>
+        <EmptyState
+          compact
+          icon="↺"
+          title="No history yet"
+          message="Meaningful changes will appear here as they are made."
+        />
       ) : (
         <ol className="audit-timeline" aria-label="Audit history, newest first">
           {entries.map((entry) => {

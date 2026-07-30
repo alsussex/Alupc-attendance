@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "./AuthProvider";
 import { canAccessProtectedRoute } from "@/lib/auth/guard";
+import { LoadingSkeleton } from "@/components/feedback/LoadingSkeleton";
 
 export function ProtectedRoute({ children }: { children: ReactNode }) {
   const {
@@ -22,9 +23,11 @@ export function ProtectedRoute({ children }: { children: ReactNode }) {
 
   if (loading) {
     return (
-      <main className="centered-state" aria-live="polite">
-        <span className="spinner" aria-hidden="true" />
-        <p>Loading your attendance workspace…</p>
+      <main className="centered-state workspace-loading">
+        <LoadingSkeleton
+          label="Loading your attendance workspace"
+          rows={4}
+        />
       </main>
     );
   }

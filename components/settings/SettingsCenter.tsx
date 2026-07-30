@@ -11,6 +11,8 @@ import { useSynchronization } from "@/components/sync/SyncProvider";
 import { UserManagement } from "@/components/users/UserManagement";
 import { AuditHistory } from "@/components/audit/AuditHistory";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { useConfirmation } from "@/components/feedback/ConfirmationProvider";
+import { LoadingSkeleton } from "@/components/feedback/LoadingSkeleton";
 import {
   type ApplicationSettings,
   type Organization,
@@ -32,6 +34,7 @@ import { validateApplicationSettings } from "@/lib/settings/settings";
 import { getDatabase, clearLocalDatabase } from "@/lib/storage/database";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { getStoredSyncStatus } from "@/lib/sync/sync-service";
+import { formatDateTime, formatTime } from "@/lib/format/date-time";
 
 type SettingsSection =
   | "overview"
@@ -74,19 +77,11 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function displayTime(value?: string) {
-  if (!value) return "No default";
-  const [hours, minutes] = value.split(":").map(Number);
-  return new Date(2026, 0, 1, hours, minutes).toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 export function SettingsCenter() {
   const { user, session, signOut, refreshAccess } = useAuth();
   const synchronization = useSynchronization();
   const { showToast } = useToast();
+  const confirmAction = useConfirmation();
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [settings, setSettings] = useState<ApplicationSettings | null>(null);
@@ -181,10 +176,16 @@ export function SettingsCenter() {
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
 
-  function openSection(next: SettingsSection) {
+  async function openSection(next: SettingsSection) {
     if (
       dirty &&
-      !confirm("You have unsaved settings changes. Leave this section?")
+      !(await confirmAction({
+        title: "Leave without saving?",
+        message:
+          "You have unsaved settings changes. Leaving this section will discard them.",
+        confirmLabel: "Leave section",
+        tone: "danger",
+      }))
     ) {
       return;
     }
@@ -284,7 +285,11 @@ export function SettingsCenter() {
   }
 
   if (!settings) {
-    return <section className="empty-panel">Loading settings…</section>;
+    return (
+      <section className="panel">
+        <LoadingSkeleton label="Loading settings" rows={5} />
+      </section>
+    );
   }
 
   return (
@@ -591,12 +596,24 @@ export function SettingsCenter() {
               onClear={async () => {
                 const warning =
                   "This removes locally stored attendance data from this device. Cloud data will not be deleted.";
-                if (!confirm(warning)) return;
+                if (
+                  !(await confirmAction({
+                    title: "Clear local device data?",
+                    message: warning,
+                    confirmLabel: "Continue",
+                    tone: "danger",
+                  }))
+                ) {
+                  return;
+                }
                 if (
                   pendingCount > 0 &&
-                  !confirm(
-                    `${pendingCount} unsynchronized changes will be removed from this device and cannot be recovered from the cloud. Continue?`,
-                  )
+                  !(await confirmAction({
+                    title: "Unsynchronized changes will be lost",
+                    message: `${pendingCount} unsynchronized changes will be removed from this device and cannot be recovered from the cloud.`,
+                    confirmLabel: "Clear this device",
+                    tone: "danger",
+                  }))
                 ) {
                   return;
                 }
@@ -712,7 +729,7 @@ function SettingsOverview({
   userEmail: string;
   pendingCount: number;
   syncLabel: string;
-  openSection: (section: SettingsSection) => void;
+  openSection: (section: SettingsSection) => void | Promise<void>;
 }) {
   return (
     <div className="page-stack">
@@ -839,7 +856,7 @@ function ServiceSettings({
               </label>
             </div>
             <div className="service-type-actions">
-              <span>{type.enabled ? displayTime(type.defaultTime) : "Disabled"}</span>
+              <span>{type.enabled ? formatTime(type.defaultTime) : "Disabled"}</span>
               <button
                 className="button subtle"
                 type="button"
@@ -1021,7 +1038,7 @@ function DeviceSyncSection({
           <div><dt>Connection</dt><dd>{online ? "Online" : "Offline"}</dd></div>
           <div><dt>Synchronization</dt><dd>{isSyncing ? "Syncing" : syncPhase}</dd></div>
           <div><dt>Waiting to sync</dt><dd>{pendingCount}</dd></div>
-          <div><dt>Last successful sync</dt><dd>{lastSuccessfulSync ? new Date(lastSuccessfulSync).toLocaleString() : "Not yet"}</dd></div>
+          <div><dt>Last successful sync</dt><dd>{formatDateTime(lastSuccessfulSync, "Not yet")}</dd></div>
           <div><dt>Offline availability</dt><dd>{offlineReady ? "Available offline" : "Available after the app finishes installing"}</dd></div>
           <div><dt>Local storage</dt><dd>Church data saved on this device</dd></div>
           <div><dt>Device</dt><dd>This browser</dd></div>
@@ -1094,7 +1111,7 @@ function SecuritySection({
           <div><dt>Role</dt><dd>{role === "admin" ? "Admin" : "Attendance Taker"}</dd></div>
           <div><dt>Organization</dt><dd>{organizationName}</dd></div>
           <div><dt>Session</dt><dd>Signed in</dd></div>
-          <div><dt>Last sign-in</dt><dd>{lastSignIn ? new Date(lastSignIn).toLocaleString() : "Unavailable"}</dd></div>
+          <div><dt>Last sign-in</dt><dd>{formatDateTime(lastSignIn, "Unavailable")}</dd></div>
         </dl>
         <div className="settings-subsection">
           <label>

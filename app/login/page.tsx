@@ -7,6 +7,7 @@ import {
   requestPasswordRecovery,
 } from "@/lib/auth/password";
 import { getSupabaseClient } from "@/lib/supabase/client";
+import { useEscapeKey } from "@/lib/ui/keyboard";
 
 export default function LoginPage() {
   const { loading, user, error, signIn } = useAuth();
@@ -19,6 +20,8 @@ export default function LoginPage() {
   const [recoverySaving, setRecoverySaving] = useState(false);
   const [recoveryMessage, setRecoveryMessage] = useState("");
   const [recoveryError, setRecoveryError] = useState("");
+
+  useEscapeKey(() => setRecoveryOpen(false), recoveryOpen);
 
   useEffect(() => {
     if (!loading && user) router.replace("/dashboard");

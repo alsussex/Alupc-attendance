@@ -11,6 +11,8 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useSynchronization } from "@/components/sync/SyncProvider";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { useConfirmation } from "@/components/feedback/ConfirmationProvider";
+import { EmptyState } from "@/components/feedback/EmptyState";
 import { AuditHistory } from "@/components/audit/AuditHistory";
 import { recordAuditEntry } from "@/lib/audit/audit-repository";
 import {
@@ -70,6 +72,8 @@ import {
   resolveVisitorConflict,
 } from "@/lib/sync/visitor-conflicts";
 import { getPendingChanges } from "@/lib/sync/queue";
+import { formatDateTime, formatTime } from "@/lib/format/date-time";
+import { useEscapeKey } from "@/lib/ui/keyboard";
 
 type AttendanceTab = "members" | "visitors" | "history";
 
@@ -86,18 +90,11 @@ function serviceTitle(service: ChurchService) {
   return service.customName || service.serviceType;
 }
 
-function displayServiceTime(value: string) {
-  const [hours, minutes] = value.split(":").map(Number);
-  return new Date(2026, 0, 1, hours, minutes).toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 export function ServiceManager() {
   const { user } = useAuth();
   const { syncNow } = useSynchronization();
   const { showToast } = useToast();
+  const confirmAction = useConfirmation();
   const [services, setServices] = useState<ChurchService[]>([]);
   const [serviceDirectory, setServiceDirectory] = useState<
     ServiceDirectoryItem[]
@@ -153,6 +150,29 @@ export function ServiceManager() {
   const memberTabRef = useRef<HTMLButtonElement>(null);
   const visitorTabRef = useRef<HTMLButtonElement>(null);
   const historyTabRef = useRef<HTMLButtonElement>(null);
+
+  useEscapeKey(
+    () => {
+      if (reviewingConflict) setReviewingConflict(null);
+      else if (finishConfirmationOpen) setFinishConfirmationOpen(false);
+      else if (historyVisitor) setHistoryVisitor(null);
+      else if (editingVisitor) setEditingVisitor(null);
+      else if (visitorOpen) setVisitorOpen(false);
+      else if (memberOpen) setMemberOpen(false);
+      else if (editOpen) setEditOpen(false);
+      else if (createOpen) setCreateOpen(false);
+    },
+    Boolean(
+      reviewingConflict ||
+        finishConfirmationOpen ||
+        historyVisitor ||
+        editingVisitor ||
+        visitorOpen ||
+        memberOpen ||
+        editOpen ||
+        createOpen,
+    ),
+  );
 
   const refreshLists = useCallback(async () => {
     if (!user) return;
@@ -273,11 +293,12 @@ export function ServiceManager() {
     ) {
       return;
     }
-    if (
-      !confirm(
-        "Mark all members absent? This will clear every Present selection.",
-      )
-    ) {
+    if (!(await confirmAction({
+      title: "Mark all members absent?",
+      message: "This will clear every Present selection for this service.",
+      confirmLabel: "Mark all absent",
+      tone: "danger",
+    }))) {
       return;
     }
     const previouslySelected = [...selectedRef.current];
@@ -303,7 +324,16 @@ export function ServiceManager() {
     if (!user || !active || serviceAction) return;
     if (status === "draft" && active.status === "completed") {
       if (!isAdmin(user) || !settings.allowAdminReopenCompleted) return;
-      if (!confirm("Reopen this completed service for editing?")) return;
+      if (
+        !(await confirmAction({
+          title: "Reopen this service?",
+          message:
+            "Attendance and visitor editing will become available again immediately.",
+          confirmLabel: "Reopen Service",
+        }))
+      ) {
+        return;
+      }
     }
     setServiceAction(status);
     setActionFeedback("");
@@ -578,17 +608,22 @@ export function ServiceManager() {
                 <button
                   className="button danger-text"
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (!user) return;
                     if (
                       settings.confirmArchive &&
-                      !confirm(`Archive ${serviceTitle(active)}?`)
+                      !(await confirmAction({
+                        title: `Archive ${serviceTitle(active)}?`,
+                        message:
+                          "The service will leave normal service lists while its history remains preserved.",
+                        confirmLabel: "Archive service",
+                        tone: "danger",
+                      }))
                     ) return;
-                    void setServiceArchived(user, active.id, true).then(async () => {
-                      activeRef.current = null;
-                      setActive(null);
-                      await refreshLists();
-                    });
+                    await setServiceArchived(user, active.id, true);
+                    activeRef.current = null;
+                    setActive(null);
+                    await refreshLists();
                   }}
                 >
                   Archive
@@ -596,14 +631,21 @@ export function ServiceManager() {
                 <button
                   className="button danger-text"
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (!user) return;
-                    if (!confirm(`Remove ${serviceTitle(active)}? Attendance history will be preserved.`)) return;
-                    void removeService(user, active.id).then(async () => {
-                      activeRef.current = null;
-                      setActive(null);
-                      await refreshLists();
-                    });
+                    if (
+                      !(await confirmAction({
+                        title: `Remove ${serviceTitle(active)}?`,
+                        message:
+                          "The service will be removed from normal lists. Attendance history will remain preserved.",
+                        confirmLabel: "Remove service",
+                        tone: "danger",
+                      }))
+                    ) return;
+                    await removeService(user, active.id);
+                    activeRef.current = null;
+                    setActive(null);
+                    await refreshLists();
                   }}
                 >
                   Remove
@@ -617,7 +659,7 @@ export function ServiceManager() {
             <p className="eyebrow">{formatChurchDate(active.serviceDate, settings)}</p>
             <h1>{serviceTitle(active)}</h1>
             <p>
-              {active.serviceTime ? `${displayServiceTime(active.serviceTime)} · ` : ""}
+              {active.serviceTime ? `${formatTime(active.serviceTime)} · ` : ""}
               {serviceLocked
                 ? "This completed service is read-only."
                 : "Select every person who attended. Changes save to this device immediately."}
@@ -1022,20 +1064,23 @@ export function ServiceManager() {
                         type="button"
                         aria-label={`Remove ${visitor.displayName}`}
                         disabled={serviceLocked}
-                        onClick={(event) => {
+                        onClick={async (event) => {
                           event.stopPropagation();
                           if (!user) return;
                           if (
                             settings.confirmVisitorRemoval &&
-                            !confirm(
-                              "Remove this visitor from the service? This will remove their attendance entry from this service.",
-                            )
+                            !(await confirmAction({
+                              title: `Remove ${visitor.displayName}?`,
+                              message:
+                                "This will remove their attendance entry from this service. Permanent member records are not affected.",
+                              confirmLabel: "Remove visitor",
+                              tone: "danger",
+                            }))
                           ) {
                             return;
                           }
-                          void removeServiceVisitor(user, visitor.id).then(() =>
-                            openService(active, { resetView: false }),
-                          );
+                          await removeServiceVisitor(user, visitor.id);
+                          await openService(active, { resetView: false });
                         }}
                       >
                         Remove
@@ -1401,12 +1446,12 @@ export function ServiceManager() {
                               year: "numeric",
                             })}
                             {item.service.serviceTime
-                              ? ` · ${displayServiceTime(item.service.serviceTime)}`
+                              ? ` · ${formatTime(item.service.serviceTime)}`
                               : ""}
                           </span>
                           <small>
                             Updated{" "}
-                            {new Date(item.service.updatedAt).toLocaleString()}
+                            {formatDateTime(item.service.updatedAt)}
                             {item.lastEditor
                               ? ` by ${item.lastEditor}`
                               : ""}
@@ -1468,17 +1513,31 @@ export function ServiceManager() {
         ))}
         {services.length > 0 && visibleServiceDirectory.length === 0 && (
           <section className="empty-panel full-width">
-            <span className="empty-icon" aria-hidden="true">⌕</span>
-            <h2>No services match</h2>
-            <p>Try another search or select a different status.</p>
+            <EmptyState
+              compact
+              icon="⌕"
+              title="No services match"
+              message="Try another search or select a different status."
+            />
           </section>
         )}
         {!services.length && (
           <section className="empty-panel full-width">
-            <span className="empty-icon" aria-hidden="true">+</span>
-            <h2>Create your first service</h2>
-            <p>The active member list will be ready for attendance as soon as you create it.</p>
-            <button className="button primary" type="button" onClick={() => setCreateOpen(true)}>Create service</button>
+            <EmptyState
+              compact
+              icon="+"
+              title="Create your first service"
+              message="The active member list will be ready for attendance as soon as you create it."
+              action={
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  Create service
+                </button>
+              }
+            />
           </section>
         )}
       </section>

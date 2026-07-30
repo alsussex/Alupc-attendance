@@ -7,6 +7,11 @@ import type { UserRole } from "@/lib/domain";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { passwordConfirmationError } from "@/lib/auth/password";
 import { useToast } from "@/components/feedback/ToastProvider";
+import { useConfirmation } from "@/components/feedback/ConfirmationProvider";
+import { EmptyState } from "@/components/feedback/EmptyState";
+import { LoadingSkeleton } from "@/components/feedback/LoadingSkeleton";
+import { formatDateTime } from "@/lib/format/date-time";
+import { useEscapeKey } from "@/lib/ui/keyboard";
 
 interface ManagedUser {
   id: string;
@@ -41,20 +46,10 @@ async function adminRequest(path = "", init?: RequestInit) {
   return body;
 }
 
-function formatDate(value?: string | null) {
-  if (!value) return "Not yet";
-  return new Date(value).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 export function UserManagement({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
   const { showToast } = useToast();
+  const confirmAction = useConfirmation();
   const [users, setUsers] = useState<ManagedUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [workingId, setWorkingId] = useState("");
@@ -63,6 +58,15 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
   const [historyUser, setHistoryUser] = useState<ManagedUser | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+
+  useEscapeKey(
+    () => {
+      if (historyUser) setHistoryUser(null);
+      else if (createOpen) setCreateOpen(false);
+      else if (inviteOpen) setInviteOpen(false);
+    },
+    Boolean(historyUser || createOpen || inviteOpen),
+  );
 
   const refresh = useCallback(async () => {
     if (!navigator.onLine) {
@@ -112,7 +116,16 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
   }
 
   async function cancelInvitation(target: ManagedUser) {
-    if (!confirm(`Cancel the invitation for ${target.email}?`)) return;
+    if (
+      !(await confirmAction({
+        title: "Cancel this invitation?",
+        message: `${target.email} will no longer be able to use the pending invitation link.`,
+        confirmLabel: "Cancel invitation",
+        tone: "danger",
+      }))
+    ) {
+      return;
+    }
     setWorkingId(target.id);
     try {
       await adminRequest(`?userId=${encodeURIComponent(target.id)}`, {
@@ -174,7 +187,7 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
           <span>Actions</span>
         </div>
         {loading ? (
-          <div className="empty-list">Loading authorized users…</div>
+          <LoadingSkeleton label="Loading authorized users" rows={4} />
         ) : (
           <div className="users-list">
             {users.map((managedUser) => {
@@ -233,10 +246,10 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
                     </span>
                   </span>
                   <span className="user-date">
-                    {formatDate(managedUser.lastSignInAt)}
+                    {formatDateTime(managedUser.lastSignInAt, "Not yet")}
                   </span>
                   <span className="user-date">
-                    {formatDate(managedUser.createdAt)}
+                    {formatDateTime(managedUser.createdAt, "Not yet")}
                   </span>
                   <div className="user-actions">
                     <button
@@ -291,6 +304,14 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
                 </article>
               );
             })}
+            {users.length === 0 && (
+              <EmptyState
+                compact
+                icon="+"
+                title="No additional users yet"
+                message="Invite or create a trusted church volunteer when you are ready."
+              />
+            )}
           </div>
         )}
       </section>

@@ -15,6 +15,7 @@ import {
   type BulkMemberExecutionResult,
   type BulkMemberRow,
 } from "@/lib/people/bulk-member-entry";
+import { useEscapeKey } from "@/lib/ui/keyboard";
 
 function statusLabel(row: BulkMemberRow) {
   if (row.status === "ready" && row.decision === "create_separate") {
@@ -53,6 +54,7 @@ export function BulkMemberEntryModal({
   onClose: () => void;
   onCompleted: () => Promise<void>;
 }) {
+  useEscapeKey(onClose);
   const { user } = useAuth();
   const restoredDraft = useMemo(
     () => (user ? loadBulkMemberDraft(user) : undefined),

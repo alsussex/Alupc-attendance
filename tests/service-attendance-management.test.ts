@@ -311,9 +311,8 @@ describe("service visitor lifecycle", () => {
       resolve("components/services/ServiceManager.tsx"),
       "utf8",
     );
-    expect(source).toContain(
-      "Remove this visitor from the service? This will remove their attendance entry from this service.",
-    );
+    expect(source).toContain("Permanent member records are not affected.");
+    expect(source).toContain("useConfirmation");
     expect(source).not.toContain("removeMember(");
   });
 });
