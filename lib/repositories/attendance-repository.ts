@@ -403,10 +403,15 @@ export async function saveService(
     serviceType: ServiceType;
     customName?: string;
     serviceTime?: string;
+    notes?: string;
     status: ServiceStatus;
     unnamedVisitorCount?: number;
   },
 ) {
+  const notes = input.notes?.trim() || undefined;
+  if (notes && notes.length > 4000) {
+    throw new Error("Service notes must be 4,000 characters or fewer.");
+  }
   const database = await getDatabase();
   const existing = input.id ? await database.get("services", input.id) : undefined;
   if (existing?.status === "completed") {
@@ -439,6 +444,7 @@ export async function saveService(
     serviceType: input.serviceType,
     customName: input.customName?.trim() || undefined,
     serviceTime: input.serviceTime || undefined,
+    notes,
     status: input.status,
     unnamedVisitorCount:
       input.unnamedVisitorCount ?? existing?.unnamedVisitorCount ?? 0,
@@ -465,7 +471,8 @@ export async function saveService(
       : existing.serviceDate !== service.serviceDate ||
           existing.serviceType !== service.serviceType ||
           existing.customName !== service.customName ||
-          existing.serviceTime !== service.serviceTime
+          existing.serviceTime !== service.serviceTime ||
+          existing.notes !== service.notes
         ? "edited"
         : undefined;
   if (serviceAction) {

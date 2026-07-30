@@ -182,6 +182,7 @@ export function fromCloudRecord(
       serviceType: requiredString(row, "service_type") as ChurchService["serviceType"],
       customName: optionalString(row, "custom_name"),
       serviceTime: optionalString(row, "service_time")?.slice(0, 5),
+      notes: optionalString(row, "notes"),
       status: requiredString(row, "status") as ChurchService["status"],
       unnamedVisitorCount:
         typeof row.unnamed_visitor_count === "number"

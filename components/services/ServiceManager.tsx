@@ -145,6 +145,9 @@ export function ServiceManager() {
   const [serviceSearch, setServiceSearch] = useState("");
   const [serviceFilter, setServiceFilter] =
     useState<ServiceDirectoryFilter>("all");
+  const [serviceYear, setServiceYear] = useState("");
+  const [serviceMonth, setServiceMonth] = useState("");
+  const [serviceTypeFilter, setServiceTypeFilter] = useState("");
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [pendingRecordKeys, setPendingRecordKeys] = useState<Set<string>>(
@@ -518,8 +521,35 @@ export function ServiceManager() {
         serviceDirectory,
         serviceFilter,
         serviceSearch,
+        undefined,
+        {
+          year: serviceYear || undefined,
+          month: serviceMonth || undefined,
+          serviceType: serviceTypeFilter || undefined,
+        },
       ),
-    [serviceDirectory, serviceFilter, serviceSearch],
+    [
+      serviceDirectory,
+      serviceFilter,
+      serviceMonth,
+      serviceSearch,
+      serviceTypeFilter,
+      serviceYear,
+    ],
+  );
+  const serviceFilterOptions = useMemo(
+    () => ({
+      years: [...new Set(serviceDirectory.map(({ service }) => service.serviceDate.slice(0, 4)))].sort(
+        (a, b) => b.localeCompare(a),
+      ),
+      months: [...new Set(serviceDirectory.map(({ service }) => service.serviceDate.slice(5, 7)))].sort(
+        (a, b) => b.localeCompare(a),
+      ),
+      types: [...new Set(serviceDirectory.map(({ service }) => service.serviceType))].sort(
+        (a, b) => a.localeCompare(b),
+      ),
+    }),
+    [serviceDirectory],
   );
   const serviceGroups = useMemo(
     () => groupServiceDirectory(visibleServiceDirectory),
@@ -684,6 +714,11 @@ export function ServiceManager() {
                 ? "This completed service is read-only."
                 : "Select every person who attended. Changes save to this device immediately."}
             </p>
+            {active.notes && (
+              <p className="service-notes">
+                <strong>Service note:</strong> {active.notes}
+              </p>
+            )}
           </div>
         </div>
         {serviceLocked && (
@@ -1379,7 +1414,7 @@ export function ServiceManager() {
           <input
             type="search"
             value={serviceSearch}
-            placeholder="Search services, dates, months, or years"
+            placeholder="Search names, notes, dates, types, or editors"
             onChange={(event) => setServiceSearch(event.target.value)}
           />
         </label>
@@ -1395,10 +1430,54 @@ export function ServiceManager() {
               {filter === "all"
                 ? "All"
                 : filter === "draft"
-                  ? "Draft"
+                  ? "Open"
                   : "Completed"}
             </button>
           ))}
+        </div>
+        <div className="service-advanced-filters" aria-label="Advanced service filters">
+          <label>
+            <span>Year</span>
+            <select value={serviceYear} onChange={(event) => setServiceYear(event.target.value)}>
+              <option value="">All years</option>
+              {serviceFilterOptions.years.map((year) => <option key={year} value={year}>{year}</option>)}
+            </select>
+          </label>
+          <label>
+            <span>Month</span>
+            <select value={serviceMonth} onChange={(event) => setServiceMonth(event.target.value)}>
+              <option value="">All months</option>
+              {serviceFilterOptions.months.map((month) => (
+                <option key={month} value={month}>
+                  {new Intl.DateTimeFormat(undefined, { month: "long", timeZone: "UTC" }).format(
+                    new Date(`2026-${month}-01T00:00:00Z`),
+                  )}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Service type</span>
+            <select value={serviceTypeFilter} onChange={(event) => setServiceTypeFilter(event.target.value)}>
+              <option value="">All service types</option>
+              {serviceFilterOptions.types.map((type) => <option key={type} value={type}>{type}</option>)}
+            </select>
+          </label>
+          {(serviceYear || serviceMonth || serviceTypeFilter || serviceSearch || serviceFilter !== "all") && (
+            <button
+              className="button subtle"
+              type="button"
+              onClick={() => {
+                setServiceSearch("");
+                setServiceFilter("all");
+                setServiceYear("");
+                setServiceMonth("");
+                setServiceTypeFilter("");
+              }}
+            >
+              Clear filters
+            </button>
+          )}
         </div>
       </section>
       <section className="service-directory" aria-label="Organization services">
@@ -1409,6 +1488,7 @@ export function ServiceManager() {
             open={
               Boolean(serviceSearch) ||
               serviceFilter !== "all" ||
+              Boolean(serviceYear || serviceMonth || serviceTypeFilter) ||
               expandedYears.has(yearGroup.year)
             }
             onToggle={(event) =>
@@ -1419,6 +1499,7 @@ export function ServiceManager() {
               aria-expanded={
                 Boolean(serviceSearch) ||
                 serviceFilter !== "all" ||
+                Boolean(serviceYear || serviceMonth || serviceTypeFilter) ||
                 expandedYears.has(yearGroup.year)
               }
             >
@@ -1437,6 +1518,7 @@ export function ServiceManager() {
                   open={
                     Boolean(serviceSearch) ||
                     serviceFilter !== "all" ||
+                    Boolean(serviceYear || serviceMonth || serviceTypeFilter) ||
                     expandedMonths.has(monthGroup.key)
                   }
                   onToggle={(event) =>
@@ -1451,6 +1533,7 @@ export function ServiceManager() {
                     aria-expanded={
                       Boolean(serviceSearch) ||
                       serviceFilter !== "all" ||
+                      Boolean(serviceYear || serviceMonth || serviceTypeFilter) ||
                       expandedMonths.has(monthGroup.key)
                     }
                   >
@@ -1623,6 +1706,7 @@ export function ServiceManager() {
         "",
     );
     const [customName, setCustomName] = useState(existing?.customName ?? "");
+    const [notes, setNotes] = useState(existing?.notes ?? "");
     async function submit(event: FormEvent) {
       event.preventDefault();
       if (!user) return;
@@ -1632,6 +1716,7 @@ export function ServiceManager() {
         serviceType: type,
         customName,
         serviceTime,
+        notes,
         status: existing?.status ?? modalSettings.defaultServiceStatus,
       });
       onSaved(service);
@@ -1649,6 +1734,16 @@ export function ServiceManager() {
             }}>{availableTypes.map((option) => <option key={option.id} value={option.name}>{option.name}</option>)}</select></label>
             <label>Service time <span className="optional">(optional)</span><input type="time" value={serviceTime} onChange={(event) => setServiceTime(event.target.value)} /></label>
             {(availableTypes.find((item) => item.name === type)?.id === "special-service" || type === "Other") && <label>Custom service name <span className="optional">(optional)</span><input value={customName} onChange={(event) => setCustomName(event.target.value)} placeholder="e.g. Christmas Eve" /></label>}
+            <label>
+              Service notes <span className="optional">(optional)</span>
+              <textarea
+                value={notes}
+                maxLength={4000}
+                rows={4}
+                onChange={(event) => setNotes(event.target.value)}
+                placeholder="Add setup details, reminders, or a short service note"
+              />
+            </label>
             <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose}>Cancel</button><button className="button primary">{existing ? "Save changes" : "Create and take attendance"}</button></div>
           </form>
         </section>

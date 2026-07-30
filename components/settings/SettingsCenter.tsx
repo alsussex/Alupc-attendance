@@ -13,6 +13,7 @@ import { AuditHistory } from "@/components/audit/AuditHistory";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { useConfirmation } from "@/components/feedback/ConfirmationProvider";
 import { LoadingSkeleton } from "@/components/feedback/LoadingSkeleton";
+import { ArchivedServicesManager } from "@/components/settings/ArchivedServicesManager";
 import {
   type ApplicationSettings,
   type Organization,
@@ -450,12 +451,15 @@ export function SettingsCenter() {
             </SettingsSectionCard>
           )}
           {section === "services" && (
-            <ServiceSettings
-              settings={settings}
-              onChange={setSettings}
-              onSave={() => void saveChanges()}
-              saving={saving}
-            />
+            <>
+              <ServiceSettings
+                settings={settings}
+                onChange={setSettings}
+                onSave={() => void saveChanges()}
+                saving={saving}
+              />
+              <ArchivedServicesManager />
+            </>
           )}
           {section === "attendance" && (
             <SettingsSectionCard

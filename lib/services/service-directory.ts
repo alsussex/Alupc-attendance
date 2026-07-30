@@ -11,6 +11,13 @@ import { summarizeServiceAttendance } from "@/lib/services/attendance-summary";
 import { getDatabase } from "@/lib/storage/database";
 
 export type ServiceDirectoryFilter = "all" | "draft" | "completed";
+export interface ServiceDirectoryCriteria {
+  status?: ServiceDirectoryFilter;
+  query?: string;
+  year?: string;
+  month?: string;
+  serviceType?: string;
+}
 export type ServiceSyncState =
   | "synced"
   | "pending"
@@ -97,14 +104,32 @@ export function filterServiceDirectory(
   filter: ServiceDirectoryFilter,
   query: string,
   locale?: string,
+  criteria: Omit<ServiceDirectoryCriteria, "status" | "query"> = {},
 ) {
-  const normalized = query.trim().toLocaleLowerCase();
-  return items.filter(({ service }) => {
+  const queryTerms = query
+    .trim()
+    .toLocaleLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  return items.filter(({ service, lastEditor }) => {
     if (filter !== "all" && service.status !== filter) return false;
-    if (!normalized) return true;
+    if (criteria.year && service.serviceDate.slice(0, 4) !== criteria.year) {
+      return false;
+    }
+    if (criteria.month && service.serviceDate.slice(5, 7) !== criteria.month) {
+      return false;
+    }
+    if (criteria.serviceType && service.serviceType !== criteria.serviceType) {
+      return false;
+    }
+    if (queryTerms.length === 0) return true;
     const searchable = [
       serviceName(service),
       service.serviceType,
+      service.notes,
+      service.status,
+      service.status === "draft" ? "open" : "complete",
+      lastEditor,
       service.serviceDate,
       service.serviceDate.slice(0, 4),
       monthName(service.serviceDate, locale),
@@ -115,7 +140,7 @@ export function filterServiceDirectory(
     ]
       .join(" ")
       .toLocaleLowerCase();
-    return searchable.includes(normalized);
+    return queryTerms.every((term) => searchable.includes(term));
   });
 }
 
