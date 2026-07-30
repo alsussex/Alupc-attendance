@@ -84,11 +84,13 @@ export function AuditHistory({
   entityType,
   entityId,
   relatedEntityId,
+  relatedEntityIds,
   compact = false,
 }: {
   entityType?: AuditEntityType;
   entityId?: string;
   relatedEntityId?: string;
+  relatedEntityIds?: string[];
   compact?: boolean;
 }) {
   const { user } = useAuth();
@@ -113,13 +115,14 @@ export function AuditHistory({
         entityType ?? (selectedEntity === "all" ? undefined : selectedEntity),
       entityId,
       relatedEntityId: relatedEntityId || serviceId || undefined,
+      relatedEntityIds,
       query: query || undefined,
       action: action || undefined,
       from: from ? new Date(`${from}T00:00:00`).toISOString() : undefined,
       to: to ? new Date(`${to}T23:59:59.999`).toISOString() : undefined,
       limit: compact ? 20 : 50,
     }),
-    [action, compact, entityId, entityType, from, query, relatedEntityId, selectedEntity, serviceId, to],
+    [action, compact, entityId, entityType, from, query, relatedEntityId, relatedEntityIds, selectedEntity, serviceId, to],
   );
 
   const load = useCallback(async () => {

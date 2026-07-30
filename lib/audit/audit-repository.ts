@@ -17,6 +17,7 @@ export interface AuditFilters {
   entityType?: AuditEntityType;
   entityId?: string;
   relatedEntityId?: string;
+  relatedEntityIds?: string[];
   userId?: string;
   action?: string;
   from?: string;
@@ -84,12 +85,21 @@ export async function recordAuditEntry(
 function matches(entry: AuditLogEntry, filters: AuditFilters) {
   if (filters.entityType && entry.entityType !== filters.entityType) return false;
   if (filters.entityId && entry.entityId !== filters.entityId) return false;
+  const relatedIds = [
+    ...(filters.relatedEntityIds ?? []),
+    ...(filters.relatedEntityId ? [filters.relatedEntityId] : []),
+  ];
   if (
-    filters.relatedEntityId &&
-    entry.entityId !== filters.relatedEntityId &&
-    entry.details?.serviceId !== filters.relatedEntityId &&
-    entry.details?.personId !== filters.relatedEntityId &&
-    entry.details?.memberPersonId !== filters.relatedEntityId
+    relatedIds.length > 0 &&
+    !relatedIds.some(
+      (id) =>
+        entry.entityId === id ||
+        entry.details?.serviceId === id ||
+        entry.details?.personId === id ||
+        entry.details?.memberPersonId === id ||
+        entry.details?.mergedSourceId === id ||
+        entry.details?.targetId === id,
+    )
   ) {
     return false;
   }

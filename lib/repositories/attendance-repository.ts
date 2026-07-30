@@ -5,6 +5,7 @@ import {
   createId,
   makeDisplayName,
   normalizeName,
+  normalizeMemberCapitalization,
   nowIso,
   type AttendanceRecord,
   type ChurchService,
@@ -99,6 +100,22 @@ export async function getLastAttendanceDates(organizationId: string) {
   return dates;
 }
 
+export async function getMemberAttendanceCounts(organizationId: string) {
+  const database = await getDatabase();
+  const records = await database.getAllFromIndex(
+    "attendance",
+    "organizationId",
+    organizationId,
+  );
+  const counts = new Map<string, number>();
+  for (const record of records) {
+    if (record.present) {
+      counts.set(record.personId, (counts.get(record.personId) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
 export async function findDuplicateMember(
   organizationId: string,
   displayName: string,
@@ -120,6 +137,7 @@ export async function findExactMemberMatches(
   return (await listMemberCandidates(organizationId)).filter(
     (person) =>
       person.id !== excludeId &&
+      !person.mergedIntoId &&
       normalizeName(person.displayName) === normalized,
   );
 }
@@ -137,16 +155,25 @@ export async function saveMember(
 ) {
   const database = await getDatabase();
   const existing = input.id ? await database.get("people", input.id) : undefined;
+  if (
+    existing &&
+    (existing.organizationId !== user.organizationId ||
+      existing.personType !== "member")
+  ) {
+    throw new Error("Member not found.");
+  }
   const contactError = memberContactValidation(input);
   if (contactError) throw new Error(contactError);
   const timestamp = nowIso();
+  const firstName = normalizeMemberCapitalization(input.firstName);
+  const lastName = normalizeMemberCapitalization(input.lastName);
   const person: Person = {
     id: input.id ?? createId(),
     organizationId: user.organizationId,
     version: existing?.version,
-    firstName: input.firstName.trim(),
-    lastName: input.lastName.trim(),
-    displayName: makeDisplayName(input.firstName, input.lastName),
+    firstName,
+    lastName,
+    displayName: makeDisplayName(firstName, lastName),
     personType: "member",
     isActive: existing?.isActive ?? true,
     duplicateNameAllowed:
@@ -154,7 +181,10 @@ export async function saveMember(
     email: input.email?.trim().toLocaleLowerCase() || undefined,
     phone: input.phone?.trim() || undefined,
     inactiveAt: existing?.inactiveAt,
+    restoredAt: existing?.restoredAt,
     deletedAt: existing?.deletedAt,
+    mergedIntoId: existing?.mergedIntoId,
+    mergedFromIds: existing?.mergedFromIds,
     createdAt: existing?.createdAt ?? timestamp,
     updatedAt: timestamp,
     createdBy: existing?.createdBy ?? user.userId,
@@ -268,7 +298,13 @@ export async function markMemberInactive(user: UserContext, id: string) {
   }
   const database = await getDatabase();
   const person = await database.get("people", id);
-  if (!person) throw new Error("Person not found");
+  if (
+    !person ||
+    person.organizationId !== user.organizationId ||
+    person.personType !== "member"
+  ) {
+    throw new Error("Person not found");
+  }
   const timestamp = nowIso();
   const updated = {
     ...person,
@@ -310,6 +346,7 @@ export async function restoreMember(user: UserContext, id: string) {
     ...person,
     isActive: true,
     inactiveAt: null,
+    restoredAt: nowIso(),
     deletedAt: null,
     updatedAt: nowIso(),
     updatedBy: user.userId,
@@ -339,7 +376,13 @@ export async function removeMember(user: UserContext, id: string) {
   }
   const database = await getDatabase();
   const person = await database.get("people", id);
-  if (!person) throw new Error("Person not found");
+  if (
+    !person ||
+    person.organizationId !== user.organizationId ||
+    person.personType !== "member"
+  ) {
+    throw new Error("Person not found");
+  }
   const timestamp = nowIso();
   const updated = {
     ...person,

@@ -63,6 +63,13 @@ function optionalBoolean(row: Record<string, unknown>, key: string) {
   return typeof row[key] === "boolean" ? row[key] : false;
 }
 
+function optionalStringArray(row: Record<string, unknown>, key: string) {
+  const value = row[key];
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : undefined;
+}
+
 function auditFields(row: Record<string, unknown>) {
   return {
     id: requiredString(row, "id"),
@@ -163,7 +170,10 @@ export function fromCloudRecord(
       email: optionalString(row, "email"),
       phone: optionalString(row, "phone"),
       inactiveAt: optionalString(row, "inactive_at"),
+      restoredAt: optionalString(row, "restored_at"),
       deletedAt: optionalString(row, "deleted_at"),
+      mergedIntoId: optionalString(row, "merged_into_id"),
+      mergedFromIds: optionalStringArray(row, "merged_from_ids"),
     };
   }
 

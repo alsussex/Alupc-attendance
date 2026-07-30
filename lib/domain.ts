@@ -61,7 +61,10 @@ export interface Person extends AuditedRecord {
   email?: string;
   phone?: string;
   inactiveAt?: string | null;
+  restoredAt?: string | null;
   deletedAt?: string | null;
+  mergedIntoId?: string | null;
+  mergedFromIds?: string[];
 }
 
 export interface MemberPrivateDetails extends AuditedRecord {
@@ -302,6 +305,20 @@ export interface SyncStatusRecord {
 
 export function normalizeName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
+}
+
+export function normalizeMemberCapitalization(value: string) {
+  const collapsed = value.trim().replace(/\s+/g, " ");
+  if (
+    collapsed &&
+    (collapsed === collapsed.toLocaleLowerCase() ||
+      collapsed === collapsed.toLocaleUpperCase())
+  ) {
+    return collapsed
+      .toLocaleLowerCase()
+      .replace(/(^|[\s'-])\p{L}/gu, (match) => match.toLocaleUpperCase());
+  }
+  return collapsed;
 }
 
 export function makeDisplayName(firstName: string, lastName: string) {

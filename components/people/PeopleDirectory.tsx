@@ -11,6 +11,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { AuditHistory } from "@/components/audit/AuditHistory";
 import { BulkMemberEntryModal } from "@/components/people/BulkMemberEntryModal";
 import { MemberAttendanceHistory } from "@/components/people/MemberAttendanceHistory";
+import { MemberMergeModal } from "@/components/people/MemberMergeModal";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { useConfirmation } from "@/components/feedback/ConfirmationProvider";
 import { EmptyState } from "@/components/feedback/EmptyState";
@@ -20,12 +21,15 @@ import { formatDate } from "@/lib/format/date-time";
 import {
   DEFAULT_MEMBER_DIRECTORY_VIEW,
   filterDirectoryMembers,
+  sortDirectoryMembers,
+  type MemberDirectorySort,
   type MemberDirectoryView,
 } from "@/lib/people/member-directory";
-import { sortMembersByLastName } from "@/lib/people/bulk-member-entry";
+import { findLikelyMemberMatches } from "@/lib/people/member-matching";
 import {
   findExactMemberMatches,
   getLastAttendanceDates,
+  getMemberAttendanceCounts,
   getMemberPrivateDetails,
   listActiveMembers,
   listMemberCandidates,
@@ -65,6 +69,9 @@ export function PeopleDirectory() {
   const [lastAttendance, setLastAttendance] = useState<Map<string, string>>(
     new Map(),
   );
+  const [attendanceCounts, setAttendanceCounts] = useState<Map<string, number>>(
+    new Map(),
+  );
   const [query, setQuery] = useState("");
   const [view, setView] = useState<MemberDirectoryView>(
     DEFAULT_MEMBER_DIRECTORY_VIEW,
@@ -76,20 +83,24 @@ export function PeopleDirectory() {
   const [duplicate, setDuplicate] = useState<Person | null>(null);
   const [multipleMatches, setMultipleMatches] = useState<Person[]>([]);
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [sort, setSort] = useState<MemberDirectorySort>("name");
   const [saving, setSaving] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!user) return;
-    const [members, candidates, dates] = await Promise.all([
+    const [members, candidates, dates, counts] = await Promise.all([
       isAdmin(user)
         ? listMembers(user.organizationId)
         : listActiveMembers(user.organizationId),
       listMemberCandidates(user.organizationId),
       getLastAttendanceDates(user.organizationId),
+      getMemberAttendanceCounts(user.organizationId),
     ]);
     setPeople(members);
     setMemberCandidates(candidates);
     setLastAttendance(dates);
+    setAttendanceCounts(counts);
     setProfile((current) =>
       current ? members.find((member) => member.id === current.id) ?? null : null,
     );
@@ -104,20 +115,37 @@ export function PeopleDirectory() {
     };
   }, [refresh]);
 
-  const effectiveView = isAdmin(user) ? view : "active";
+  const effectiveView =
+    !isAdmin(user) && (view === "inactive" || view === "all") ? "active" : view;
   const filtered = useMemo(
     () =>
-      sortMembersByLastName(
+      sortDirectoryMembers(
         filterDirectoryMembers(people, effectiveView, query),
+        sort,
+        lastAttendance,
+        attendanceCounts,
       ),
-    [effectiveView, people, query],
+    [attendanceCounts, effectiveView, lastAttendance, people, query, sort],
+  );
+  const likelyMatches = useMemo(
+    () =>
+      form && !form.id && user
+        ? findLikelyMemberMatches(
+            memberCandidates,
+            `${form.firstName} ${form.lastName}`,
+            user.organizationId,
+          ).slice(0, 5)
+        : [],
+    [form, memberCandidates, user],
   );
 
   const inactiveCount = people.filter((person) => !person.isActive).length;
 
   useEscapeKey(
     () => {
-      if (form) {
+      if (mergeOpen) {
+        setMergeOpen(false);
+      } else if (form) {
         setDuplicate(null);
         setForm(null);
       } else if (multipleMatches.length > 0) {
@@ -128,7 +156,13 @@ export function PeopleDirectory() {
         setProfile(null);
       }
     },
-    Boolean(form || multipleMatches.length || reactivateTarget || profile),
+    Boolean(
+      mergeOpen ||
+        form ||
+        multipleMatches.length ||
+        reactivateTarget ||
+        profile,
+    ),
   );
 
   async function submit(
@@ -138,10 +172,25 @@ export function PeopleDirectory() {
     event.preventDefault();
     if (!form || !user) return;
     if (!form.id && !allowDuplicate) {
-      const matches = await findExactMemberMatches(
+      const exactMatches = await findExactMemberMatches(
         user.organizationId,
         `${form.firstName} ${form.lastName}`,
       );
+      const normalizedMatches = findLikelyMemberMatches(
+        memberCandidates,
+        `${form.firstName} ${form.lastName}`,
+        user.organizationId,
+      )
+        .filter((match) => match.reason !== "similar")
+        .map((match) => match.person);
+      const matches = [
+        ...new Map(
+          [...exactMatches, ...normalizedMatches].map((person) => [
+            person.id,
+            person,
+          ]),
+        ).values(),
+      ];
       if (matches.length > 1) {
         setMultipleMatches(matches);
         return;
@@ -247,6 +296,15 @@ export function PeopleDirectory() {
           <p>Active members appear automatically when you record a service.</p>
         </div>
         <div className="button-row people-add-actions">
+          {isAdmin(user) && (
+            <button
+              className="button subtle"
+              type="button"
+              onClick={() => setMergeOpen(true)}
+            >
+              Merge Members
+            </button>
+          )}
           <button
             className="button secondary"
             type="button"
@@ -268,19 +326,24 @@ export function PeopleDirectory() {
       </div>
 
       <section className="panel">
-        {isAdmin(user) && (
-          <div
-            className="member-filter-tabs"
-            role="tablist"
-            aria-label="Filter church members"
-          >
-            {(
-              [
-                ["active", "Active Members"],
-                ["inactive", `Inactive Members (${inactiveCount})`],
-                ["all", "All Members"],
-              ] as const
-            ).map(([value, label]) => (
+        <div
+          className="member-filter-tabs"
+          role="tablist"
+          aria-label="Filter church members"
+        >
+          {(
+            [
+              ["active", "Active Members"],
+              ["recently_added", "Recently Added"],
+              ["recently_restored", "Recently Restored"],
+              ...(isAdmin(user)
+                ? ([
+                    ["inactive", `Inactive Members (${inactiveCount})`],
+                    ["all", "All Members"],
+                  ] as const)
+                : []),
+            ] as const
+          ).map(([value, label]) => (
               <button
                 key={value}
                 className={effectiveView === value ? "active" : ""}
@@ -292,8 +355,7 @@ export function PeopleDirectory() {
                 {label}
               </button>
             ))}
-          </div>
-        )}
+        </div>
 
         <div className="panel-toolbar">
           <label className="search-field">
@@ -301,10 +363,24 @@ export function PeopleDirectory() {
             <span aria-hidden="true">⌕</span>
             <input
               type="search"
-              placeholder={`Search ${effectiveView === "all" ? "" : `${effectiveView} `}members by name`}
+              placeholder="Search names, email, phone, or status"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
+          </label>
+          <label className="member-sort-control">
+            <span>Sort by</span>
+            <select
+              value={sort}
+              onChange={(event) =>
+                setSort(event.target.value as MemberDirectorySort)
+              }
+            >
+              <option value="name">Name</option>
+              <option value="date_added">Date added</option>
+              <option value="last_attendance">Last attendance</option>
+              <option value="attendance_count">Attendance count</option>
+            </select>
           </label>
           <span className="count-label">
             {filtered.length}{" "}
@@ -343,6 +419,9 @@ export function PeopleDirectory() {
                       <span>Inactive since: {formatDate(person.inactiveAt)}</span>
                     </>
                   )}
+                  <span>
+                    {attendanceCounts.get(person.id) ?? 0} services attended
+                  </span>
                 </span>
               </div>
               <div className="row-actions">
@@ -670,6 +749,34 @@ export function PeopleDirectory() {
                   </button>
                 </div>
               )}
+              {!form.id && likelyMatches.length > 0 && !duplicate && (
+                <div className="member-suggestions" role="status">
+                  <strong>Possible existing members</strong>
+                  <span>Check these records before creating a new person.</span>
+                  {likelyMatches.map(({ person, reason }) => (
+                    <button
+                      className="button subtle"
+                      type="button"
+                      key={person.id}
+                      onClick={() => {
+                        setForm(null);
+                        if (person.isActive && !person.deletedAt) {
+                          void viewProfile(person);
+                        } else {
+                          setReactivateTarget(person);
+                        }
+                      }}
+                    >
+                      {person.displayName} ·{" "}
+                      {reason === "exact"
+                        ? "Exact match"
+                        : reason === "punctuation"
+                          ? "Same normalized name"
+                          : "Similar spelling"}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="modal-actions">
                 <button
                   className="button subtle"
@@ -697,6 +804,13 @@ export function PeopleDirectory() {
           candidates={memberCandidates}
           lastAttendance={lastAttendance}
           onClose={() => setBulkOpen(false)}
+          onCompleted={refresh}
+        />
+      )}
+      {mergeOpen && isAdmin(user) && (
+        <MemberMergeModal
+          members={memberCandidates}
+          onClose={() => setMergeOpen(false)}
           onCompleted={refresh}
         />
       )}
@@ -849,7 +963,11 @@ function MemberProfileModal({
             {canManageLifecycle && (
               <div className="member-history">
                 <h3>Member activity</h3>
-                <AuditHistory relatedEntityId={person.id} compact />
+                <AuditHistory
+                  relatedEntityId={person.id}
+                  relatedEntityIds={person.mergedFromIds}
+                  compact
+                />
               </div>
             )}
           </div>

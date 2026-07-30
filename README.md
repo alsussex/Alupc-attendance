@@ -10,6 +10,7 @@ Offline-capable church attendance Progressive Web App for Abundant Life UPC. Aut
 - Responsive Dashboard, People, Services, and Admin-only Settings center
 - Organization, service, attendance, visitor, device, security, and export settings
 - Active/inactive/all member views, member profiles, search, duplicate-name warning, and Admin lifecycle controls
+- Smart duplicate suggestions, Admin merge previews, recently added/restored views, and attendance-aware member sorting
 - Draft/completed services, advanced service filters, optional notes, Admin archive management, searchable attendance checklist, live totals, and service visitors
 - Stable client-generated UUIDs and durable IndexedDB writes
 - Authenticated initial and incremental pull synchronization
@@ -40,6 +41,7 @@ Requirements: Node.js 22.13 or newer, npm, and a Supabase project.
    - `supabase/migrations/202607300001_bulk_member_entry.sql`
    - `supabase/migrations/202607300002_account_recovery_contacts_and_visitors.sql`
    - `supabase/migrations/202607300003_advanced_service_management.sql`
+   - `supabase/migrations/202607300004_intelligent_member_management.sql`
 
 4. Create the first user and organization using the steps below.
 5. Put the project URL, browser-safe anon key, and server-only service-role key in `.env.local`. The service-role key must never have a `NEXT_PUBLIC_` prefix.
@@ -120,7 +122,7 @@ The default Vercel domain is sufficient. Use the exact stable production domain 
 
 ## Private Vercel deployment checklist
 
-1. Confirm all fourteen migrations were applied in filename order.
+1. Confirm all fifteen migrations were applied in filename order.
 2. Confirm the first Admin and organization profile exist.
 3. Confirm `.env.example` contains placeholders and `.env.local` is untracked.
 4. Import the existing `alsussex/Alupc-attendance` repository and select `main`.
@@ -463,7 +465,7 @@ This release does not include Excel export, charts, import/restore, permanent or
 
 Use fictional data such as **Alex Meadow** and **Robin Field**.
 
-1. Apply all fourteen migrations and configure the same Supabase project.
+1. Apply all fifteen migrations and configure the same Supabase project.
 2. Open Browser A as Admin, wait for **Online**, invite a fictional Attendance Taker, and complete that user's first sign-in online in Browser B.
 3. In Browser A, add Alex Meadow, create a draft service, check Alex present, and allow background sync to complete.
 4. In Browser B, focus the app and confirm Alex, the service, and attendance total of one.
