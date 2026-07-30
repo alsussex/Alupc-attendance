@@ -17,8 +17,10 @@ import {
 import {
   filterServiceDirectory,
   groupServiceDirectory,
+  initialServiceFolderExpansion,
   loadOrganizationServiceDirectory,
   summarizeOrganizationServices,
+  updateExpandedFolder,
   type ServiceDirectoryItem,
 } from "@/lib/services/service-directory";
 import {
@@ -277,16 +279,76 @@ describe("organization-wide service visibility", () => {
 });
 
 describe("year and month service folders", () => {
-  it("renders accessible expandable year and month folders with local expansion memory", () => {
+  it("renders accessible expandable year and month folders with page-local expansion state", () => {
     const source = readFileSync(
       resolve("components/services/ServiceManager.tsx"),
       "utf8",
     );
     expect(source).toContain('className="service-year-folder"');
     expect(source).toContain('className="service-month-folder"');
-    expect(source).toContain("service-folders:");
+    expect(source).toContain("initialServiceFolderExpansion");
+    expect(source).not.toContain("service-folders:");
+    expect(source).toContain("aria-expanded");
     expect(source).toContain('serviceFilter !== "all"');
     expect(source).toContain("Waiting to sync");
+  });
+
+  it("expands only the current year and current month by default", () => {
+    const groups = groupServiceDirectory([
+      item("current", "2026-07-27"),
+      item("previous-month", "2026-06-21"),
+      item("previous-year", "2025-12-21"),
+      item("future-year", "2027-01-03"),
+    ]);
+    expect(initialServiceFolderExpansion(groups, "2026-07")).toEqual({
+      years: ["2026"],
+      months: ["2026-07"],
+    });
+  });
+
+  it("keeps previous months and all non-current years collapsed", () => {
+    const groups = groupServiceDirectory([
+      item("july", "2026-07-27"),
+      item("june", "2026-06-21"),
+      item("past", "2025-12-21"),
+      item("future", "2027-01-03"),
+    ]);
+    const initial = initialServiceFolderExpansion(groups, "2026-07");
+    expect(initial.years).not.toContain("2025");
+    expect(initial.years).not.toContain("2027");
+    expect(initial.months).not.toContain("2026-06");
+  });
+
+  it("uses the newest current-year month when the current month has no services", () => {
+    const groups = groupServiceDirectory([
+      item("june", "2026-06-21"),
+      item("may", "2026-05-17"),
+      item("past", "2025-12-21"),
+    ]);
+    expect(initialServiceFolderExpansion(groups, "2026-07")).toEqual({
+      years: ["2026"],
+      months: ["2026-06"],
+    });
+  });
+
+  it("keeps every year collapsed when the current year has no services", () => {
+    const groups = groupServiceDirectory([
+      item("past", "2025-12-21"),
+      item("future", "2027-01-03"),
+    ]);
+    expect(initialServiceFolderExpansion(groups, "2026-07")).toEqual({
+      years: [],
+      months: [],
+    });
+  });
+
+  it("respects manual expand and collapse changes after initialization", () => {
+    const initial = new Set(["2026"]);
+    const opened = updateExpandedFolder(initial, "2025", true);
+    const collapsed = updateExpandedFolder(opened, "2026", false);
+    expect([...opened]).toEqual(["2026", "2025"]);
+    expect([...collapsed]).toEqual(["2025"]);
+    expect([...initial]).toEqual(["2026"]);
   });
 
   it("groups drafts and completed services together with newest years and months first", () => {

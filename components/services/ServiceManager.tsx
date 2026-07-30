@@ -59,7 +59,9 @@ import {
 import {
   filterServiceDirectory,
   groupServiceDirectory,
+  initialServiceFolderExpansion,
   loadOrganizationServiceDirectory,
+  updateExpandedFolder,
   type ServiceDirectoryFilter,
   type ServiceDirectoryItem,
 } from "@/lib/services/service-directory";
@@ -90,18 +92,6 @@ function displayServiceTime(value: string) {
     hour: "numeric",
     minute: "2-digit",
   });
-}
-
-function storedFolderKeys(value: string | null, fallback: string[]) {
-  if (!value) return fallback;
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed.filter((item): item is string => typeof item === "string")
-      : fallback;
-  } catch {
-    return fallback;
-  }
 }
 
 export function ServiceManager() {
@@ -488,37 +478,16 @@ export function ServiceManager() {
 
   useEffect(() => {
     if (!user || serviceGroups.length === 0) return;
-    const initializationKey = `${user.organizationId}:${serviceGroups[0].year}`;
+    const initializationKey = user.organizationId;
     if (initializedServiceFolders.current === initializationKey) return;
     initializedServiceFolders.current = initializationKey;
     const current = localDate(settings.timezone).slice(0, 7);
-    const storedYears = window.localStorage.getItem(
-      `service-folders:${user.organizationId}:years`,
+    const initial = initialServiceFolderExpansion(
+      serviceGroups,
+      current,
     );
-    const storedMonths = window.localStorage.getItem(
-      `service-folders:${user.organizationId}:months`,
-    );
-    setExpandedYears(
-      new Set(
-        storedFolderKeys(storedYears, [
-          serviceGroups.some((group) => group.year === current.slice(0, 4))
-            ? current.slice(0, 4)
-            : serviceGroups[0].year,
-        ]),
-      ),
-    );
-    setExpandedMonths(
-      new Set(
-        storedFolderKeys(
-          storedMonths,
-          serviceGroups.some((group) =>
-            group.months.some((month) => month.key === current),
-          )
-            ? [current]
-            : [serviceGroups[0].months[0].key],
-        ),
-      ),
-    );
+    setExpandedYears(new Set(initial.years));
+    setExpandedMonths(new Set(initial.months));
   }, [serviceGroups, settings.timezone, user]);
 
   function toggleFolder(
@@ -528,16 +497,7 @@ export function ServiceManager() {
   ) {
     if (!user) return;
     const setter = type === "years" ? setExpandedYears : setExpandedMonths;
-    setter((current) => {
-      const next = new Set(current);
-      if (open) next.add(key);
-      else next.delete(key);
-      window.localStorage.setItem(
-        `service-folders:${user.organizationId}:${type}`,
-        JSON.stringify([...next]),
-      );
-      return next;
-    });
+    setter((current) => updateExpandedFolder(current, key, open));
   }
 
   const activeVisitorConflicts = active
@@ -1366,7 +1326,13 @@ export function ServiceManager() {
               toggleFolder("years", yearGroup.year, event.currentTarget.open)
             }
           >
-            <summary>
+            <summary
+              aria-expanded={
+                Boolean(serviceSearch) ||
+                serviceFilter !== "all" ||
+                expandedYears.has(yearGroup.year)
+              }
+            >
               <span className="folder-icon" aria-hidden="true">▸</span>
               <strong>{yearGroup.year}</strong>
               <span>
@@ -1392,7 +1358,13 @@ export function ServiceManager() {
                     )
                   }
                 >
-                  <summary>
+                  <summary
+                    aria-expanded={
+                      Boolean(serviceSearch) ||
+                      serviceFilter !== "all" ||
+                      expandedMonths.has(monthGroup.key)
+                    }
+                  >
                     <span className="folder-icon" aria-hidden="true">▸</span>
                     <strong>{monthGroup.monthName}</strong>
                     <span>

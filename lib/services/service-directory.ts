@@ -41,6 +41,35 @@ export interface ServiceYearGroup {
   months: ServiceMonthGroup[];
 }
 
+export function initialServiceFolderExpansion(
+  groups: ServiceYearGroup[],
+  currentMonthKey: string,
+) {
+  const currentYear = currentMonthKey.slice(0, 4);
+  const year = groups.find((group) => group.year === currentYear);
+  if (!year) {
+    return { years: [] as string[], months: [] as string[] };
+  }
+  const month =
+    year.months.find((group) => group.key === currentMonthKey) ??
+    year.months[0];
+  return {
+    years: [currentYear],
+    months: month ? [month.key] : [],
+  };
+}
+
+export function updateExpandedFolder(
+  current: ReadonlySet<string>,
+  key: string,
+  open: boolean,
+) {
+  const next = new Set(current);
+  if (open) next.add(key);
+  else next.delete(key);
+  return next;
+}
+
 function serviceName(service: ChurchService) {
   return service.customName || service.serviceType;
 }
