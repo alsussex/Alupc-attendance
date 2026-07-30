@@ -27,6 +27,7 @@ import {
   adjustUnnamedVisitorCount,
   editServiceVisitor,
   findExactMemberMatches,
+  getLastAttendanceDates,
   getServiceAttendance,
   listActiveMembers,
   listMembers,
@@ -430,20 +431,22 @@ export function ServiceManager() {
   async function createQuickMember(
     firstName: string,
     lastName: string,
-    allowDuplicate = false,
   ) {
     if (!user || !active || active.status === "completed") return undefined;
-    const match = (
-      await findExactMemberMatches(
-        user.organizationId,
-        `${firstName} ${lastName}`,
-      )
-    )[0];
-    if (match && !allowDuplicate) return match;
+    const matches = await findExactMemberMatches(
+      user.organizationId,
+      `${firstName} ${lastName}`,
+    );
+    if (matches.length > 0) {
+      const lastAttendance = await getLastAttendanceDates(user.organizationId);
+      return matches.map((person) => ({
+        person,
+        lastAttendanceDate: lastAttendance.get(person.id),
+      }));
+    }
     const member = await saveMember(user, {
       firstName,
       lastName,
-      allowDuplicate,
     });
     await setMemberAttendance(user, active.id, member.id, true);
     setAttendanceTab("members");
@@ -1732,6 +1735,15 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   );
 }
 
+function formatMemberMatchDate(value: string) {
+  const date = new Date(value.length === 10 ? `${value}T12:00:00` : value);
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function QuickAddMemberModal({
   onClose,
   onCreate,
@@ -1741,23 +1753,27 @@ function QuickAddMemberModal({
   onCreate: (
     firstName: string,
     lastName: string,
-    allowDuplicate?: boolean,
-  ) => Promise<Person | undefined>;
+  ) => Promise<
+    | Array<{ person: Person; lastAttendanceDate?: string }>
+    | undefined
+  >;
   onUseExisting: (person: Person) => Promise<void>;
 }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [duplicate, setDuplicate] = useState<Person | undefined>();
+  const [matches, setMatches] = useState<
+    Array<{ person: Person; lastAttendanceDate?: string }>
+  >([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  async function create(allowDuplicate = false) {
+  async function create() {
     setSaving(true);
     setError("");
     try {
-      const match = await onCreate(firstName, lastName, allowDuplicate);
-      if (match) {
-        setDuplicate(match);
+      const exactMatches = await onCreate(firstName, lastName);
+      if (exactMatches?.length) {
+        setMatches(exactMatches);
         return;
       }
       onClose();
@@ -1768,12 +1784,11 @@ function QuickAddMemberModal({
     }
   }
 
-  async function handleUseExisting() {
-    if (!duplicate) return;
+  async function handleUseExisting(person: Person) {
     setSaving(true);
     setError("");
     try {
-      await onUseExisting(duplicate);
+      await onUseExisting(person);
       onClose();
     } catch (caught) {
       setError(
@@ -1810,7 +1825,7 @@ function QuickAddMemberModal({
           className="form-stack"
           onSubmit={(event) => {
             event.preventDefault();
-            void create(false);
+            void create();
           }}
         >
           <div className="form-grid">
@@ -1821,7 +1836,7 @@ function QuickAddMemberModal({
                 value={firstName}
                 onChange={(event) => {
                   setFirstName(event.target.value);
-                  setDuplicate(undefined);
+                  setMatches([]);
                 }}
                 required
               />
@@ -1832,39 +1847,83 @@ function QuickAddMemberModal({
                 value={lastName}
                 onChange={(event) => {
                   setLastName(event.target.value);
-                  setDuplicate(undefined);
+                  setMatches([]);
                 }}
                 required
               />
             </label>
           </div>
-          {duplicate && (
-            <div className="notice warning duplicate-member-warning">
-              <strong>{duplicate.displayName} already exists.</strong>
+          {matches.length === 1 && (
+            <div className="notice warning duplicate-member-warning" role="alert">
+              <strong>
+                {matches[0].person.isActive && !matches[0].person.deletedAt
+                  ? "This member already exists."
+                  : matches[0].person.deletedAt
+                    ? "A previously removed member with this name already exists."
+                    : "An inactive member with this name already exists."}
+              </strong>
               <span>
-                {duplicate.isActive
-                  ? "Use the existing member, or add another person with the same name."
-                  : "This member is inactive. An administrator can reactivate and mark them present."}
+                {matches[0].person.isActive && !matches[0].person.deletedAt
+                  ? "Use the existing member instead of creating a duplicate."
+                  : matches[0].person.deletedAt
+                    ? "Would you like to restore them?"
+                    : "Would you like to reactivate the existing member instead?"}
               </span>
               <div>
                 <button
                   className="button secondary"
                   type="button"
                   disabled={saving}
-                  onClick={() => void handleUseExisting()}
+                  onClick={() => void handleUseExisting(matches[0].person)}
                 >
-                  {duplicate.isActive
-                    ? "Use existing and mark present"
-                    : "Reactivate and mark present"}
+                  {matches[0].person.isActive && !matches[0].person.deletedAt
+                    ? "Use Existing Member"
+                    : matches[0].person.deletedAt
+                      ? "Restore Existing Member"
+                      : "Reactivate Existing Member"}
                 </button>
-                <button
-                  className="button subtle"
-                  type="button"
-                  disabled={saving}
-                  onClick={() => void create(true)}
-                >
-                  Add another person
-                </button>
+              </div>
+            </div>
+          )}
+          {matches.length > 1 && (
+            <div className="notice warning duplicate-member-warning" role="alert">
+              <strong>Multiple members share this name.</strong>
+              <span>
+                Choose the correct existing record. No member will be restored
+                automatically.
+              </span>
+              <div className="member-match-list">
+                {matches.map(({ person, lastAttendanceDate }) => (
+                  <article key={person.id}>
+                    <div>
+                      <strong>{person.displayName}</strong>
+                      <span>
+                        {person.deletedAt
+                          ? "Removed"
+                          : person.isActive
+                            ? "Active"
+                            : "Inactive"}{" "}
+                        · Added {formatMemberMatchDate(person.createdAt)} ·
+                        Last attendance{" "}
+                        {lastAttendanceDate
+                          ? formatMemberMatchDate(lastAttendanceDate)
+                          : "Not available"}
+                      </span>
+                    </div>
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void handleUseExisting(person)}
+                    >
+                      {person.isActive && !person.deletedAt
+                        ? "Use Existing Member"
+                        : person.deletedAt
+                          ? "Restore Existing Member"
+                          : "Reactivate Existing Member"}
+                    </button>
+                  </article>
+                ))}
               </div>
             </div>
           )}
@@ -1886,7 +1945,7 @@ function QuickAddMemberModal({
             >
               Cancel
             </button>
-            {!duplicate && (
+            {matches.length === 0 && (
               <button className="button primary" disabled={saving}>
                 {saving ? "Adding…" : "Add member and mark present"}
               </button>
