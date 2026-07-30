@@ -298,9 +298,10 @@ describe("lifecycle retry data safety", () => {
     const service = await saveService(administrator, {
       serviceDate: "2026-08-30",
       serviceType: "Sunday Morning",
-      status: "completed",
+      status: "draft",
     });
     await setMemberAttendance(administrator, service.id, member.id, true);
+    await saveService(administrator, { ...service, status: "completed" });
     await uploadPendingChanges(organizationId, new RecordingTarget());
     await markMemberInactive(administrator, member.id);
     const target = new RecordingTarget();

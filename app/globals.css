@@ -472,6 +472,33 @@ details[open] > summary > .folder-icon { transform: rotate(90deg); }
 .attendance-card-name { min-width: 0; align-self: end; overflow-wrap: anywhere; font-size: 1.03rem; font-weight: 790; line-height: 1.2; }
 .attendance-card-state { align-self: start; color: var(--muted); font-size: .75rem; font-weight: 720; }
 .attendance-person-card.selected .attendance-card-state { color: #176b36; }
+.attendance-person-card.locked {
+  cursor: default;
+  transform: none;
+}
+.attendance-person-card.locked:hover {
+  border-color: var(--border);
+  transform: none;
+}
+.attendance-person-card.locked.selected:hover {
+  border-color: #70b98a;
+}
+.completed-service-lock {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  padding: .7rem .85rem;
+  border: 1px solid #b9ddc5;
+  border-radius: 14px;
+  background: #f2faf4;
+  color: #285a39;
+  font-size: .9rem;
+  font-weight: 600;
+}
+.completed-service-lock .status-pill { flex: 0 0 auto; }
+.completed-service-locked .visitor-person-card {
+  background: #fafbfa;
+}
 .card-sync-pending { grid-column: 1 / -1; color: #87601b !important; font-size: .67rem !important; font-weight: 760; }
 .recently-added { animation: attendance-card-arrival 1.6s ease; }
 @keyframes attendance-card-arrival {

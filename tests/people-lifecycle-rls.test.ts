@@ -107,9 +107,10 @@ describe("people lifecycle behavior", () => {
     const service = await saveService(administrator, {
       serviceDate: "2026-07-27",
       serviceType: "Sunday Morning",
-      status: "completed",
+      status: "draft",
     });
     await setMemberAttendance(administrator, service.id, member.id, true);
+    await saveService(administrator, { ...service, status: "completed" });
     const target = new RepairablePolicyTarget();
     await uploadPendingChanges(organizationId, target);
 

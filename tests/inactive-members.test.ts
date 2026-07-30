@@ -67,9 +67,10 @@ describe("inactive member directory", () => {
     const service = await saveService(administrator, {
       serviceDate: "2026-07-20",
       serviceType: "Sunday Morning",
-      status: "completed",
+      status: "draft",
     });
     await setMemberAttendance(administrator, service.id, member.id, true);
+    await saveService(administrator, { ...service, status: "completed" });
     const inactive = await markMemberInactive(administrator, member.id);
 
     expect(inactive.inactiveAt).toBeTruthy();
@@ -87,9 +88,10 @@ describe("inactive member directory", () => {
     const service = await saveService(administrator, {
       serviceDate: "2026-07-23",
       serviceType: "Wednesday Bible Study",
-      status: "completed",
+      status: "draft",
     });
     await setMemberAttendance(administrator, service.id, member.id, true);
+    await saveService(administrator, { ...service, status: "completed" });
     await markMemberInactive(administrator, member.id);
     await restoreMember(administrator, member.id);
 

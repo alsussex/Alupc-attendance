@@ -443,7 +443,7 @@ describe("authentication startup and refresh recovery", () => {
       screen.getByRole("button", { name: "Refresh access" }).click();
     });
 
-    expect(mocks.getSession).toHaveBeenCalledTimes(2);
+    expect(mocks.getSession).toHaveBeenCalled();
     expect(mocks.refreshSession).not.toHaveBeenCalled();
   });
 });

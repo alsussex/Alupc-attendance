@@ -22,6 +22,27 @@ import { toCloudRecord } from "@/lib/sync/serialization";
 
 const attendanceWriteChains = new Map<string, Promise<AttendanceRecord>>();
 const unnamedVisitorWriteChains = new Map<string, Promise<ChurchService>>();
+export const COMPLETED_SERVICE_LOCK_MESSAGE =
+  "This service is completed and locked. Reopen it before making changes.";
+
+async function requireEditableService(
+  user: UserContext,
+  serviceId: string,
+) {
+  const database = await getDatabase();
+  const service = await database.get("services", serviceId);
+  if (
+    !service ||
+    service.deletedAt ||
+    service.organizationId !== user.organizationId
+  ) {
+    throw new Error("Service not found");
+  }
+  if (service.status === "completed") {
+    throw new Error(COMPLETED_SERVICE_LOCK_MESSAGE);
+  }
+  return service;
+}
 
 export async function listActiveMembers(organizationId: string) {
   return (await listMembers(organizationId)).filter(
@@ -222,6 +243,27 @@ export async function saveService(
 ) {
   const database = await getDatabase();
   const existing = input.id ? await database.get("services", input.id) : undefined;
+  if (existing?.status === "completed") {
+    if (input.status === "draft") {
+      if (!isAdmin(user)) {
+        throw new Error("Only an administrator can reopen a completed service.");
+      }
+      const organizationSettings = await database.get(
+        "organizationSettings",
+        user.organizationId,
+      );
+      if (
+        organizationSettings &&
+        !organizationSettings.settings.allowAdminReopenCompleted
+      ) {
+        throw new Error(
+          "Reopening completed services is not enabled for this church.",
+        );
+      }
+    } else {
+      throw new Error(COMPLETED_SERVICE_LOCK_MESSAGE);
+    }
+  }
   const timestamp = nowIso();
   const service: ChurchService = {
     id: input.id ?? createId(),
@@ -258,14 +300,7 @@ export async function setUnnamedVisitorCount(
   count: number,
 ) {
   const database = await getDatabase();
-  const service = await database.get("services", serviceId);
-  if (
-    !service ||
-    service.deletedAt ||
-    service.organizationId !== user.organizationId
-  ) {
-    throw new Error("Service not found");
-  }
+  const service = await requireEditableService(user, serviceId);
   const updated: ChurchService = {
     ...service,
     unnamedVisitorCount: Math.max(0, Math.min(10000, Math.trunc(count))),
@@ -291,15 +326,7 @@ export function adjustUnnamedVisitorCount(
   const previous = unnamedVisitorWriteChains.get(serviceId);
   const write = (previous?.catch(() => undefined) ?? Promise.resolve()).then(
     async () => {
-      const database = await getDatabase();
-      const service = await database.get("services", serviceId);
-      if (
-        !service ||
-        service.deletedAt ||
-        service.organizationId !== user.organizationId
-      ) {
-        throw new Error("Service not found");
-      }
+      const service = await requireEditableService(user, serviceId);
       return setUnnamedVisitorCount(
         user,
         serviceId,
@@ -387,6 +414,7 @@ export function setMemberAttendance(
   const write = (previous?.catch(() => undefined) ?? Promise.resolve()).then(
     async () => {
       const database = await getDatabase();
+      await requireEditableService(user, serviceId);
       const existing = await database.get("attendance", id);
       const timestamp = nowIso();
       const record: AttendanceRecord = {
@@ -435,6 +463,7 @@ export async function addServiceVisitor(
   },
 ) {
   const database = await getDatabase();
+  await requireEditableService(user, serviceId);
   const timestamp = nowIso();
   const firstName =
     input.firstName.trim() ||
@@ -501,6 +530,7 @@ export async function editServiceVisitor(
   ) {
     throw new Error("Visitor not found");
   }
+  await requireEditableService(user, visitor.serviceId);
   const firstName =
     input.firstName.trim() ||
     (!input.lastName.trim() ? input.fallbackName?.trim() || "Visitor" : "");
@@ -536,6 +566,7 @@ export async function removeServiceVisitor(user: UserContext, id: string) {
   ) {
     throw new Error("Visitor not found");
   }
+  await requireEditableService(user, visitor.serviceId);
   const timestamp = nowIso();
   const updated: ServiceVisitor = {
     ...visitor,

@@ -304,9 +304,10 @@ describe("multi-device upload and retry", () => {
     const service = await saveService(user, {
       serviceDate: "2026-07-12",
       serviceType: "Sunday Evening",
-      status: "completed",
+      status: "draft",
     });
     await setMemberAttendance(user, service.id, member.id, true);
+    await saveService(user, { ...service, status: "completed" });
     const cloud = new MemoryUploadTarget();
     await uploadPendingChanges(organizationId, cloud);
 
@@ -383,9 +384,10 @@ describe("multi-device upload and retry", () => {
     const service = await saveService(administrator, {
       serviceDate: "2026-07-26",
       serviceType: "Sunday Morning",
-      status: "completed",
+      status: "draft",
     });
     await setMemberAttendance(administrator, service.id, member.id, true);
+    await saveService(administrator, { ...service, status: "completed" });
     await markMemberInactive(administrator, member.id);
     const cloud = new MemoryUploadTarget();
     await uploadPendingChanges(organizationId, cloud);

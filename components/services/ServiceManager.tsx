@@ -254,7 +254,7 @@ export function ServiceManager() {
   }, [recentMemberId, recentVisitorId]);
 
   async function toggleMember(personId: string) {
-    if (!user || !active) return;
+    if (!user || !active || active.status === "completed") return;
     const present = !selectedRef.current.has(personId);
     const next = new Set(selectedRef.current);
     if (present) next.add(personId);
@@ -265,7 +265,14 @@ export function ServiceManager() {
   }
 
   async function markAllAbsent() {
-    if (!user || !active || selectedRef.current.size === 0) return;
+    if (
+      !user ||
+      !active ||
+      active.status === "completed" ||
+      selectedRef.current.size === 0
+    ) {
+      return;
+    }
     if (
       !confirm(
         "Mark all members absent? This will clear every Present selection.",
@@ -383,7 +390,7 @@ export function ServiceManager() {
   }
 
   async function changeUnnamedVisitorCount(change: number) {
-    if (!user || !active) return;
+    if (!user || !active || active.status === "completed") return;
     const updated = await adjustUnnamedVisitorCount(user, active.id, change);
     activeRef.current = updated;
     setActive(updated);
@@ -404,7 +411,7 @@ export function ServiceManager() {
     lastName: string,
     allowDuplicate = false,
   ) {
-    if (!user || !active) return undefined;
+    if (!user || !active || active.status === "completed") return undefined;
     const displayName = `${firstName} ${lastName}`;
     const match = (await listMembers(user.organizationId)).find(
       (person) =>
@@ -422,7 +429,7 @@ export function ServiceManager() {
   }
 
   async function useExistingQuickMember(person: Person) {
-    if (!user || !active) return;
+    if (!user || !active || active.status === "completed") return;
     if (!person.isActive) {
       if (!isAdmin(user)) {
         throw new Error(
@@ -513,8 +520,15 @@ export function ServiceManager() {
       )
     : [];
   if (active) {
+    const serviceLocked = active.status === "completed";
     return (
-      <div className="attendance-workspace">
+      <div
+        className={
+          serviceLocked
+            ? "attendance-workspace completed-service-locked"
+            : "attendance-workspace"
+        }
+      >
         <div className="service-topline attendance-service-header">
           <button
             className="button subtle"
@@ -562,7 +576,19 @@ export function ServiceManager() {
             )}
             {isAdmin(user) && (
               <>
-                <button className="button subtle" type="button" onClick={() => setEditOpen(true)}>Edit</button>
+                <button
+                  className="button subtle"
+                  type="button"
+                  disabled={serviceLocked}
+                  title={
+                    serviceLocked
+                      ? "Reopen this service before editing its details."
+                      : undefined
+                  }
+                  onClick={() => setEditOpen(true)}
+                >
+                  Edit
+                </button>
                 <button
                   className="button danger-text"
                   type="button"
@@ -606,10 +632,23 @@ export function ServiceManager() {
             <h1>{serviceTitle(active)}</h1>
             <p>
               {active.serviceTime ? `${displayServiceTime(active.serviceTime)} · ` : ""}
-              Select every person who attended. Changes save to this device immediately.
+              {serviceLocked
+                ? "This completed service is read-only."
+                : "Select every person who attended. Changes save to this device immediately."}
             </p>
           </div>
         </div>
+        {serviceLocked && (
+          <div className="completed-service-lock" role="status">
+            <span className="status-pill completed">Completed</span>
+            <span>
+              This service is locked.
+              {isAdmin(user) && settings.allowAdminReopenCompleted
+                ? " Reopen Service to make changes."
+                : " An administrator can reopen it if changes are needed."}
+            </span>
+          </div>
+        )}
         {settings.showAttendanceTotals && (
           <section className="attendance-metrics" aria-live="polite">
             <article className="attendance-metric members">
@@ -729,6 +768,7 @@ export function ServiceManager() {
                 <button
                   className="button secondary"
                   type="button"
+                  disabled={serviceLocked}
                   onClick={() => setMemberOpen(true)}
                 >
                   + Add Member
@@ -766,7 +806,7 @@ export function ServiceManager() {
                 <button
                   className="button subtle mark-absent-button"
                   type="button"
-                  disabled={memberCounts.present === 0}
+                  disabled={serviceLocked || memberCounts.present === 0}
                   onClick={() => void markAllAbsent()}
                 >
                   Mark all absent
@@ -786,15 +826,18 @@ export function ServiceManager() {
                       className={[
                         "attendance-person-card",
                         checked ? "selected" : "",
+                        serviceLocked ? "locked" : "",
                         recentMemberId === member.id ? "recently-added" : "",
                       ]
                         .filter(Boolean)
                         .join(" ")}
                       key={member.id}
+                      aria-disabled={serviceLocked}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
+                        disabled={serviceLocked}
                         aria-label={`${member.displayName}, ${
                           checked ? "present" : "absent"
                         }`}
@@ -810,7 +853,11 @@ export function ServiceManager() {
                         />
                       </span>
                       <span className="attendance-card-state">
-                        {checked ? "Present" : "Mark Present"}
+                        {checked
+                          ? "Present"
+                          : serviceLocked
+                            ? "Absent"
+                            : "Mark Present"}
                       </span>
                       {pending && (
                         <span className="card-sync-pending">
@@ -851,6 +898,7 @@ export function ServiceManager() {
                 <button
                   className="button primary"
                   type="button"
+                  disabled={serviceLocked}
                   onClick={() => setVisitorOpen(true)}
                 >
                   + Add Visitor
@@ -869,7 +917,10 @@ export function ServiceManager() {
                   <button
                     type="button"
                     aria-label="Remove one unnamed visitor"
-                    disabled={(active.unnamedVisitorCount ?? 0) === 0}
+                    disabled={
+                      serviceLocked ||
+                      (active.unnamedVisitorCount ?? 0) === 0
+                    }
                     onClick={() => void changeUnnamedVisitorCount(-1)}
                   >
                     −
@@ -880,6 +931,7 @@ export function ServiceManager() {
                   <button
                     type="button"
                     aria-label="Add one unnamed visitor"
+                    disabled={serviceLocked}
                     onClick={() => void changeUnnamedVisitorCount(1)}
                   >
                     +
@@ -933,6 +985,7 @@ export function ServiceManager() {
                         className="button subtle"
                         type="button"
                         aria-label={`Edit ${visitor.displayName}`}
+                        disabled={serviceLocked}
                         onClick={(event) => {
                           event.stopPropagation();
                           setEditingVisitor(visitor);
@@ -944,6 +997,7 @@ export function ServiceManager() {
                         className="button danger-text"
                         type="button"
                         aria-label={`Remove ${visitor.displayName}`}
+                        disabled={serviceLocked}
                         onClick={(event) => {
                           event.stopPropagation();
                           if (!user) return;
@@ -1020,7 +1074,7 @@ export function ServiceManager() {
             )}
           </div>
         </div>
-        {memberOpen && (
+        {memberOpen && !serviceLocked && (
           <QuickAddMemberModal
             onClose={() => setMemberOpen(false)}
             onCreate={createQuickMember}
@@ -1046,7 +1100,7 @@ export function ServiceManager() {
             }}
           />
         )}
-        {visitorOpen && (
+        {visitorOpen && !serviceLocked && (
           <VisitorModal
             settings={settings}
             onClose={() => setVisitorOpen(false)}
@@ -1066,7 +1120,7 @@ export function ServiceManager() {
             }}
           />
         )}
-        {editingVisitor && (
+        {editingVisitor && !serviceLocked && (
           <VisitorModal
             settings={settings}
             existing={editingVisitor}
@@ -1079,7 +1133,7 @@ export function ServiceManager() {
             }}
           />
         )}
-        {editOpen && (
+        {editOpen && !serviceLocked && (
           <ServiceModal
             existing={active}
             onClose={() => setEditOpen(false)}

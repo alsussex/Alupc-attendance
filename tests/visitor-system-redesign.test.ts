@@ -182,7 +182,7 @@ describe("visitor durability, synchronization, and history", () => {
     const service = await saveService(user, {
       serviceDate: "2026-12-06",
       serviceType: "Sunday Morning",
-      status: "completed",
+      status: "draft",
       unnamedVisitorCount: 2,
     });
     await setMemberAttendance(user, service.id, member.id, true);
@@ -190,6 +190,11 @@ describe("visitor durability, synchronization, and history", () => {
       firstName: "Casey",
       lastName: "North",
       saveAsMember: false,
+    });
+    await saveService(user, {
+      ...service,
+      unnamedVisitorCount: 2,
+      status: "completed",
     });
     await closeLocalDatabaseConnection();
 
@@ -210,13 +215,18 @@ describe("visitor reporting and exports", () => {
       serviceDate: "2026-12-12",
       serviceType: "Special Service",
       customName: "Community Service",
-      status: "completed",
+      status: "draft",
       unnamedVisitorCount: 2,
     });
     await addServiceVisitor(user, service.id, {
       firstName: "Jamie",
       lastName: "River",
       saveAsMember: false,
+    });
+    await saveService(user, {
+      ...service,
+      unnamedVisitorCount: 2,
+      status: "completed",
     });
     const database = await getDatabase();
     const rows = buildAttendanceReportRows(
@@ -255,13 +265,18 @@ describe("visitor reporting and exports", () => {
     const service = await saveService(user, {
       serviceDate: "2026-12-13",
       serviceType: "Sunday Evening",
-      status: "completed",
+      status: "draft",
       unnamedVisitorCount: 2,
     });
     await addServiceVisitor(user, service.id, {
       firstName: "Quinn",
       lastName: "Parker",
       saveAsMember: false,
+    });
+    await saveService(user, {
+      ...service,
+      unnamedVisitorCount: 2,
+      status: "completed",
     });
 
     const csv = await buildOrganizationExport(user, "services");
