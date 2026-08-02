@@ -151,6 +151,7 @@ export function ServiceManager() {
   const [serviceYear, setServiceYear] = useState("");
   const [serviceMonth, setServiceMonth] = useState("");
   const [serviceTypeFilter, setServiceTypeFilter] = useState("");
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [expandedYears, setExpandedYears] = useState<Set<string>>(new Set());
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const [pendingRecordKeys, setPendingRecordKeys] = useState<Set<string>>(
@@ -1544,14 +1545,34 @@ export function ServiceManager() {
             </button>
           ))}
         </div>
-        <div className="service-advanced-filters" aria-label="Advanced service filters">
-          <label>
-            <span>Year</span>
-            <select value={serviceYear} onChange={(event) => setServiceYear(event.target.value)}>
+        <button
+          className="button subtle service-filter-disclosure"
+          type="button"
+          aria-expanded={advancedFiltersOpen}
+          aria-controls="service-advanced-filters"
+          onClick={() => setAdvancedFiltersOpen((current) => !current)}
+        >
+          {advancedFiltersOpen ? "Hide filters" : "More filters"}
+          {(serviceYear || serviceMonth || serviceTypeFilter) && (
+            <span
+              className="filter-active-dot"
+              aria-label="Advanced filters active"
+            />
+          )}
+        </button>
+        {advancedFiltersOpen && (
+          <div
+            id="service-advanced-filters"
+            className="service-advanced-filters"
+            aria-label="Advanced service filters"
+          >
+            <label>
+              <span>Year</span>
+              <select value={serviceYear} onChange={(event) => setServiceYear(event.target.value)}>
               <option value="">All years</option>
               {serviceFilterOptions.years.map((year) => <option key={year} value={year}>{year}</option>)}
             </select>
-          </label>
+            </label>
           <label>
             <span>Month</span>
             <select value={serviceMonth} onChange={(event) => setServiceMonth(event.target.value)}>
@@ -1587,7 +1608,8 @@ export function ServiceManager() {
               Clear filters
             </button>
           )}
-        </div>
+          </div>
+        )}
       </section>
       <section className="service-directory" aria-label="Organization services">
         {serviceGroups.map((yearGroup) => (

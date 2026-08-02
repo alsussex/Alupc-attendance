@@ -2,10 +2,24 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { shouldRevalidateAccess } from "@/components/auth/AuthProvider";
-import type { PullTable, SyncQueueItem, UserContext } from "@/lib/domain";
+import {
+  BACKGROUND_PULL_TABLES,
+  OPERATIONAL_PULL_TABLES,
+  type PullTable,
+  type SyncQueueItem,
+  type UserContext,
+} from "@/lib/domain";
+import {
+  getNetworkTelemetrySummary,
+  resetNetworkTelemetry,
+  telemetryFetch,
+} from "@/lib/network/telemetry";
 import { saveMember } from "@/lib/repositories/attendance-repository";
 import { clearLocalDatabase } from "@/lib/storage/database";
-import type { PullSource } from "@/lib/sync/pull-service";
+import {
+  pullOrganizationData,
+  type PullSource,
+} from "@/lib/sync/pull-service";
 import { synchronizeOrganization } from "@/lib/sync/sync-service";
 import type { UploadTarget } from "@/lib/sync/upload-service";
 
@@ -101,11 +115,66 @@ describe("low-egress bidirectional synchronization", () => {
     expect(source).toContain("id.gt.${recordId}");
   });
 
+  it("keeps audit history out of routine background pulls", async () => {
+    const source = new CountingPullSource();
+    await pullOrganizationData(user, source);
+
+    expect(source.calls).toEqual(BACKGROUND_PULL_TABLES);
+    expect(source.calls).not.toContain("audit_log");
+    expect(OPERATIONAL_PULL_TABLES).toEqual([
+      "people",
+      "services",
+      "service_attendance",
+      "service_visitors",
+    ]);
+  });
+
+  it("loads audit history only when explicitly targeted", async () => {
+    const source = new CountingPullSource();
+    await pullOrganizationData(user, source, { tables: ["audit_log"] });
+    expect(source.calls).toEqual(["audit_log"]);
+  });
+
+  it("records request counts and payload sizes without retaining query values", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response('{"ok":true}', {
+        status: 200,
+        headers: { "content-length": "11" },
+      });
+    resetNetworkTelemetry();
+    try {
+      await telemetryFetch(
+        "https://example.supabase.co/rest/v1/services?organization_id=secret",
+        { method: "POST", body: "{}" },
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(getNetworkTelemetrySummary()).toEqual({
+      requests: 1,
+      requestBytes: 2,
+      responseBytes: 11,
+      byEndpoint: {
+        "/rest/v1/services": { requests: 1, responseBytes: 11 },
+      },
+    });
+  });
+
   it("throttles routine focus access reads but never blocks reconnect recovery", () => {
     const now = 1_000_000;
 
     expect(shouldRevalidateAccess(now, false, now + 60_000)).toBe(false);
     expect(shouldRevalidateAccess(now, false, now + 5 * 60_000)).toBe(true);
     expect(shouldRevalidateAccess(now, true, now + 1)).toBe(true);
+  });
+
+  it("deduplicates repeated initial-session events for an already loaded token", () => {
+    const source = readFileSync(resolve("components/auth/AuthProvider.tsx"), "utf8");
+    expect(source).toContain("lastLoadedAccessToken");
+    expect(source).toContain(
+      'nextSession?.access_token === lastLoadedAccessToken.current',
+    );
   });
 });

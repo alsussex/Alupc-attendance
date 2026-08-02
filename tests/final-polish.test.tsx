@@ -6,6 +6,8 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { useState } from "react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ConfirmationProvider,
@@ -110,5 +112,23 @@ describe("final application polish", () => {
     expect(formatDateTime("not-a-date", "Unavailable")).toBe("Unavailable");
     expect(formatTime("10:30")).toMatch(/10:30/);
     expect(formatTime("99:00", "No time")).toBe("No time");
+  });
+
+  it("uses progressive disclosure for advanced service filters", () => {
+    const source = readFileSync(
+      resolve("components/services/ServiceManager.tsx"),
+      "utf8",
+    );
+    expect(source).toContain('aria-controls="service-advanced-filters"');
+    expect(source).toContain("More filters");
+    expect(source).toContain("advancedFiltersOpen &&");
+  });
+
+  it("uses restrained shared surfaces instead of heavy nested cards", () => {
+    const styles = readFileSync(resolve("app/globals.css"), "utf8");
+    expect(styles).toContain("Production polish: quieter surfaces");
+    expect(styles).toContain(".settings-card { border: 0;");
+    expect(styles).toContain(".service-year-folder {");
+    expect(styles).toContain("box-shadow: none;");
   });
 });

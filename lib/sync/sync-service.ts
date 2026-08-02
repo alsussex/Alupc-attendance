@@ -6,6 +6,7 @@ import type {
   SyncStatusRecord,
   UserContext,
 } from "@/lib/domain";
+import { PULL_TABLES } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
 import { hasSupabaseConfig } from "@/lib/supabase/client";
 import {
@@ -272,14 +273,17 @@ export async function synchronizeNow(
     "trigger" | "forceRetry"
   > = {},
 ) {
+  const pullTables = options.pullTables ?? PULL_TABLES;
   let result = await synchronizeWithSessionRecovery(user, {
     ...options,
+    pullTables,
     trigger: "manual",
     forceRetry: true,
   });
   if (await getQueueCount(user.organizationId)) {
     result = await synchronizeWithSessionRecovery(user, {
       ...options,
+      pullTables,
       trigger: "manual",
       forceRetry: true,
       // The first pass already performed the bidirectional delta pull. This
@@ -308,7 +312,7 @@ export function registerAutomaticSync(
   document.addEventListener("visibilitychange", visible);
   const interval = window.setInterval(
     () => void synchronize("scheduled"),
-    5 * 60_000,
+    10 * 60_000,
   );
   return () => {
     if (options.listenOnline !== false) {

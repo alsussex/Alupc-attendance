@@ -26,8 +26,12 @@ const REMOTE_TABLES = [
   "service_visitors",
   "organization_settings",
   "member_private_details",
-  "audit_log",
 ] as const;
+
+export const DEFAULT_REALTIME_TABLES: readonly PullTable[] = [
+  "organizations",
+  ...REMOTE_TABLES,
+];
 
 export function activeRemoteSubscriptionCount() {
   return subscriptions.size;
@@ -37,8 +41,10 @@ export function subscribeToRemoteOrganizationChanges(
   user: UserContext,
   listener: RemoteChangeListener,
   client: SupabaseClient = getSupabaseClient(),
+  tables: readonly PullTable[] = DEFAULT_REALTIME_TABLES,
 ) {
-  const key = user.organizationId;
+  const normalizedTables = [...new Set(tables)].sort();
+  const key = `${user.organizationId}:${normalizedTables.join(",")}`;
   let shared = subscriptions.get(key);
 
   if (!shared) {
@@ -48,17 +54,21 @@ export function subscribeToRemoteOrganizationChanges(
       for (const current of listeners) current(table);
     };
 
-    channel = channel.on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "organizations",
-        filter: `id=eq.${user.organizationId}`,
-      },
-      () => notify("organizations"),
-    );
-    for (const table of REMOTE_TABLES) {
+    if (normalizedTables.includes("organizations")) {
+      channel = channel.on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "organizations",
+          filter: `id=eq.${user.organizationId}`,
+        },
+        () => notify("organizations"),
+      );
+    }
+    for (const table of normalizedTables.filter(
+      (candidate) => candidate !== "organizations",
+    )) {
       channel = channel.on(
         "postgres_changes",
         {

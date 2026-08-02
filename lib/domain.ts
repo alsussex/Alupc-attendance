@@ -236,6 +236,22 @@ export const PULL_TABLES = [
 
 export type PullTable = (typeof PULL_TABLES)[number];
 
+// Audit history is append-only and can become the largest organization table.
+// It is loaded when an Admin opens history (and during an explicit full sync),
+// rather than being downloaded on every routine application start.
+export const BACKGROUND_PULL_TABLES = PULL_TABLES.filter(
+  (table): table is Exclude<PullTable, "audit_log"> => table !== "audit_log",
+);
+
+// Realtime covers ordinary cross-device changes. Passive focus and scheduled
+// reconciliation therefore only need the high-change operational tables.
+export const OPERATIONAL_PULL_TABLES = [
+  "people",
+  "services",
+  "service_attendance",
+  "service_visitors",
+] as const satisfies readonly PullTable[];
+
 export const DEFAULT_APPLICATION_SETTINGS: ApplicationSettings = {
   shortName: "ALUPC",
   timezone: "America/Moncton",

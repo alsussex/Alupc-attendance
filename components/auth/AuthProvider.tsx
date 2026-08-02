@@ -206,6 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionUserId = useRef<string | null>(null);
   const authSubscription = useRef<{ unsubscribe: () => void } | null>(null);
   const lastAuthEvent = useRef<{ key: string; at: number } | null>(null);
+  const lastLoadedAccessToken = useRef<string | null>(null);
   const lastFocusAccessCheck = useRef(0);
 
   const loadProfile = useCallback(async (
@@ -217,6 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       sessionUserId.current = null;
       profileRequest.current += 1;
       profilePromise.current = null;
+      lastLoadedAccessToken.current = null;
       setUser(null);
       setError(null);
       setSessionNeedsAttention(false);
@@ -373,6 +375,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           organizationId: nextUser.organizationId,
         });
       }
+      lastLoadedAccessToken.current = nextSession.access_token;
       return nextUser;
     })()
       .catch((caught) => {
@@ -538,6 +541,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         event === "TOKEN_REFRESHED" ||
         event === "PASSWORD_RECOVERY"
       ) {
+        if (
+          (event === "INITIAL_SESSION" || event === "SIGNED_IN") &&
+          nextSession?.access_token === lastLoadedAccessToken.current
+        ) {
+          return;
+        }
         const eventKey = `${event}:${nextSession?.user.id ?? "none"}:${nextSession?.access_token ?? "none"}`;
         const now = Date.now();
         if (

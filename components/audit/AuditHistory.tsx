@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useSynchronization } from "@/components/sync/SyncProvider";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { LoadingSkeleton } from "@/components/feedback/LoadingSkeleton";
 import {
@@ -19,6 +20,7 @@ import { downloadText } from "@/lib/settings/exports";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
 import { getDatabase } from "@/lib/storage/database";
 import { formatDateTime } from "@/lib/format/date-time";
+import { subscribeToRemoteOrganizationChanges } from "@/lib/sync/remote-change-listener";
 
 const entityLabels: Record<AuditEntityType, string> = {
   service: "Service",
@@ -94,6 +96,7 @@ export function AuditHistory({
   compact?: boolean;
 }) {
   const { user } = useAuth();
+  const { refreshTables } = useSynchronization();
   const [entries, setEntries] = useState<AuditLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -141,6 +144,17 @@ export function AuditHistory({
       setLoading(false);
     }
   }, [filters, user]);
+
+  useEffect(() => {
+    if (!user || !isAdmin(user) || !navigator.onLine) return;
+    void refreshTables(["audit_log"]);
+    return subscribeToRemoteOrganizationChanges(
+      user,
+      () => void refreshTables(["audit_log"]),
+      undefined,
+      ["audit_log"],
+    );
+  }, [refreshTables, user]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);

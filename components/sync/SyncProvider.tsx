@@ -11,7 +11,12 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import type { PullTable, SyncPhase } from "@/lib/domain";
+import {
+  OPERATIONAL_PULL_TABLES,
+  PULL_TABLES,
+  type PullTable,
+  type SyncPhase,
+} from "@/lib/domain";
 import { subscribeToQueuedMutations } from "@/lib/storage/data-events";
 import { getQueueCount } from "@/lib/sync/queue";
 import type { RecoveryState } from "@/lib/sync/presentation";
@@ -44,6 +49,7 @@ interface SyncContextValue {
     | "Manual sync";
   isSyncing: boolean;
   syncNow: () => Promise<SyncAttemptOutcome>;
+  refreshTables: (tables: readonly PullTable[]) => Promise<SyncAttemptOutcome>;
 }
 
 const SyncContext = createContext<SyncContextValue | null>(null);
@@ -118,6 +124,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           trigger === "automatic" ||
           (trigger === "focus" &&
             Date.now() - lastPullAttemptAt.current < FOCUS_PULL_COOLDOWN_MS);
+        const effectivePullTables =
+          pullTables ??
+          (trigger === "manual"
+            ? PULL_TABLES
+            : trigger === "focus" || trigger === "scheduled"
+              ? OPERATIONAL_PULL_TABLES
+              : undefined);
         const cycles = drainQueue && trigger !== "manual" ? 2 : 1;
         for (let cycle = 0; cycle < cycles; cycle += 1) {
           const result =
@@ -125,14 +138,14 @@ export function SyncProvider({ children }: { children: ReactNode }) {
               ? await synchronizeNow(activeUser, {
                   onPhase: setPhase,
                   recoverAccess: recoverSession,
-                  pullTables,
+                  pullTables: effectivePullTables,
                   skipPull,
                 })
               : await synchronizeWithSessionRecovery(activeUser, {
                   onPhase: setPhase,
                   trigger,
                   recoverAccess: recoverSession,
-                  pullTables,
+                  pullTables: effectivePullTables,
                   skipPull,
                 });
           if (!skipPull) lastPullAttemptAt.current = Date.now();
@@ -220,6 +233,12 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       manualAttempt.current = attempt;
       return attempt;
     },
+    [attemptSynchronization],
+  );
+
+  const refreshTables = useCallback(
+    (tables: readonly PullTable[]) =>
+      attemptSynchronization(false, "remote", tables),
     [attemptSynchronization],
   );
 
@@ -424,6 +443,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       recoveryPrefix,
       isSyncing,
       syncNow,
+      refreshTables,
     }),
     [
       phase,
@@ -436,6 +456,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       recoveryPrefix,
       isSyncing,
       syncNow,
+      refreshTables,
     ],
   );
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;

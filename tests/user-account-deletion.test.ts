@@ -374,7 +374,7 @@ describe("deleted-user audit cache reconciliation", () => {
       },
     };
 
-    await pullOrganizationData(adminUser, source);
+    await pullOrganizationData(adminUser, source, { tables: ["audit_log"] });
 
     expect((await database.getAll("auditLog")).map((entry) => entry.id)).toEqual([
       "90000000-0000-4000-8000-000000000623",

@@ -1,6 +1,10 @@
 "use client";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  installNetworkTelemetryDebug,
+  telemetryFetch,
+} from "@/lib/network/telemetry";
 
 let client: SupabaseClient | null = null;
 
@@ -22,7 +26,9 @@ export function getSupabaseClient() {
     );
   }
 
+  installNetworkTelemetryDebug();
   client = createClient(url, anonKey, {
+    global: { fetch: telemetryFetch },
     auth: {
       persistSession: true,
       autoRefreshToken: true,

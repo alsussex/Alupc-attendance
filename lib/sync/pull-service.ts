@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  PULL_TABLES,
+  BACKGROUND_PULL_TABLES,
   attendanceId,
   type AuditLogEntry,
   type PullTable,
@@ -239,7 +239,7 @@ export async function pullOrganizationData(
     skippedOlder: 0,
   };
 
-  const requestedTables = options.tables ?? PULL_TABLES;
+  const requestedTables = options.tables ?? BACKGROUND_PULL_TABLES;
   for (const table of requestedTables) {
     const scopedCursorId = cursorId(userId, organizationId, table);
     const existingCursor = await database.get(

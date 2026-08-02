@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  PULL_TABLES,
+  BACKGROUND_PULL_TABLES,
   type Person,
   type PullTable,
   type UserContext,
@@ -195,7 +195,9 @@ describe("pull synchronization", () => {
       "Avery Stone",
     );
     expect((await listServices(organizationId))[0].status).toBe("completed");
-    expect(source.calls.map((call) => call.table)).toEqual(PULL_TABLES);
+    expect(source.calls.map((call) => call.table)).toEqual(
+      BACKGROUND_PULL_TABLES,
+    );
   });
 
   it("uses the stored updated_at cursor for incremental pulls", async () => {

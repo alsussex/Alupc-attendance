@@ -390,7 +390,7 @@ describe("draft discovery triggers and duplicate protection", () => {
     expect(provider).toContain('"remote"');
     expect(provider).toContain("synchronizeNow");
     expect(service).toContain('window.addEventListener("focus"');
-    expect(service).toContain("5 * 60_000");
+    expect(service).toContain("10 * 60_000");
     expect(realtime).toContain('"services"');
     expect(realtime).toContain('"service_attendance"');
     expect(realtime).toContain('"service_visitors"');

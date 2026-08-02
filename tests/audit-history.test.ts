@@ -231,7 +231,7 @@ describe("offline, security, and export behavior", () => {
         };
       },
     };
-    await pullOrganizationData(admin, source);
+    await pullOrganizationData(admin, source, { tables: ["audit_log"] });
     expect((await listAuditEntries(admin))[0]).toMatchObject({
       id: auditId,
       action: "completed",

@@ -337,7 +337,8 @@ describe("remote subscription lifecycle", () => {
     const stopA = subscribeToRemoteOrganizationChanges(user, vi.fn(), fake.client);
     const stopB = subscribeToRemoteOrganizationChanges(user, vi.fn(), fake.client);
     expect(activeRemoteSubscriptionCount()).toBe(1);
-    expect(fake.filters).toHaveLength(9);
+    expect(fake.filters).toHaveLength(8);
+    expect(fake.filters.some((filter) => filter.table === "audit_log")).toBe(false);
     expect(
       fake.filters.every((filter) =>
         filter.filter?.includes(organizationId),

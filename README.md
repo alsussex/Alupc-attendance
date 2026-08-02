@@ -156,7 +156,7 @@ Screen -> repository -> IndexedDB transaction -> mutation queue
 - `lib/storage/database.ts` defines the durable local stores.
 - `lib/sync/queue.ts` coalesces repeated upserts for the same record.
 - Upload and pull remain separate, testable operations and run in dependency order.
-- Sync runs after login/startup, shortly after every local change, on reconnection/focus, after a Realtime notification, every five minutes as a missed-event fallback while open and online, and after capped exponential retry delays. Rapid mutations are coalesced per stable record ID before upload. A routine local write performs an upload-only pass; it does not query every cloud table.
+- Sync runs after login/startup, shortly after every local change, on reconnection/focus, after a Realtime notification, every ten minutes as a missed-event fallback while open and online, and after capped exponential retry delays. Rapid mutations are coalesced per stable record ID before upload. A routine local write performs an upload-only pass; it does not query every cloud table.
 - Queue insertion emits a dedicated mutation event, so automatic synchronization does not depend on a general UI refresh event. Startup, focus, reconnection, and manual sync also recover failed entries and processing entries stale for more than two minutes.
 - Client UUIDs remain stable locally and in Supabase.
 - Cache Storage holds only the application shell; IndexedDB holds church records and pending mutations. A service-worker update does not delete IndexedDB.
@@ -248,13 +248,13 @@ timestamp-only cursors perform one safe inclusive upgrade request and then
 become composite cursors. A cursor advances only after a complete table pull.
 
 Realtime notifications identify the table that changed, and normal remote
-reconciliation queries only that table. Startup, reconnection, manual sync,
-and the five-minute missed-event fallback check every table, but still request
-only rows after each table's cursor. Cloud pulls select only fields used by the
-local model instead of `select *`. A complete snapshot is reserved for a fresh
-device or the explicit **Repair local sync state** action. Focus/visibility
-checks are retained for mobile and tablet recovery but are capped to one
-all-table delta check per five minutes.
+reconciliation queries only that table. Startup and reconnection check the
+eight core application tables; append-only audit history loads on demand when
+an Admin views it. Focus and the ten-minute fallback check only people,
+services, attendance, and visitors. **Sync now** still checks every table.
+Every request uses the per-table composite cursor and selects only fields used
+by the local model instead of `select *`. A complete snapshot is reserved for
+a fresh device or the explicit **Repair local sync state** action.
 
 ### Remote changes and session recovery
 
@@ -334,7 +334,7 @@ rows, named visitors, and unnamed visitor count.
 
 Draft discovery runs at startup and sign-in, after token refresh, on browser
 focus, on network reconnection, after an organization-filtered Realtime event,
-through **Sync now**, and through the five-minute incremental reconciliation
+through **Sync now**, and through the ten-minute incremental reconciliation
 fallback. Local mutations upload automatically without starting an unrelated
 all-table download. A pull announces a local data change, so
 an open Services or attendance screen refreshes from IndexedDB without a page
@@ -421,8 +421,9 @@ Admins may read the organization history.
 
 Audit entries are written to IndexedDB beside the domain change and placed in
 the existing idempotent mutation queue. They survive browser closure, upload
-after reconnection, download through Realtime and the incremental polling
-fallback, and use stable UUIDs to prevent duplicate entries. Audit metadata is
+after reconnection, and download through a targeted delta pull plus an
+audit-only Realtime subscription while an Admin views history. Stable UUIDs
+prevent duplicate entries. Audit metadata is
 not counted as an extra user-facing pending change, although it remains part of
 the synchronization run.
 
@@ -597,7 +598,7 @@ Use fictional data such as **Alex Meadow** and **Robin Field**.
    organization.
 2. In Client B, rename one fictional member, make another inactive, edit
    attendance, then add and remove a fictional service visitor.
-3. Confirm Client A updates through Realtime or within 30 seconds without
+3. Confirm Client A updates through Realtime or within the ten-minute fallback without
    clearing cookies, IndexedDB, or reloading the whole application.
 4. Edit a fictional member directly in Supabase Table Editor. Confirm both
    clients receive the server-managed `updated_at` and `version` change.
