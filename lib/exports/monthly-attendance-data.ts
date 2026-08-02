@@ -305,6 +305,7 @@ async function hasAttendanceCoverage(user: UserContext) {
 async function mergeMonthlySnapshot(
   user: UserContext,
   snapshot: MonthlyCloudSnapshot,
+  range: { startDate: string; endDateExclusive: string },
 ) {
   const database = await getDatabase();
   const queue = await database.getAllFromIndex(
@@ -315,6 +316,24 @@ async function mergeMonthlySnapshot(
   const pending = new Set(
     queue.map((item) => `${item.table}:${item.recordId}`),
   );
+  const remoteServiceIds = new Set(
+    snapshot.services.map((row) => String(row.id)),
+  );
+  const cachedServices = await database.getAllFromIndex(
+    "services",
+    "organizationId",
+    user.organizationId,
+  );
+  for (const service of cachedServices) {
+    if (
+      service.serviceDate >= range.startDate &&
+      service.serviceDate < range.endDateExclusive &&
+      !remoteServiceIds.has(service.id) &&
+      !pending.has(`services:${service.id}`)
+    ) {
+      await database.delete("services", service.id);
+    }
+  }
 
   for (const row of snapshot.services) {
     const service = fromCloudRecord("services", row) as ChurchService;
@@ -397,11 +416,10 @@ async function ensureAttendanceCoverage(
   } = {},
 ) {
   const missing = await missingCoverageRanges(user, bounds);
-  if (missing.length === 0) return;
-
   const online =
     options.online ??
     (typeof navigator !== "undefined" && navigator.onLine === true);
+  if (missing.length === 0 && !online) return;
   if (!online) {
     throw new Error(
       `${label} has not been fully saved on this device. Connect to the internet once, then try the export again.`,
@@ -411,15 +429,24 @@ async function ensureAttendanceCoverage(
   const database = await getDatabase();
   const source = options.source ?? createSupabaseMonthlyAttendanceSource();
   const includePeople = !(await hasAttendanceCoverage(user));
+  const ranges =
+    missing.length > 0
+      ? missing
+      : [
+          {
+            startDate: bounds.startDate,
+            endDateExclusive: bounds.endDateExclusive,
+          },
+        ];
   try {
-    for (const [index, range] of missing.entries()) {
+    for (const [index, range] of ranges.entries()) {
       const snapshot = await source.fetchRange(
         user.organizationId,
         range.startDate,
         range.endDateExclusive,
         { includePeople: includePeople && index === 0 },
       );
-      await mergeMonthlySnapshot(user, snapshot);
+      await mergeMonthlySnapshot(user, snapshot, range);
       const rangeEnd = addUtcDays(range.endDateExclusive, -1);
       const rangeKey = `range:${range.startDate}:${rangeEnd}`;
       await database.put("monthlyExportCoverage", {

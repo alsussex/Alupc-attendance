@@ -20,6 +20,7 @@ import {
   type MonthlyAttendanceSource,
 } from "@/lib/exports/monthly-attendance-data";
 import {
+  attendanceServiceColumns,
   buildMonthlyAttendanceWorkbook,
   customAttendanceRangeFilename,
   excelColumnName,
@@ -29,6 +30,7 @@ import {
   needsLargeAttendanceRangeWarning,
 } from "@/lib/exports/monthly-attendance-workbook";
 import { clearLocalDatabase, getDatabase } from "@/lib/storage/database";
+import { toCloudRecord } from "@/lib/sync/serialization";
 
 const organizationId = "20000000-0000-4000-8000-000000000120";
 const user: UserContext = {
@@ -239,6 +241,84 @@ describe("monthly attendance workbook", () => {
     expect(cellText(output.sheet, "D2")).toBe("Aug 9");
   });
 
+  it("creates no August 1 column and keeps August 2 AM and PM as distinct service columns", () => {
+    const morning = service("august-two-am", "2026-08-02", "10:30", {
+      serviceType: "Sunday Morning",
+      unnamedVisitorCount: 1,
+      sundaySchoolKidsCount: 2,
+    });
+    const evening = service("august-two-pm", "2026-08-02", "18:30", {
+      serviceType: "Sunday Evening",
+      unnamedVisitorCount: 3,
+      sundaySchoolKidsCount: 0,
+    });
+    const data = dataset({
+      services: [evening, morning],
+      members: [
+        member("morning-member", "Avery", "Morning"),
+        member("evening-member", "Blair", "Night"),
+      ],
+      attendance: [
+        attendance("morning-present", morning.id, "morning-member", true),
+        attendance("evening-present", evening.id, "evening-member", true),
+      ],
+      visitors: [
+        visitor("morning-visitor", morning.id, "Mina", "Day"),
+        visitor("evening-visitor", evening.id, "Nora", "Night"),
+      ],
+    });
+    const columns = attendanceServiceColumns(data);
+    const layout = monthlyWorkbookLayout(data);
+    const output = workbookXml(data);
+
+    expect(columns.map((column) => column.service.id)).toEqual([
+      "august-two-am",
+      "august-two-pm",
+    ]);
+    expect(layout.finalColumn).toBe("C");
+    expect(cellText(output.sheet, "B2")).toBe("Aug 2\nAM");
+    expect(cellText(output.sheet, "C2")).toBe("Aug 2\nPM");
+    expect(output.sheet).not.toContain("Aug 1");
+    expect(cellText(output.sheet, "B3")).toBe("✓");
+    expect(cellText(output.sheet, "C3")).toBe("");
+    expect(cellText(output.sheet, "B4")).toBe("");
+    expect(cellText(output.sheet, "C4")).toBe("✓");
+    expect(cellText(output.sheet, `B${layout.visitorStartRow}`)).toBe("✓");
+    expect(cellText(output.sheet, `C${layout.visitorStartRow}`)).toBe("");
+    expect(cellText(output.sheet, `B${layout.visitorStartRow + 1}`)).toBe("");
+    expect(cellText(output.sheet, `C${layout.visitorStartRow + 1}`)).toBe("✓");
+    expect(cellText(output.sheet, `B${layout.unnamedVisitorsRow}`)).toBe("1");
+    expect(cellText(output.sheet, `C${layout.unnamedVisitorsRow}`)).toBe("3");
+    expect(cellText(output.sheet, `B${layout.sundaySchoolKidsRow}`)).toBe("2");
+    expect(cellText(output.sheet, `C${layout.sundaySchoolKidsRow}`)).toBe("0");
+    expect(cellText(output.sheet, `B${layout.totalAttendanceRow}`)).toContain("5");
+    expect(cellText(output.sheet, `C${layout.totalAttendanceRow}`)).toContain("5");
+  });
+
+  it("uses custom names to distinguish same-day services in the same period", () => {
+    const output = workbookXml(
+      dataset({
+        services: [
+          service("early", "2026-08-02", "09:00", {
+            serviceType: "Special Service",
+            customName: "Prayer Service",
+          }),
+          service("late", "2026-08-02", "11:00", {
+            serviceType: "Special Service",
+            customName: "Family Worship",
+          }),
+        ],
+      }),
+    );
+
+    expect(cellText(output.sheet, "B2")).toBe(
+      "Aug 2\nAM\nPrayer Service 1",
+    );
+    expect(cellText(output.sheet, "C2")).toBe(
+      "Aug 2\nAM\nFamily Worship 2",
+    );
+  });
+
   it("supports more than 26 service columns", () => {
     const services = Array.from({ length: 30 }, (_, index) =>
       service(`service-${index}`, `2026-08-${String(index + 1).padStart(2, "0")}`),
@@ -355,6 +435,69 @@ describe("monthly cache completeness and historical data", () => {
 
     expect(calls).toEqual([["2026-08-01", "2026-09-01"]]);
     expect(await isMonthlyAttendanceCacheComplete(user, 2026, 8)).toBe(true);
+  });
+
+  it("refreshes a complete online month and removes stale phantom service columns", async () => {
+    const phantom = service("phantom-august-one", "2026-08-01", "10:30");
+    const morning = service("real-august-two-am", "2026-08-02", "10:30", {
+      serviceType: "Sunday Morning",
+    });
+    const evening = service("real-august-two-pm", "2026-08-02", "18:30", {
+      serviceType: "Sunday Evening",
+    });
+    const currentMember = member("refresh-member", "Robin", "Field");
+    let invocation = 0;
+    const source: MonthlyAttendanceSource = {
+      async fetchRange() {
+        invocation += 1;
+        if (invocation === 1) {
+          return {
+            services: [toCloudRecord(phantom)],
+            people: [toCloudRecord(currentMember)],
+            attendance: [],
+            visitors: [],
+          };
+        }
+        return {
+          services: [toCloudRecord(evening), toCloudRecord(morning)],
+          people: [],
+          attendance: [
+            toCloudRecord(
+              attendance("refresh-am", morning.id, currentMember.id, true),
+            ),
+          ],
+          visitors: [],
+        };
+      },
+    };
+
+    await ensureMonthlyAttendanceCache(user, 2026, 8, {
+      online: true,
+      source,
+    });
+    expect(
+      (await loadMonthlyAttendanceDataset(user, 2026, 8, true)).services.map(
+        (entry) => entry.id,
+      ),
+    ).toEqual([phantom.id]);
+
+    await ensureMonthlyAttendanceCache(user, 2026, 8, {
+      online: true,
+      source,
+    });
+    const refreshed = await loadMonthlyAttendanceDataset(user, 2026, 8, true);
+    const output = workbookXml(refreshed);
+
+    expect(invocation).toBe(2);
+    expect(refreshed.services.map((entry) => entry.id)).toEqual([
+      morning.id,
+      evening.id,
+    ]);
+    expect(cellText(output.sheet, "B2")).toBe("Aug 2\nAM");
+    expect(cellText(output.sheet, "C2")).toBe("Aug 2\nPM");
+    expect(output.sheet).not.toContain("Aug 1");
+    expect(cellText(output.sheet, "B3")).toBe("✓");
+    expect(cellText(output.sheet, "C3")).toBe("");
   });
 
   it("does not mark a failed partial month as complete", async () => {

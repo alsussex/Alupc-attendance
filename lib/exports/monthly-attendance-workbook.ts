@@ -249,10 +249,29 @@ function serviceHeadings(
     const key = `${service.serviceDate}:${period}`;
     const sequence = (periodSequence.get(key) ?? 0) + 1;
     periodSequence.set(key, sequence);
+    const duplicates = periodTotals.get(key) ?? 0;
+    const serviceLabel = service.customName?.trim() || service.serviceType;
     return `${dateLabel}\n${period}${
-      (periodTotals.get(key) ?? 0) > 1 ? ` ${sequence}` : ""
+      duplicates > 1 ? `\n${serviceLabel} ${sequence}` : ""
     }`;
   });
+}
+
+export function attendanceServiceColumns(dataset: MonthlyAttendanceDataset) {
+  const services = [...dataset.services].sort(
+    (left, right) =>
+      left.serviceDate.localeCompare(right.serviceDate) ||
+      (left.serviceTime ?? "23:59").localeCompare(
+        right.serviceTime ?? "23:59",
+      ) ||
+      left.updatedAt.localeCompare(right.updatedAt) ||
+      left.id.localeCompare(right.id),
+  );
+  const headings = serviceHeadings(services, dataset.dateRange);
+  return services.map((service, index) => ({
+    service,
+    heading: headings[index],
+  }));
 }
 
 function inlineCell(reference: string, cell: WorkbookCell) {
@@ -383,15 +402,8 @@ export function buildMonthlyAttendanceWorkbook(
       `No services were found for the selected ${dataset.dateRange ? "date range" : "month"}.`,
     );
   }
-  const services = [...dataset.services].sort(
-    (left, right) =>
-      left.serviceDate.localeCompare(right.serviceDate) ||
-      (left.serviceTime ?? "23:59").localeCompare(
-        right.serviceTime ?? "23:59",
-      ) ||
-      left.updatedAt.localeCompare(right.updatedAt) ||
-      left.id.localeCompare(right.id),
-  );
+  const serviceColumns = attendanceServiceColumns(dataset);
+  const services = serviceColumns.map((column) => column.service);
   const layout = monthlyWorkbookLayout(dataset);
   const columnCount = services.length + 1;
   const blankRow = (style: number) =>
@@ -407,7 +419,7 @@ export function buildMonthlyAttendanceWorkbook(
       28,
     ),
   );
-  const headings = serviceHeadings(services, dataset.dateRange);
+  const headings = serviceColumns.map((column) => column.heading);
   rows.push(
     rowXml(
       2,
@@ -415,7 +427,7 @@ export function buildMonthlyAttendanceWorkbook(
         { style: 2, value: "Members" },
         ...headings.map((heading) => ({ style: 2, value: heading })),
       ],
-      dataset.dateRange && headings.some((heading) => heading.split("\n").length > 2)
+      headings.some((heading) => heading.split("\n").length > 2)
         ? 52
         : 36,
     ),

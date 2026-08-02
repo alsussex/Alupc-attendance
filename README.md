@@ -207,7 +207,7 @@ and years when the range crosses a year; same-period duplicates also include
 their service type/name. Marks and totals use the same attendance rules as the
 service screen.
 
-The export reads IndexedDB first. A durable per-account, per-organization,
+The export reads IndexedDB first. Durable per-account, per-organization
 date-coverage markers record which requested periods have been fully
 downloaded. When coverage is missing and the device is online, the export loads
 only the uncovered segment or segments and their attendance/visitor rows, plus
@@ -217,6 +217,11 @@ succeeds. Offline exports are blocked when any requested date lacks coverage,
 so the application never silently produces a partial workbook. Archived
 services remain eligible. Only the Monthly/Custom mode preference is stored in
 browser preferences; attendance remains in the existing IndexedDB stores.
+When exporting online, the selected period receives one targeted freshness
+check even when coverage already exists. This removes stale non-pending service
+copies and ensures columns come only from current service UUIDs; it never
+generates columns from calendar dates. Offline exports continue using the last
+verified cached period.
 
 User invitations and role management now live at **Settings > Users**. Invites,
 role changes, access changes, password reset, and global sign-out remain
