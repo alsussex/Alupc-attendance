@@ -9,17 +9,24 @@ import type {
   UserContext,
 } from "@/lib/domain";
 import {
+  attendanceDateRange,
+  ensureCustomAttendanceRangeCache,
   ensureMonthlyAttendanceCache,
+  isCustomAttendanceRangeCacheComplete,
   isMonthlyAttendanceCacheComplete,
+  loadCustomAttendanceRangeDataset,
   loadMonthlyAttendanceDataset,
   type MonthlyAttendanceDataset,
   type MonthlyAttendanceSource,
 } from "@/lib/exports/monthly-attendance-data";
 import {
   buildMonthlyAttendanceWorkbook,
+  customAttendanceRangeFilename,
   excelColumnName,
+  formatAttendanceDateRangeTitle,
   monthlyAttendanceFilename,
   monthlyWorkbookLayout,
+  needsLargeAttendanceRangeWarning,
 } from "@/lib/exports/monthly-attendance-workbook";
 import { clearLocalDatabase, getDatabase } from "@/lib/storage/database";
 
@@ -194,7 +201,7 @@ describe("monthly attendance workbook", () => {
       "utf8",
     );
 
-    expect(source).toContain("Export Monthly Attendance");
+    expect(source).toContain("Export Attendance");
     expect(source).toContain("Completed services only");
     expect(source).toContain("Include open services");
     expect(source).toContain("Preparing workbook…");
@@ -334,7 +341,7 @@ describe("monthly cache completeness and historical data", () => {
   it("fetches only the selected month and then permits offline reuse", async () => {
     const calls: string[][] = [];
     const source: MonthlyAttendanceSource = {
-      async fetchMonth(_organizationId, startDate, endDate) {
+      async fetchRange(_organizationId, startDate, endDate) {
         calls.push([startDate, endDate]);
         return { services: [], people: [], attendance: [], visitors: [] };
       },
@@ -352,7 +359,7 @@ describe("monthly cache completeness and historical data", () => {
 
   it("does not mark a failed partial month as complete", async () => {
     const source: MonthlyAttendanceSource = {
-      async fetchMonth() {
+      async fetchRange() {
         throw new Error("Temporary server failure");
       },
     };
@@ -410,5 +417,220 @@ describe("monthly cache completeness and historical data", () => {
     expect(
       (await loadMonthlyAttendanceDataset(user, 2026, 8, false)).services,
     ).toHaveLength(2);
+  });
+});
+
+describe("custom attendance date range export", () => {
+  it("validates inclusive ranges and rejects reversed or invalid dates", () => {
+    expect(attendanceDateRange("2026-08-03", "2026-08-23")).toMatchObject({
+      startDate: "2026-08-03",
+      endDate: "2026-08-23",
+      endDateExclusive: "2026-08-24",
+    });
+    expect(() => attendanceDateRange("", "2026-08-23")).toThrow(
+      "valid start date",
+    );
+    expect(() => attendanceDateRange("2026-08-24", "2026-08-23")).toThrow(
+      "cannot be earlier",
+    );
+    expect(() => attendanceDateRange("2026-02-30", "2026-03-01")).toThrow(
+      "valid start date",
+    );
+  });
+
+  it("formats same-month, cross-month, and cross-year titles", () => {
+    expect(
+      formatAttendanceDateRangeTitle("2026-08-03", "2026-08-23"),
+    ).toBe("August 3–23, 2026");
+    expect(
+      formatAttendanceDateRangeTitle("2026-07-12", "2026-09-05"),
+    ).toBe("July 12–September 5, 2026");
+    expect(
+      formatAttendanceDateRangeTitle("2026-12-20", "2027-01-10"),
+    ).toBe("December 20, 2026–January 10, 2027");
+  });
+
+  it("uses compact day and AM/PM headings within one month", () => {
+    const output = workbookXml(
+      dataset({
+        dateRange: { startDate: "2026-08-03", endDate: "2026-08-23" },
+        services: [
+          service("morning", "2026-08-03", "10:30"),
+          service("evening", "2026-08-05", "19:00"),
+        ],
+      }),
+    );
+
+    expect(cellText(output.sheet, "A1")).toBe(
+      "Abundant Life Attendance - August 3–23, 2026",
+    );
+    expect(cellText(output.sheet, "B2")).toBe("3\nAM");
+    expect(cellText(output.sheet, "C2")).toBe("5\nPM");
+  });
+
+  it("adds month abbreviations across months and years", () => {
+    const crossMonth = workbookXml(
+      dataset({
+        dateRange: { startDate: "2026-07-12", endDate: "2026-09-05" },
+        services: [
+          service("july", "2026-07-12", "10:30"),
+          service("august", "2026-08-02", "18:00"),
+          service("september", "2026-09-05", "19:00"),
+        ],
+      }),
+    );
+    expect(cellText(crossMonth.sheet, "B2")).toBe("Jul 12\nAM");
+    expect(cellText(crossMonth.sheet, "C2")).toBe("Aug 2\nPM");
+    expect(cellText(crossMonth.sheet, "D2")).toBe("Sep 5\nPM");
+
+    const crossYear = workbookXml(
+      dataset({
+        dateRange: { startDate: "2026-12-20", endDate: "2027-01-10" },
+        services: [
+          service("december", "2026-12-20", "10:30"),
+          service("january", "2027-01-10", "18:00"),
+        ],
+      }),
+    );
+    expect(cellText(crossYear.sheet, "B2")).toBe("Dec 20 2026\nAM");
+    expect(cellText(crossYear.sheet, "C2")).toBe("Jan 10 2027\nPM");
+  });
+
+  it("keeps multiple same-day services separate and names same-period services", () => {
+    const output = workbookXml(
+      dataset({
+        dateRange: { startDate: "2026-08-09", endDate: "2026-08-09" },
+        services: [
+          service("morning-one", "2026-08-09", "09:00", {
+            serviceType: "Sunday School",
+          }),
+          service("morning-two", "2026-08-09", "11:00", {
+            serviceType: "Sunday Morning",
+          }),
+          service("evening", "2026-08-09", "18:00", {
+            serviceType: "Sunday Evening",
+          }),
+        ],
+      }),
+    );
+
+    expect(cellText(output.sheet, "B2")).toContain("9\nAM\nSunday School 1");
+    expect(cellText(output.sheet, "C2")).toContain("9\nAM\nSunday Morning 2");
+    expect(cellText(output.sheet, "D2")).toBe("9\nPM");
+  });
+
+  it("loads inclusive boundaries across multiple months and includes archives", async () => {
+    const database = await getDatabase();
+    await Promise.all([
+      database.put("services", service("before", "2026-07-11")),
+      database.put("services", service("start", "2026-07-12")),
+      database.put("services", service("middle", "2026-08-02")),
+      database.put(
+        "services",
+        service("end", "2026-09-05", "19:00", { isArchived: true }),
+      ),
+      database.put("services", service("after", "2026-09-06")),
+    ]);
+
+    const loaded = await loadCustomAttendanceRangeDataset(
+      user,
+      "2026-07-12",
+      "2026-09-05",
+      true,
+    );
+    expect(loaded.services.map((entry) => entry.id)).toEqual([
+      "start",
+      "middle",
+      "end",
+    ]);
+    expect(loaded.services.at(-1)?.isArchived).toBe(true);
+  });
+
+  it("targets only uncovered portions of a multi-month range", async () => {
+    const calls: string[][] = [];
+    const source: MonthlyAttendanceSource = {
+      async fetchRange(_organizationId, startDate, endDateExclusive) {
+        calls.push([startDate, endDateExclusive]);
+        return { services: [], people: [], attendance: [], visitors: [] };
+      },
+    };
+    await ensureMonthlyAttendanceCache(user, 2026, 8, {
+      online: true,
+      source,
+    });
+    await ensureCustomAttendanceRangeCache(
+      user,
+      "2026-07-12",
+      "2026-09-05",
+      { online: true, source },
+    );
+
+    expect(calls).toEqual([
+      ["2026-08-01", "2026-09-01"],
+      ["2026-07-12", "2026-08-01"],
+      ["2026-09-01", "2026-09-06"],
+    ]);
+    expect(
+      await isCustomAttendanceRangeCacheComplete(
+        user,
+        "2026-07-12",
+        "2026-09-05",
+      ),
+    ).toBe(true);
+  });
+
+  it("blocks incomplete offline ranges and failed targeted downloads", async () => {
+    await expect(
+      ensureCustomAttendanceRangeCache(user, "2026-07-12", "2026-09-05", {
+        online: false,
+      }),
+    ).rejects.toThrow("not been fully saved");
+    const source: MonthlyAttendanceSource = {
+      async fetchRange() {
+        throw new Error("Temporary server failure");
+      },
+    };
+    await expect(
+      ensureCustomAttendanceRangeCache(user, "2026-07-12", "2026-09-05", {
+        online: true,
+        source,
+      }),
+    ).rejects.toThrow("no workbook was created");
+    expect(
+      await isCustomAttendanceRangeCacheComplete(
+        user,
+        "2026-07-12",
+        "2026-09-05",
+      ),
+    ).toBe(false);
+  });
+
+  it("shows no-services errors, large-range warnings, and range filenames", async () => {
+    await expect(
+      loadCustomAttendanceRangeDataset(
+        user,
+        "2026-08-03",
+        "2026-08-23",
+        false,
+      ),
+    ).rejects.toThrow("No services were found for the selected date range");
+    expect(needsLargeAttendanceRangeWarning(31)).toBe(false);
+    expect(needsLargeAttendanceRangeWarning(32)).toBe(true);
+    expect(customAttendanceRangeFilename("2026-08-03", "2026-08-23")).toBe(
+      "ALUPC_Attendance_2026-08-03_to_2026-08-23.xlsx",
+    );
+  });
+
+  it("exposes both export modes and remembers only the mode preference", () => {
+    const source = readFileSync(
+      resolve("components/settings/MonthlyAttendanceExport.tsx"),
+      "utf8",
+    );
+    expect(source).toContain('value="monthly">Monthly');
+    expect(source).toContain('value="range">Custom Date Range');
+    expect(source).toContain("church-attendance-export-mode");
+    expect(source).toContain("Start date");
+    expect(source).toContain("End date");
+    expect(source).toContain("Export anyway");
   });
 });

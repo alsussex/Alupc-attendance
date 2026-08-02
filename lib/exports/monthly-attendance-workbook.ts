@@ -171,7 +171,41 @@ function servicePeriod(service: ChurchService) {
   return "Service";
 }
 
-function serviceHeadings(services: ChurchService[]) {
+function utcDate(date: string) {
+  return new Date(`${date}T12:00:00Z`);
+}
+
+export function formatAttendanceDateRangeTitle(
+  startDate: string,
+  endDate: string,
+) {
+  const start = utcDate(startDate);
+  const end = utcDate(endDate);
+  const startYear = start.getUTCFullYear();
+  const endYear = end.getUTCFullYear();
+  const sameYear = startYear === endYear;
+  const sameMonth = sameYear && start.getUTCMonth() === end.getUTCMonth();
+  const month = (date: Date) =>
+    new Intl.DateTimeFormat("en-CA", {
+      month: "long",
+      timeZone: "UTC",
+    }).format(date);
+  if (startDate === endDate) {
+    return `${month(start)} ${start.getUTCDate()}, ${startYear}`;
+  }
+  if (sameMonth) {
+    return `${month(start)} ${start.getUTCDate()}–${end.getUTCDate()}, ${startYear}`;
+  }
+  if (sameYear) {
+    return `${month(start)} ${start.getUTCDate()}–${month(end)} ${end.getUTCDate()}, ${startYear}`;
+  }
+  return `${month(start)} ${start.getUTCDate()}, ${startYear}–${month(end)} ${end.getUTCDate()}, ${endYear}`;
+}
+
+function serviceHeadings(
+  services: ChurchService[],
+  dateRange?: MonthlyAttendanceDataset["dateRange"],
+) {
   const counts = new Map<string, number>();
   for (const service of services) {
     counts.set(service.serviceDate, (counts.get(service.serviceDate) ?? 0) + 1);
@@ -179,17 +213,37 @@ function serviceHeadings(services: ChurchService[]) {
   const periodSequence = new Map<string, number>();
   const periodTotals = new Map<string, number>();
   for (const service of services) {
-    if ((counts.get(service.serviceDate) ?? 0) < 2) continue;
     const key = `${service.serviceDate}:${servicePeriod(service)}`;
     periodTotals.set(key, (periodTotals.get(key) ?? 0) + 1);
   }
   return services.map((service) => {
-    const date = new Date(`${service.serviceDate}T12:00:00Z`);
+    const date = utcDate(service.serviceDate);
     const dateLabel = new Intl.DateTimeFormat("en-CA", {
       month: "short",
       day: "numeric",
       timeZone: "UTC",
     }).format(date);
+    if (dateRange) {
+      const crossesMonths =
+        dateRange.startDate.slice(0, 7) !== dateRange.endDate.slice(0, 7);
+      const crossesYears =
+        dateRange.startDate.slice(0, 4) !== dateRange.endDate.slice(0, 4);
+      const customDateLabel = crossesMonths
+        ? dateLabel
+        : String(date.getUTCDate());
+      const yearLabel = crossesYears ? ` ${date.getUTCFullYear()}` : "";
+      const period = servicePeriod(service);
+      const key = `${service.serviceDate}:${period}`;
+      const sequence = (periodSequence.get(key) ?? 0) + 1;
+      periodSequence.set(key, sequence);
+      const duplicates = periodTotals.get(key) ?? 0;
+      const serviceLabel = service.customName?.trim() || service.serviceType;
+      return `${customDateLabel}${yearLabel}\n${period}${
+        duplicates > 1
+          ? `\n${serviceLabel} ${sequence}`
+          : ""
+      }`;
+    }
     if ((counts.get(service.serviceDate) ?? 0) < 2) return dateLabel;
     const period = servicePeriod(service);
     const key = `${service.serviceDate}:${period}`;
@@ -298,8 +352,14 @@ export function monthlyWorkbookLayout(
     month: "long",
     timeZone: "UTC",
   }).format(new Date(Date.UTC(dataset.year, dataset.month - 1, 1)));
+  const periodTitle = dataset.dateRange
+    ? formatAttendanceDateRangeTitle(
+        dataset.dateRange.startDate,
+        dataset.dateRange.endDate,
+      )
+    : `${monthName} ${dataset.year}`;
   return {
-    title: `Abundant Life Attendance - ${monthName} ${dataset.year}`,
+    title: `Abundant Life Attendance - ${periodTitle}`,
     finalColumn: excelColumnName(dataset.services.length + 1),
     finalRow: totalAttendanceRow,
     memberStartRow,
@@ -319,7 +379,9 @@ export function buildMonthlyAttendanceWorkbook(
   generatedAt = new Date(),
 ) {
   if (dataset.services.length === 0) {
-    throw new Error("No services were found for the selected month.");
+    throw new Error(
+      `No services were found for the selected ${dataset.dateRange ? "date range" : "month"}.`,
+    );
   }
   const services = [...dataset.services].sort(
     (left, right) =>
@@ -345,7 +407,7 @@ export function buildMonthlyAttendanceWorkbook(
       28,
     ),
   );
-  const headings = serviceHeadings(services);
+  const headings = serviceHeadings(services, dataset.dateRange);
   rows.push(
     rowXml(
       2,
@@ -353,7 +415,9 @@ export function buildMonthlyAttendanceWorkbook(
         { style: 2, value: "Members" },
         ...headings.map((heading) => ({ style: 2, value: heading })),
       ],
-      36,
+      dataset.dateRange && headings.some((heading) => heading.split("\n").length > 2)
+        ? 52
+        : 36,
     ),
   );
 
@@ -514,6 +578,19 @@ export function buildMonthlyAttendanceWorkbook(
 
 export function monthlyAttendanceFilename(year: number, month: number) {
   return `ALUPC_Attendance_${year}-${String(month).padStart(2, "0")}.xlsx`;
+}
+
+export function customAttendanceRangeFilename(
+  startDate: string,
+  endDate: string,
+) {
+  return `ALUPC_Attendance_${startDate}_to_${endDate}.xlsx`;
+}
+
+export const LARGE_RANGE_SERVICE_WARNING_THRESHOLD = 31;
+
+export function needsLargeAttendanceRangeWarning(serviceCount: number) {
+  return serviceCount > LARGE_RANGE_SERVICE_WARNING_THRESHOLD;
 }
 
 export function downloadMonthlyAttendanceWorkbook(

@@ -4,13 +4,18 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useToast } from "@/components/feedback/ToastProvider";
 import {
+  attendanceDateRange,
+  ensureCustomAttendanceRangeCache,
   ensureMonthlyAttendanceCache,
+  loadCustomAttendanceRangeDataset,
   loadMonthlyAttendanceDataset,
 } from "@/lib/exports/monthly-attendance-data";
 import {
   buildMonthlyAttendanceWorkbook,
+  customAttendanceRangeFilename,
   downloadMonthlyAttendanceWorkbook,
   monthlyAttendanceFilename,
+  needsLargeAttendanceRangeWarning,
 } from "@/lib/exports/monthly-attendance-workbook";
 
 const monthNames = Array.from({ length: 12 }, (_, index) =>
@@ -19,16 +24,45 @@ const monthNames = Array.from({ length: 12 }, (_, index) =>
   ),
 );
 
+type ExportMode = "monthly" | "range";
+const exportModeStorageKey = "church-attendance-export-mode";
+
+function localDateValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function savedExportMode(): ExportMode {
+  try {
+    return window.localStorage.getItem(exportModeStorageKey) === "range"
+      ? "range"
+      : "monthly";
+  } catch {
+    return "monthly";
+  }
+}
+
 export function MonthlyAttendanceExport() {
   const { user } = useAuth();
   const { showToast } = useToast();
   const now = new Date();
   const [open, setOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<ExportMode>("monthly");
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [year, setYear] = useState(now.getFullYear());
+  const [startDate, setStartDate] = useState(
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`,
+  );
+  const [endDate, setEndDate] = useState(localDateValue(now));
   const [completedOnly, setCompletedOnly] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
+  const [largeRangeWarning, setLargeRangeWarning] = useState("");
+  const [largeRangeConfirmationKey, setLargeRangeConfirmationKey] = useState<
+    string | null
+  >(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
   const exportingRef = useRef(false);
@@ -36,6 +70,19 @@ export function MonthlyAttendanceExport() {
   useEffect(() => {
     exportingRef.current = exporting;
   }, [exporting]);
+
+  function changeExportMode(mode: ExportMode) {
+    setExportMode(mode);
+    try {
+      window.localStorage.setItem(exportModeStorageKey, mode);
+    } catch {
+      // A blocked preference store must not block exporting.
+    }
+  }
+
+  const selectionKey = `${exportMode}:${year}:${month}:${startDate}:${endDate}:${completedOnly}`;
+  const showLargeRangeWarning =
+    largeRangeConfirmationKey === selectionKey && largeRangeWarning;
 
   useEffect(() => {
     if (!open) return;
@@ -60,25 +107,57 @@ export function MonthlyAttendanceExport() {
     setExporting(true);
     setError("");
     try {
-      await ensureMonthlyAttendanceCache(user, year, month);
-      const dataset = await loadMonthlyAttendanceDataset(
-        user,
-        year,
-        month,
-        completedOnly,
-      );
+      const dataset =
+        exportMode === "monthly"
+          ? await (async () => {
+              await ensureMonthlyAttendanceCache(user, year, month);
+              return loadMonthlyAttendanceDataset(
+                user,
+                year,
+                month,
+                completedOnly,
+              );
+            })()
+          : await (async () => {
+              attendanceDateRange(startDate, endDate);
+              await ensureCustomAttendanceRangeCache(
+                user,
+                startDate,
+                endDate,
+              );
+              return loadCustomAttendanceRangeDataset(
+                user,
+                startDate,
+                endDate,
+                completedOnly,
+              );
+            })();
+      if (
+        exportMode === "range" &&
+        needsLargeAttendanceRangeWarning(dataset.services.length) &&
+        largeRangeConfirmationKey !== selectionKey
+      ) {
+        setLargeRangeWarning(
+          `This range contains ${dataset.services.length} services. The workbook may be difficult to print on one page wide. You can still export it.`,
+        );
+        setLargeRangeConfirmationKey(selectionKey);
+        return;
+      }
       const workbook = buildMonthlyAttendanceWorkbook(dataset);
-      const filename = monthlyAttendanceFilename(year, month);
+      const filename =
+        exportMode === "monthly"
+          ? monthlyAttendanceFilename(year, month)
+          : customAttendanceRangeFilename(startDate, endDate);
       downloadMonthlyAttendanceWorkbook(workbook, filename);
       setOpen(false);
-      showToast("Monthly attendance workbook exported.", {
-        key: `monthly-attendance:${year}-${month}`,
+      showToast("Attendance workbook exported.", {
+        key: `attendance-export:${filename}`,
       });
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
-          : "The monthly attendance workbook could not be created.",
+          : "The attendance workbook could not be created.",
       );
     } finally {
       setExporting(false);
@@ -90,10 +169,10 @@ export function MonthlyAttendanceExport() {
       <section className="panel settings-card monthly-attendance-export-card">
         <div className="settings-card-heading">
           <p className="eyebrow">Print-ready Excel</p>
-          <h2>Monthly Attendance</h2>
+          <h2>Attendance Export</h2>
           <p>
-            Export the church’s member and visitor attendance sheet with one
-            service per column.
+            Export a monthly or custom-range attendance sheet with one service
+            per column.
           </p>
         </div>
         <div className="settings-action-row">
@@ -103,10 +182,13 @@ export function MonthlyAttendanceExport() {
             type="button"
             onClick={() => {
               setError("");
+              setLargeRangeWarning("");
+              setLargeRangeConfirmationKey(null);
+              setExportMode(savedExportMode());
               setOpen(true);
             }}
           >
-            Export Monthly Attendance
+            Export Attendance
           </button>
         </div>
       </section>
@@ -131,45 +213,85 @@ export function MonthlyAttendanceExport() {
               ref={closeButton}
               className="modal-close"
               type="button"
-              aria-label="Close monthly attendance export"
+              aria-label="Close attendance export"
               disabled={exporting}
               onClick={() => setOpen(false)}
             >
               ×
             </button>
             <p className="eyebrow">Excel workbook</p>
-            <h2 id="monthly-export-title">Export Monthly Attendance</h2>
+            <h2 id="monthly-export-title">Export Attendance</h2>
             <p className="muted">
-              Choose the month and whether open services should be included.
-              Incomplete months are verified online before the workbook is
-              created.
+              Choose a month or an inclusive custom date range. Incomplete
+              dates are verified online before the workbook is created.
             </p>
+            <label>
+              Export type
+              <select
+                value={exportMode}
+                disabled={exporting}
+                onChange={(event) =>
+                  changeExportMode(event.target.value as ExportMode)
+                }
+              >
+                <option value="monthly">Monthly</option>
+                <option value="range">Custom Date Range</option>
+              </select>
+            </label>
             <div className="form-grid monthly-export-fields">
-              <label>
-                Month
-                <select
-                  value={month}
-                  disabled={exporting}
-                  onChange={(event) => setMonth(Number(event.target.value))}
-                >
-                  {monthNames.map((name, index) => (
-                    <option key={name} value={index + 1}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Year
-                <input
-                  type="number"
-                  min="2000"
-                  max="2200"
-                  value={year}
-                  disabled={exporting}
-                  onChange={(event) => setYear(Number(event.target.value))}
-                />
-              </label>
+              {exportMode === "monthly" ? (
+                <>
+                  <label>
+                    Month
+                    <select
+                      value={month}
+                      disabled={exporting}
+                      onChange={(event) => setMonth(Number(event.target.value))}
+                    >
+                      {monthNames.map((name, index) => (
+                        <option key={name} value={index + 1}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Year
+                    <input
+                      type="number"
+                      min="2000"
+                      max="2200"
+                      value={year}
+                      disabled={exporting}
+                      onChange={(event) => setYear(Number(event.target.value))}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label>
+                    Start date
+                    <input
+                      type="date"
+                      required
+                      value={startDate}
+                      disabled={exporting}
+                      onChange={(event) => setStartDate(event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    End date
+                    <input
+                      type="date"
+                      required
+                      min={startDate || undefined}
+                      value={endDate}
+                      disabled={exporting}
+                      onChange={(event) => setEndDate(event.target.value)}
+                    />
+                  </label>
+                </>
+              )}
             </div>
             <label>
               Services
@@ -189,6 +311,11 @@ export function MonthlyAttendanceExport() {
                 {error}
               </p>
             )}
+            {showLargeRangeWarning && (
+              <div className="notice warning" role="status">
+                {showLargeRangeWarning}
+              </div>
+            )}
             <div className="modal-actions">
               <button
                 className="button subtle"
@@ -204,7 +331,11 @@ export function MonthlyAttendanceExport() {
                 disabled={exporting}
                 onClick={() => void exportWorkbook()}
               >
-                {exporting ? "Preparing workbook…" : "Export .xlsx"}
+                {exporting
+                  ? "Preparing workbook…"
+                  : showLargeRangeWarning
+                    ? "Export anyway"
+                    : "Export .xlsx"}
               </button>
             </div>
           </section>

@@ -314,6 +314,8 @@ export interface MonthlyExportCoverage {
   userId: string;
   organizationId: string;
   monthKey: string;
+  startDate?: string;
+  endDateExclusive?: string;
   verifiedAt: string;
 }
 

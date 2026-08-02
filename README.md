@@ -194,23 +194,29 @@ summaries provide reporting-ready historical totals without changing completed
 service records. Import/restore and permanent organization deletion are
 explicitly unavailable in this release.
 
-**Settings > Data & Export > Export Monthly Attendance** creates the church's
-print-ready monthly `.xlsx` sheet. Choose a month/year and either completed
-services only or completed plus open services. The single **Monthly Attendance**
-worksheet places members in column A, one chronological service per following
-column, named visitors below a blank separator, and the unnamed visitor,
-Sunday School Kids, and total rows at the bottom. Same-day services receive
-separate AM/PM headings. Marks and totals use the same attendance rules as the
+**Settings > Data & Export > Attendance Export** creates the church's
+print-ready `.xlsx` sheet. **Monthly** accepts a month/year; **Custom Date
+Range** accepts inclusive start and end dates that may cross months or years.
+Both modes can include completed services only or completed plus open services.
+The single **Monthly Attendance** worksheet places members in column A, one
+chronological service per following column, named visitors below a blank
+separator, and the unnamed visitor, Sunday School Kids, and total rows at the
+bottom. Same-day services receive separate AM/PM headings. Custom ranges use
+day-plus-AM/PM headings within one month, month abbreviations across months,
+and years when the range crosses a year; same-period duplicates also include
+their service type/name. Marks and totals use the same attendance rules as the
 service screen.
 
 The export reads IndexedDB first. A durable per-account, per-organization,
-per-month coverage marker records whether the entire selected month has been
+date-coverage markers record which requested periods have been fully
 downloaded. When coverage is missing and the device is online, the export loads
-only that month's services and their attendance/visitor rows, plus the church's
-member directory, then safely merges the records without replacing pending
-local writes. The marker is written only after every request succeeds. Offline
-exports are blocked when that marker is absent, so the application never
-silently produces a partial workbook. Archived services remain eligible.
+only the uncovered segment or segments and their attendance/visitor rows, plus
+the church's member directory, then safely merges the records without replacing
+pending local writes. Each segment is marked only after its request and merge
+succeeds. Offline exports are blocked when any requested date lacks coverage,
+so the application never silently produces a partial workbook. Archived
+services remain eligible. Only the Monthly/Custom mode preference is stored in
+browser preferences; attendance remains in the existing IndexedDB stores.
 
 User invitations and role management now live at **Settings > Users**. Invites,
 role changes, access changes, password reset, and global sign-out remain
