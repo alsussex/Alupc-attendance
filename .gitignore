@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/.codex-remote-attachments/
 
 # next.js
 /.next/
