@@ -553,6 +553,7 @@ export async function saveService(
     status: ServiceStatus;
     unnamedVisitorCount?: number;
     sundaySchoolKidsCount?: number;
+    auditDetails?: Record<string, unknown>;
   },
 ) {
   const notes = input.notes?.trim() || undefined;
@@ -630,6 +631,7 @@ export async function saveService(
       entityId: service.id,
       action: serviceAction,
       details: {
+        ...input.auditDetails,
         name: service.customName || service.serviceType,
         status: service.status,
         ...undoAuditDetails(),
@@ -693,9 +695,55 @@ export async function saveService(
   return service;
 }
 
-export async function duplicateService(user: UserContext, sourceId: string) {
-  if (!isAdmin(user)) {
-    throw new Error("Only an administrator can duplicate services.");
+export interface DuplicateServiceInput {
+  serviceDate: string;
+  serviceType: ServiceType;
+  customName?: string;
+  serviceTime?: string;
+  notes?: string;
+}
+
+function normalizedServiceSetupValue(value?: string) {
+  return value?.trim().replace(/\s+/g, " ").toLocaleLowerCase() ?? "";
+}
+
+export async function findMatchingServiceSetup(
+  organizationId: string,
+  input: DuplicateServiceInput,
+) {
+  const database = await getDatabase();
+  const services = await database.getAllFromIndex(
+    "services",
+    "organizationId",
+    organizationId,
+  );
+  const expectedName = normalizedServiceSetupValue(input.customName);
+  const expectedTime = input.serviceTime?.trim() ?? "";
+  return services.filter(
+    (service) =>
+      !service.deletedAt &&
+      service.serviceDate === input.serviceDate &&
+      service.serviceType === input.serviceType &&
+      (service.serviceTime ?? "") === expectedTime &&
+      normalizedServiceSetupValue(service.customName) === expectedName,
+  );
+}
+
+export async function duplicateService(
+  user: UserContext,
+  sourceId: string,
+  input: DuplicateServiceInput,
+) {
+  if (user.role !== "admin" && user.role !== "attendance_taker") {
+    throw new Error("An active church account is required to duplicate services.");
+  }
+  const parsedDate = new Date(`${input.serviceDate}T00:00:00.000Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(input.serviceDate) ||
+    Number.isNaN(parsedDate.valueOf()) ||
+    parsedDate.toISOString().slice(0, 10) !== input.serviceDate
+  ) {
+    throw new Error("Choose a new service date before creating the duplicate.");
   }
   const database = await getDatabase();
   const source = await database.get("services", sourceId);
@@ -706,27 +754,26 @@ export async function duplicateService(user: UserContext, sourceId: string) {
   ) {
     throw new Error("Service not found");
   }
+  const duplicateId = createId();
   const duplicate = await runWithoutUndoCapture(() =>
     saveService(user, {
-      serviceDate: source.serviceDate,
-      serviceType: source.serviceType,
-      customName: source.customName,
-      serviceTime: source.serviceTime,
-      notes: source.notes,
+      id: duplicateId,
+      serviceDate: input.serviceDate,
+      serviceType: input.serviceType,
+      customName: input.customName,
+      serviceTime: input.serviceTime,
+      notes: input.notes,
       status: "draft",
       unnamedVisitorCount: 0,
       sundaySchoolKidsCount: 0,
+      auditDetails: {
+        creationMethod: "duplicate",
+        sourceServiceId: source.id,
+        duplicatedServiceId: duplicateId,
+      },
     }),
   );
-  await recordAuditEntry(user, {
-    entityType: "service",
-    entityId: duplicate.id,
-    action: "duplicated",
-    details: {
-      name: duplicate.customName || duplicate.serviceType,
-      sourceServiceId: source.id,
-    },
-  });
+  if (!isAdmin(user)) return duplicate;
   const canUndo = async () => {
     const currentDatabase = await getDatabase();
     const [current, attendance, visitors] = await Promise.all([

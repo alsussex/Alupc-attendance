@@ -35,6 +35,7 @@ import {
   duplicateService,
   editServiceVisitor,
   findExactMemberMatches,
+  findMatchingServiceSetup,
   getLastAttendanceDates,
   getOrganizationService,
   getServiceAttendance,
@@ -147,6 +148,8 @@ export function ServiceManager() {
   const [historyVisitor, setHistoryVisitor] =
     useState<ServiceVisitor | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [duplicateSource, setDuplicateSource] =
+    useState<ChurchService | null>(null);
   const [serviceAction, setServiceAction] = useState<
     "draft" | "completed" | null
   >(null);
@@ -189,6 +192,7 @@ export function ServiceManager() {
       else if (editingVisitor) setEditingVisitor(null);
       else if (visitorOpen) setVisitorOpen(false);
       else if (memberOpen) setMemberOpen(false);
+      else if (duplicateSource) setDuplicateSource(null);
       else if (editOpen) setEditOpen(false);
       else if (createOpen) setCreateOpen(false);
     },
@@ -199,6 +203,7 @@ export function ServiceManager() {
         editingVisitor ||
         visitorOpen ||
         memberOpen ||
+        duplicateSource ||
         editOpen ||
         createOpen,
     ),
@@ -687,6 +692,14 @@ export function ServiceManager() {
                 </button>
               </>
             )}
+            <button
+              className="button subtle"
+              type="button"
+              disabled={serviceAction !== null}
+              onClick={() => setDuplicateSource(active)}
+            >
+              Duplicate Service
+            </button>
             {isAdmin(user) && (
               <>
                 <button
@@ -701,27 +714,6 @@ export function ServiceManager() {
                   onClick={() => setEditOpen(true)}
                 >
                   Edit
-                </button>
-                <button
-                  className="button subtle"
-                  type="button"
-                  disabled={serviceAction !== null}
-                  onClick={async () => {
-                    if (!user) return;
-                    setServiceAction("draft");
-                    try {
-                      const duplicated = await duplicateService(user, active.id);
-                      await refreshLists();
-                      await openService(duplicated);
-                      showToast("Service duplicated as a draft.", {
-                        key: `service-duplicated:${duplicated.id}`,
-                      });
-                    } finally {
-                      setServiceAction(null);
-                    }
-                  }}
-                >
-                  Duplicate
                 </button>
                 <button
                   className="button danger-text"
@@ -1525,6 +1517,22 @@ export function ServiceManager() {
             }}
           />
         )}
+        {duplicateSource && user && (
+          <ServiceModal
+            user={user}
+            settings={settings}
+            duplicateOf={duplicateSource}
+            onClose={() => setDuplicateSource(null)}
+            onSaved={async (service) => {
+              setDuplicateSource(null);
+              await refreshLists();
+              await openService(service);
+              showToast("Service duplicated as a new draft.", {
+                key: `service-duplicated:${service.id}`,
+              });
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -1880,56 +1888,110 @@ export function ServiceModal({
   onClose,
   onSaved,
   existing,
+  duplicateOf,
   settings,
 }: {
   user: UserContext;
   onClose: () => void;
   onSaved: (service: ChurchService) => void | Promise<void>;
   existing?: ChurchService;
+  duplicateOf?: ChurchService;
   settings: ApplicationSettings;
 }) {
   const [modalSettings] = useState(settings);
+  const template = existing ?? duplicateOf;
+  const isDuplicate = Boolean(duplicateOf && !existing);
   const enabledTypes = modalSettings.serviceTypes.filter((item) => item.enabled);
   const availableTypes =
-    existing &&
-    !enabledTypes.some((item) => item.name === existing.serviceType)
+    template &&
+    !enabledTypes.some((item) => item.name === template.serviceType)
       ? [
           ...enabledTypes,
           {
-            id: `historical-${existing.serviceType}`,
-            name: existing.serviceType,
+            id: `historical-${template.serviceType}`,
+            name: template.serviceType,
             enabled: false,
             system: false,
           },
         ]
       : enabledTypes;
   const initialType =
-    existing?.serviceType ?? availableTypes[0]?.name ?? SERVICE_TYPES[0];
+    template?.serviceType ?? availableTypes[0]?.name ?? SERVICE_TYPES[0];
   const [date, setDate] = useState(
-    existing?.serviceDate ?? localDate(modalSettings.timezone),
+    existing?.serviceDate ?? (isDuplicate ? "" : localDate(modalSettings.timezone)),
   );
   const [type, setType] = useState<ServiceType>(initialType);
   const [serviceTime, setServiceTime] = useState(
-    existing?.serviceTime ??
+    template?.serviceTime ??
       availableTypes.find((item) => item.name === initialType)?.defaultTime ??
       "",
   );
-  const [customName, setCustomName] = useState(existing?.customName ?? "");
-  const [notes, setNotes] = useState(existing?.notes ?? "");
+  const [customName, setCustomName] = useState(template?.customName ?? "");
+  const [notes, setNotes] = useState(template?.notes ?? "");
+  const [duplicateWarning, setDuplicateWarning] = useState("");
+  const [formError, setFormError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+
+  function updateField(update: () => void) {
+    update();
+    setDuplicateWarning("");
+    setFormError("");
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    const service = await saveService(user, {
-      id: existing?.id,
+    if (submittingRef.current) return;
+    if (!date) {
+      setFormError("Choose a new service date.");
+      return;
+    }
+    submittingRef.current = true;
+    setSubmitting(true);
+    setFormError("");
+    const input = {
       serviceDate: date,
       serviceType: type,
       customName,
       serviceTime,
       notes,
-      status: existing?.status ?? modalSettings.defaultServiceStatus,
-    });
-    await onSaved(service);
+    };
+    try {
+      if (isDuplicate && !duplicateWarning) {
+        const matches = await findMatchingServiceSetup(
+          user.organizationId,
+          input,
+        );
+        if (matches.length > 0) {
+          setDuplicateWarning(
+            "A matching service already exists on this date and time. Review the details or deliberately create another service.",
+          );
+          return;
+        }
+      }
+      const service = isDuplicate
+        ? await duplicateService(user, duplicateOf!.id, input)
+        : await saveService(user, {
+            id: existing?.id,
+            ...input,
+            status: existing?.status ?? modalSettings.defaultServiceStatus,
+          });
+      await onSaved(service);
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "The service could not be saved.",
+      );
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
   }
+
+  const title = existing
+    ? "Edit service"
+    : isDuplicate
+      ? "Duplicate service"
+      : "Create a service";
 
   return (
     <div className="modal-backdrop">
@@ -1937,16 +1999,24 @@ export function ServiceModal({
         className="modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="create-service-title"
+        aria-labelledby="service-modal-title"
       >
         <div className="modal-heading">
           <div>
             <p className="eyebrow">
-              {existing ? "Service details" : "New attendance list"}
+              {existing
+                ? "Service details"
+                : isDuplicate
+                  ? "New service setup"
+                  : "New attendance list"}
             </p>
-            <h2 id="create-service-title">
-              {existing ? "Edit service" : "Create a service"}
-            </h2>
+            <h2 id="service-modal-title">{title}</h2>
+            {isDuplicate && (
+              <p className="muted modal-intro">
+                Attendance and visitors will start empty. Choose a date and
+                review the copied setup before creating the draft.
+              </p>
+            )}
           </div>
           <button
             className="icon-button"
@@ -1963,8 +2033,11 @@ export function ServiceModal({
             <input
               type="date"
               value={date}
-              onChange={(event) => setDate(event.target.value)}
+              onChange={(event) =>
+                updateField(() => setDate(event.target.value))
+              }
               required
+              autoFocus={isDuplicate}
             />
           </label>
           <label>
@@ -1973,11 +2046,13 @@ export function ServiceModal({
               value={type}
               onChange={(event) => {
                 const nextType = event.target.value;
-                setType(nextType);
-                setServiceTime(
-                  availableTypes.find((item) => item.name === nextType)
-                    ?.defaultTime ?? "",
-                );
+                updateField(() => {
+                  setType(nextType);
+                  setServiceTime(
+                    availableTypes.find((item) => item.name === nextType)
+                      ?.defaultTime ?? "",
+                  );
+                });
               }}
             >
               {availableTypes.map((option) => (
@@ -1992,18 +2067,23 @@ export function ServiceModal({
             <input
               type="time"
               value={serviceTime}
-              onChange={(event) => setServiceTime(event.target.value)}
+              onChange={(event) =>
+                updateField(() => setServiceTime(event.target.value))
+              }
             />
           </label>
-          {(availableTypes.find((item) => item.name === type)?.id ===
-            "special-service" ||
+          {(isDuplicate ||
+            availableTypes.find((item) => item.name === type)?.id ===
+              "special-service" ||
             type === "Other") && (
             <label>
               Custom service name{" "}
               <span className="optional">(optional)</span>
               <input
                 value={customName}
-                onChange={(event) => setCustomName(event.target.value)}
+                onChange={(event) =>
+                  updateField(() => setCustomName(event.target.value))
+                }
                 placeholder="e.g. Christmas Eve"
               />
             </label>
@@ -2014,20 +2094,42 @@ export function ServiceModal({
               value={notes}
               maxLength={4000}
               rows={4}
-              onChange={(event) => setNotes(event.target.value)}
+              onChange={(event) =>
+                updateField(() => setNotes(event.target.value))
+              }
               placeholder="Add setup details, reminders, or a short service note"
             />
           </label>
+          {duplicateWarning && (
+            <div className="form-warning" role="alert">
+              <strong>Possible duplicate service</strong>
+              <span>{duplicateWarning}</span>
+            </div>
+          )}
+          {formError && (
+            <p className="form-error" role="alert">
+              {formError}
+            </p>
+          )}
           <div className="modal-actions">
             <button
               className="button subtle"
               type="button"
+              disabled={submitting}
               onClick={onClose}
             >
               Cancel
             </button>
-            <button className="button primary">
-              {existing ? "Save changes" : "Create and take attendance"}
+            <button className="button primary" disabled={submitting}>
+              {submitting
+                ? "Creating..."
+                : existing
+                  ? "Save changes"
+                  : isDuplicate
+                    ? duplicateWarning
+                      ? "Create duplicate anyway"
+                      : "Create duplicate"
+                    : "Create and take attendance"}
             </button>
           </div>
         </form>

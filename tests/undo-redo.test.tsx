@@ -172,7 +172,13 @@ describe("session undo and redo", () => {
 
   it("undoes and redoes service duplication with one stable duplicate UUID", async () => {
     const { service } = await attendanceFixture();
-    const duplicate = await duplicateService(admin, service.id);
+    const duplicate = await duplicateService(admin, service.id, {
+      serviceDate: "2026-08-09",
+      serviceType: service.serviceType,
+      customName: service.customName,
+      serviceTime: service.serviceTime,
+      notes: service.notes,
+    });
     expect(duplicate.id).not.toBe(service.id);
     expect(await listServices(organizationId)).toEqual(
       expect.arrayContaining([

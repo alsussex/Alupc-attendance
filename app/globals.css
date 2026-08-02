@@ -350,6 +350,10 @@ input::placeholder { color: var(--placeholder); }
 }
 .modal-heading { margin-bottom: 1.5rem; display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .modal-heading h2 { margin: 0; font-size: 1.7rem; }
+.modal-intro { max-width: 48ch; margin: .45rem 0 0; line-height: 1.5; }
+.form-warning { padding: .85rem 1rem; display: grid; gap: .2rem; border: 1px solid var(--warning-border); border-radius: 12px; background: var(--warning-bg); color: var(--warning-text); }
+.form-warning span { font-size: .9rem; line-height: 1.45; }
+.form-error { margin: 0; color: var(--danger-text); font-size: .9rem; font-weight: 650; }
 .icon-button { width: 42px; height: 42px; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); font-size: 1.5rem; cursor: pointer; }
 .modal-actions { margin-top: .6rem; display: flex; justify-content: flex-end; gap: .7rem; }
 .duplicate-confirm { border: 0; background: transparent; color: var(--brand); font-weight: 700; text-decoration: underline; cursor: pointer; }
