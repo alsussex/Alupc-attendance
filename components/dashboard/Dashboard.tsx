@@ -26,6 +26,7 @@ import {
 } from "@/lib/dashboard/dashboard-data";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
 import { isAdmin } from "@/lib/auth/permissions";
+import { formatTime } from "@/lib/format/date-time";
 
 export const emptyDashboardSnapshot: DashboardSnapshot = {
   churchName: "Abundant Life UPC",
@@ -65,15 +66,6 @@ function formatServiceDate(value: string, long = false) {
     month: long ? "long" : "short",
     day: "numeric",
     year: long ? "numeric" : undefined,
-  });
-}
-
-function formatServiceTime(value?: string) {
-  if (!value) return null;
-  const [hours, minutes] = value.split(":").map(Number);
-  return new Date(2026, 0, 1, hours, minutes).toLocaleTimeString(undefined, {
-    hour: "numeric",
-    minute: "2-digit",
   });
 }
 
@@ -274,8 +266,8 @@ export function DashboardView({
             <strong>{nextService.title}</strong>
             <span>
               {formatServiceDate(nextService.serviceDate, true)}
-              {formatServiceTime(nextService.serviceTime)
-                ? ` · ${formatServiceTime(nextService.serviceTime)}`
+              {formatTime(nextService.serviceTime, "")
+                ? ` · ${formatTime(nextService.serviceTime, "")}`
                 : ""}
             </span>
             <span className={`dashboard-focus-status ${nextService.status}`}>
@@ -637,8 +629,8 @@ function ServiceCard({
       <strong>{service.title}</strong>
       <span className="dashboard-service-date">
         {formatServiceDate(service.serviceDate, true)}
-        {formatServiceTime(service.serviceTime)
-          ? ` · ${formatServiceTime(service.serviceTime)}`
+        {formatTime(service.serviceTime, "")
+          ? ` · ${formatTime(service.serviceTime, "")}`
           : ""}
       </span>
       <div className="dashboard-service-stats">

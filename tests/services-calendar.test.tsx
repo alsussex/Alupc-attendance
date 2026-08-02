@@ -141,6 +141,8 @@ describe("services calendar interface", () => {
     const dialog = screen.getByRole("dialog", { name: "Jul 27, 2026" });
     expect(within(dialog).getByText("Morning Prayer")).toBeInTheDocument();
     expect(within(dialog).getByText("Evening Worship")).toBeInTheDocument();
+    expect(within(dialog).getByText("6:30 PM")).toBeVisible();
+    expect(within(dialog).queryByText("18:30")).not.toBeInTheDocument();
     fireEvent.click(
       within(dialog).getByRole("button", { name: /Evening Worship/ }),
     );

@@ -4,6 +4,7 @@ import type { UserContext } from "@/lib/domain";
 import { isAdmin } from "@/lib/auth/permissions";
 import { buildAttendanceReportRows } from "@/lib/reports/attendance-report";
 import { getDatabase } from "@/lib/storage/database";
+import { formatTime } from "@/lib/format/date-time";
 
 export type ExportDataset =
   | "members"
@@ -147,7 +148,7 @@ export async function buildOrganizationExport(
         return [
           service.id,
           service.serviceDate,
-          service.serviceTime,
+          formatTime(service.serviceTime, ""),
           service.serviceType,
           service.customName,
           service.notes,

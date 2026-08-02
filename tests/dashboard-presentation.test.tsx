@@ -102,6 +102,8 @@ describe("dashboard presentation", () => {
     ).toBeVisible();
     expect(screen.getByText("Good evening")).toBeVisible();
     expect(screen.getByText("Today’s service")).toBeVisible();
+    expect(screen.getAllByText(/7:00 PM/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/19:00/)).not.toBeInTheDocument();
     expect(
       screen
         .getAllByRole("link", { name: /^New service/ })
@@ -172,6 +174,7 @@ describe("dashboard presentation", () => {
     expect(within(service).getByText("4")).toBeVisible();
     expect(within(service).getByText("3")).toBeVisible();
     expect(within(service).getByText("Sunday School Kids")).toBeVisible();
+    expect(within(service).getByText(/10:30 AM/)).toBeVisible();
     expect(within(service).getByText(/Updated/)).toBeVisible();
 
     const juneToggle = screen.getByRole("button", { name: /June 2026/ });

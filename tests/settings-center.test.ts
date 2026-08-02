@@ -207,6 +207,18 @@ describe("secure exports", () => {
       '"Name"\r\n"Avery ""Ace"", Stone"',
     );
   });
+
+  it("exports service times using a readable 12-hour clock", async () => {
+    await saveService(admin, {
+      serviceDate: "2026-08-02",
+      serviceType: "Sunday Evening",
+      serviceTime: "18:00",
+      status: "completed",
+    });
+    const csv = await buildOrganizationExport(admin, "services");
+    expect(csv).toContain('"6:00 PM"');
+    expect(csv).not.toContain('"18:00"');
+  });
 });
 
 describe("settings navigation and database authorization", () => {

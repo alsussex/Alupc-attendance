@@ -46,8 +46,9 @@ export function formatTime(value?: string | null, fallback = "No default") {
   ) {
     return fallback;
   }
-  return new Date(2026, 0, 1, hours, minutes).toLocaleTimeString(undefined, {
+  return new Date(2026, 0, 1, hours, minutes).toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
   });
 }

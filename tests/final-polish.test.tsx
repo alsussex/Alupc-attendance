@@ -110,7 +110,10 @@ describe("final application polish", () => {
   it("formats dates and times consistently and handles invalid values safely", () => {
     expect(formatDate("2026-07-29")).toMatch(/Jul.*29.*2026/);
     expect(formatDateTime("not-a-date", "Unavailable")).toBe("Unavailable");
-    expect(formatTime("10:30")).toMatch(/10:30/);
+    expect(formatTime("06:30")).toBe("6:30 AM");
+    expect(formatTime("10:30")).toBe("10:30 AM");
+    expect(formatTime("18:00")).toBe("6:00 PM");
+    expect(formatTime("19:00")).toBe("7:00 PM");
     expect(formatTime("99:00", "No time")).toBe("No time");
   });
 
