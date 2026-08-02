@@ -257,4 +257,16 @@ describe("dashboard responsive styling", () => {
     expect(css).toContain("@media (prefers-reduced-motion: reduce)");
     expect(css).toContain("transition-duration: .01ms !important");
   });
+
+  it("uses one consistent icon system instead of text glyphs", () => {
+    const source = readFileSync(
+      resolve("components/dashboard/Dashboard.tsx"),
+      "utf8",
+    );
+    expect(source).toContain('from "lucide-react"');
+    expect(source).toContain("icon={Plus}");
+    expect(source).toContain("icon={UsersRound}");
+    expect(source).toContain("icon={CalendarDays}");
+    expect(source).not.toContain('glyph="P"');
+  });
 });

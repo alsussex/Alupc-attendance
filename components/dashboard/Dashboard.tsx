@@ -2,6 +2,21 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Activity,
+  ArrowRight,
+  ArrowUpRight,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardCheck,
+  FileChartColumn,
+  Play,
+  Plus,
+  Settings,
+  UserRoundPlus,
+  UsersRound,
+  type LucideIcon,
+} from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   loadDashboardSnapshot,
@@ -23,11 +38,11 @@ export const emptyDashboardSnapshot: DashboardSnapshot = {
   activity: [],
 };
 
-const activityGlyphs: Record<DashboardActivity["type"], string> = {
-  person: "P",
-  service: "S",
-  attendance: "✓",
-  visitor: "V",
+const activityIcons: Record<DashboardActivity["type"], LucideIcon> = {
+  person: UsersRound,
+  service: CalendarDays,
+  attendance: ClipboardCheck,
+  visitor: UserRoundPlus,
 };
 
 function greetingFor(date: Date) {
@@ -177,35 +192,35 @@ export function DashboardView({
       label: "Total members",
       value: snapshot.totalPeople,
       hint: "active members",
-      glyph: "P",
+      icon: UsersRound,
       tone: "neutral",
     },
     {
       label: "Attendance this month",
       value: snapshot.attendanceThisMonth,
       hint: "members and visitors",
-      glyph: "✓",
+      icon: ClipboardCheck,
       tone: "current",
     },
     {
       label: "Visitors this month",
       value: snapshot.visitorsThisMonth,
       hint: "people welcomed",
-      glyph: "V",
+      icon: UserRoundPlus,
       tone: "neutral",
     },
     {
       label: "Services this month",
       value: snapshot.servicesThisMonth,
       hint: "church services",
-      glyph: "S",
+      icon: CalendarDays,
       tone: "neutral",
     },
     {
       label: "Average attendance",
       value: snapshot.averageAttendance,
       hint: "per service",
-      glyph: "A",
+      icon: Activity,
       tone: "neutral",
     },
     {
@@ -213,7 +228,7 @@ export function DashboardView({
       value: snapshot.services.filter((service) => service.status === "draft")
         .length,
       hint: "ready to continue",
-      glyph: "D",
+      icon: ClipboardCheck,
       tone: "draft",
     },
   ] as const;
@@ -234,7 +249,7 @@ export function DashboardView({
           </p>
           <div className="dashboard-hero-actions">
             <Link className="button primary dashboard-primary-action" href="/services?new=1">
-              <span aria-hidden="true">＋</span>
+              <Plus aria-hidden="true" />
               New service
             </Link>
             <Link className="button dashboard-secondary-action" href="/services">
@@ -267,13 +282,13 @@ export function DashboardView({
               {nextService.status === "draft" ? "Ready to continue" : "Completed"}
             </span>
             <span className="dashboard-focus-arrow" aria-hidden="true">
-              →
+              <ArrowRight />
             </span>
           </Link>
         ) : (
           <div className="dashboard-focus-card empty-focus">
             <span className="dashboard-focus-icon" aria-hidden="true">
-              ✓
+              <CheckCircle2 />
             </span>
             <span className="dashboard-focus-kicker">You’re all set</span>
             <strong>Ready for the next service</strong>
@@ -295,7 +310,7 @@ export function DashboardView({
           aria-label={`Resume attendance for ${draft.title}`}
         >
           <span className="dashboard-resume-icon" aria-hidden="true">
-            ▶
+            <Play />
           </span>
           <span className="dashboard-resume-copy">
             <small>Attendance in progress</small>
@@ -306,7 +321,7 @@ export function DashboardView({
             </span>
           </span>
           <span className="dashboard-resume-action">
-            Resume attendance <span aria-hidden="true">→</span>
+            Resume attendance <ArrowRight aria-hidden="true" />
           </span>
         </Link>
       )}
@@ -320,26 +335,26 @@ export function DashboardView({
         <div className="dashboard-action-grid">
           <QuickAction
             href="/services?new=1"
-            glyph="＋"
+            icon={Plus}
             label="New service"
             description="Start taking attendance"
             primary
           />
           <QuickAction
             href="/people"
-            glyph="P"
+            icon={UsersRound}
             label="Members"
             description="View and manage people"
           />
           <QuickAction
             href={visitorHref}
-            glyph="V"
+            icon={UserRoundPlus}
             label="Visitors"
             description="Add to the current service"
           />
           <QuickAction
             href="/services"
-            glyph="S"
+            icon={CalendarDays}
             label="Services"
             description="Browse attendance history"
           />
@@ -350,7 +365,7 @@ export function DashboardView({
             aria-label="Reports, coming in a future release"
           >
             <span className="dashboard-action-icon" aria-hidden="true">
-              R
+              <FileChartColumn />
             </span>
             <span>
               <strong>Reports</strong>
@@ -360,7 +375,7 @@ export function DashboardView({
           {isAdministrator && (
             <QuickAction
               href="/settings"
-              glyph="⚙"
+              icon={Settings}
               label="Settings"
               description="Church preferences"
             />
@@ -448,7 +463,7 @@ export function DashboardView({
           ) : (
             <div className="dashboard-empty-state">
               <span className="dashboard-empty-icon" aria-hidden="true">
-                +
+                <CalendarDays />
               </span>
               <h3>No services yet</h3>
               <p>
@@ -480,7 +495,10 @@ export function DashboardView({
                     className={`dashboard-activity-icon ${item.type}`}
                     aria-hidden="true"
                   >
-                    {activityGlyphs[item.type]}
+                    {(() => {
+                      const Icon = activityIcons[item.type];
+                      return <Icon />;
+                    })()}
                   </span>
                   <span>
                     <strong>{item.message}</strong>
@@ -491,7 +509,7 @@ export function DashboardView({
             </ol>
           ) : (
             <div className="dashboard-activity-empty">
-              <span aria-hidden="true">✓</span>
+              <span aria-hidden="true"><CheckCircle2 /></span>
               <strong>You’re ready to begin</strong>
               <p>Member, service, and attendance updates will appear here.</p>
             </div>
@@ -543,13 +561,13 @@ function DashboardPanelHeading({
 
 function QuickAction({
   href,
-  glyph,
+  icon: Icon,
   label,
   description,
   primary = false,
 }: {
   href: string;
-  glyph: string;
+  icon: LucideIcon;
   label: string;
   description: string;
   primary?: boolean;
@@ -564,14 +582,14 @@ function QuickAction({
       href={href}
     >
       <span className="dashboard-action-icon" aria-hidden="true">
-        {glyph}
+        <Icon />
       </span>
       <span>
         <strong>{label}</strong>
         <small>{description}</small>
       </span>
       <span className="dashboard-action-arrow" aria-hidden="true">
-        →
+        <ArrowRight />
       </span>
     </Link>
   );
@@ -581,19 +599,19 @@ function MetricCard({
   label,
   value,
   hint,
-  glyph,
+  icon: Icon,
   tone,
 }: {
   label: string;
   value: number;
   hint: string;
-  glyph: string;
+  icon: LucideIcon;
   tone: "neutral" | "current" | "draft";
 }) {
   return (
     <article className={`dashboard-metric-card ${tone}`}>
       <span className="dashboard-metric-icon" aria-hidden="true">
-        {glyph}
+        <Icon />
       </span>
       <strong>{value.toLocaleString()}</strong>
       <span>{label}</span>
@@ -621,7 +639,7 @@ function ServiceCard({
           {service.status === "draft" ? "Draft" : "Completed"}
         </span>
         <span className="dashboard-service-arrow" aria-hidden="true">
-          ↗
+          <ArrowUpRight />
         </span>
       </div>
       <strong>{service.title}</strong>
