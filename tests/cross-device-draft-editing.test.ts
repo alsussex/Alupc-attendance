@@ -372,7 +372,7 @@ describe("cross-device organization drafts", () => {
 });
 
 describe("draft discovery triggers and duplicate protection", () => {
-  it("uses realtime plus startup, focus, reconnect, manual sync, and a 30-second fallback", () => {
+  it("uses realtime plus startup, focus, reconnect, manual sync, and a low-egress fallback", () => {
     const provider = readFileSync(
       resolve("components/sync/SyncProvider.tsx"),
       "utf8",
@@ -390,7 +390,7 @@ describe("draft discovery triggers and duplicate protection", () => {
     expect(provider).toContain('"remote"');
     expect(provider).toContain("synchronizeNow");
     expect(service).toContain('window.addEventListener("focus"');
-    expect(service).toContain("30_000");
+    expect(service).toContain("5 * 60_000");
     expect(realtime).toContain('"services"');
     expect(realtime).toContain('"service_attendance"');
     expect(realtime).toContain('"service_visitors"');

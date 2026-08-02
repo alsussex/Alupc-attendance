@@ -1,6 +1,11 @@
 "use client";
 
-import type { SyncPhase, SyncStatusRecord, UserContext } from "@/lib/domain";
+import type {
+  PullTable,
+  SyncPhase,
+  SyncStatusRecord,
+  UserContext,
+} from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
 import { hasSupabaseConfig } from "@/lib/supabase/client";
 import {
@@ -32,10 +37,37 @@ export interface SynchronizationOptions {
   trigger?: SyncTrigger;
   forceRetry?: boolean;
   fullSnapshot?: boolean;
+  pullTables?: readonly PullTable[];
+  skipPull?: boolean;
   recoverAccess?: () => Promise<UserContext | null>;
 }
 
-const activeSyncs = new Map<string, Promise<SynchronizationResult>>();
+interface ActiveSynchronization {
+  promise: Promise<SynchronizationResult>;
+  options: SynchronizationOptions;
+}
+
+const activeSyncs = new Map<string, ActiveSynchronization>();
+
+const emptyPullResult = (): PullResult => ({
+  downloaded: 0,
+  merged: 0,
+  skippedPending: 0,
+  skippedOlder: 0,
+});
+
+function activePullCovers(
+  active: SynchronizationOptions,
+  requested: SynchronizationOptions,
+) {
+  if (requested.skipPull) return true;
+  if (active.skipPull) return false;
+  if (!active.pullTables) return true;
+  if (!requested.pullTables) return false;
+  return requested.pullTables.every((table) =>
+    active.pullTables?.includes(table),
+  );
+}
 
 export function syncRetryDelay(failedAttempts: number) {
   return Math.min(2_000 * 2 ** Math.max(0, failedAttempts), 60_000);
@@ -101,7 +133,7 @@ async function runSynchronization(
         diagnostics: [],
         blockedConflicts: 0,
       },
-      pull: { downloaded: 0, merged: 0, skippedPending: 0, skippedOlder: 0 },
+      pull: emptyPullResult(),
     };
   }
 
@@ -116,14 +148,16 @@ async function runSynchronization(
     { trigger: options.trigger },
   );
 
-  options.onPhase?.("downloading");
-  await storeStatus(user, "downloading");
   try {
-    const pull = await pullOrganizationData(
-      user,
-      options.pullSource,
-      { fullSnapshot: options.fullSnapshot },
-    );
+    let pull = emptyPullResult();
+    if (!options.skipPull) {
+      options.onPhase?.("downloading");
+      await storeStatus(user, "downloading");
+      pull = await pullOrganizationData(user, options.pullSource, {
+        fullSnapshot: options.fullSnapshot,
+        tables: options.pullTables,
+      });
+    }
     if (upload.errors.length) {
       const message = upload.errors.join("\n");
       options.onPhase?.("error");
@@ -145,14 +179,27 @@ async function runSynchronization(
 export function synchronizeOrganization(
   user: UserContext,
   options: SynchronizationOptions = {},
-) {
+): Promise<SynchronizationResult> {
   const syncKey = `${user.userId}:${user.organizationId}`;
   const existing = activeSyncs.get(syncKey);
-  if (existing) return existing;
+  if (existing) {
+    if (
+      !options.forceRetry &&
+      activePullCovers(existing.options, options)
+    ) {
+      return existing.promise;
+    }
+    // A targeted Realtime pull or a manual request that arrives during an
+    // upload-only pass must not be lost. Run it immediately afterward while
+    // still keeping one processor active at a time.
+    return existing.promise.then(() => synchronizeOrganization(user, options));
+  }
   const sync = runSynchronization(user, options).finally(() => {
-    activeSyncs.delete(syncKey);
+    if (activeSyncs.get(syncKey)?.promise === sync) {
+      activeSyncs.delete(syncKey);
+    }
   });
-  activeSyncs.set(syncKey, sync);
+  activeSyncs.set(syncKey, { promise: sync, options });
   return sync;
 }
 
@@ -235,6 +282,10 @@ export async function synchronizeNow(
       ...options,
       trigger: "manual",
       forceRetry: true,
+      // The first pass already performed the bidirectional delta pull. This
+      // second pass only drains a mutation that became retryable after that
+      // reconciliation, avoiding a duplicate download of every table.
+      skipPull: true,
     });
   }
   return result;
@@ -247,19 +298,24 @@ export function registerAutomaticSync(
 ) {
   const online = () => void synchronize("online");
   const focus = () => void synchronize("focus");
+  const visible = () => {
+    if (document.visibilityState === "visible") void synchronize("focus");
+  };
   if (options.listenOnline !== false) {
     window.addEventListener("online", online);
   }
   window.addEventListener("focus", focus);
+  document.addEventListener("visibilitychange", visible);
   const interval = window.setInterval(
     () => void synchronize("scheduled"),
-    30_000,
+    5 * 60_000,
   );
   return () => {
     if (options.listenOnline !== false) {
       window.removeEventListener("online", online);
     }
     window.removeEventListener("focus", focus);
+    document.removeEventListener("visibilitychange", visible);
     window.clearInterval(interval);
   };
 }

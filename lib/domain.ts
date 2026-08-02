@@ -295,6 +295,7 @@ export interface SyncCursor {
   organizationId: string;
   table: PullTable;
   updatedAt: string;
+  recordId?: string;
   lastSuccessfulPullAt: string;
 }
 

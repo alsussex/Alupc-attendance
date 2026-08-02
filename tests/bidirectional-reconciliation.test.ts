@@ -304,13 +304,14 @@ describe("incremental remote reconciliation", () => {
 describe("remote subscription lifecycle", () => {
   function fakeRealtimeClient() {
     const filters: Array<Record<string, string>> = [];
+    const callbacks: Array<(payload: { eventType: string; old?: { id?: string } }) => void> = [];
     const channel = {
       on(
         _type: string,
         filter: Record<string, string>,
-        callback: () => void,
+        callback: (payload: { eventType: string; old?: { id?: string } }) => void,
       ) {
-        void callback;
+        callbacks.push(callback);
         filters.push(filter);
         return this;
       },
@@ -326,6 +327,7 @@ describe("remote subscription lifecycle", () => {
       } as unknown as SupabaseClient,
       channel: channel as unknown as RealtimeChannel,
       filters,
+      callbacks,
       removeChannel,
     };
   }
@@ -346,6 +348,24 @@ describe("remote subscription lifecycle", () => {
     stopB();
     expect(fake.removeChannel).toHaveBeenCalledWith(fake.channel);
     expect(activeRemoteSubscriptionCount()).toBe(0);
+  });
+
+  it("reports the changed table so automatic reconciliation stays targeted", () => {
+    const fake = fakeRealtimeClient();
+    const listener = vi.fn();
+    const stop = subscribeToRemoteOrganizationChanges(
+      user,
+      listener,
+      fake.client,
+    );
+
+    const servicesIndex = fake.filters.findIndex(
+      (filter) => filter.table === "services",
+    );
+    fake.callbacks[servicesIndex]?.({ eventType: "UPDATE" });
+
+    expect(listener).toHaveBeenCalledWith("services");
+    stop();
   });
 
   it("removes the previous organization subscription when users switch", () => {

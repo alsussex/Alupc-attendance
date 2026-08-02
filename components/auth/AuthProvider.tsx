@@ -101,6 +101,14 @@ export function accessRetryDelay(attempt: number) {
   return [1_000, 3_000, 10_000][attempt - 1];
 }
 
+export function shouldRevalidateAccess(
+  lastCheckAt: number,
+  force = false,
+  now = Date.now(),
+) {
+  return force || now - lastCheckAt >= 5 * 60_000;
+}
+
 function sessionIsUsable(session: Session, nowMilliseconds = Date.now()) {
   return !session.expires_at || session.expires_at * 1000 > nowMilliseconds;
 }
@@ -198,6 +206,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sessionUserId = useRef<string | null>(null);
   const authSubscription = useRef<{ unsubscribe: () => void } | null>(null);
   const lastAuthEvent = useRef<{ key: string; at: number } | null>(null);
+  const lastFocusAccessCheck = useRef(0);
 
   const loadProfile = useCallback(async (
     nextSession: Session | null,
@@ -633,14 +642,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!session || !navigator.onLine) return;
 
-    const revalidateAccess = () => {
-      if (navigator.onLine) void restoreSession(false);
+    // Realtime/incremental sync keeps the cached profile current. A bounded
+    // focus check remains as a safety net without fetching profile and
+    // organization rows every time a user switches tabs or resumes the PWA.
+    lastFocusAccessCheck.current = Date.now();
+    const revalidateAccess = (force = false) => {
+      if (!navigator.onLine) return;
+      if (!shouldRevalidateAccess(lastFocusAccessCheck.current, force)) return;
+      lastFocusAccessCheck.current = Date.now();
+      void restoreSession(false);
     };
-    window.addEventListener("online", revalidateAccess);
-    window.addEventListener("focus", revalidateAccess);
+    const online = () => revalidateAccess(true);
+    const focus = () => revalidateAccess(false);
+    window.addEventListener("online", online);
+    window.addEventListener("focus", focus);
     return () => {
-      window.removeEventListener("online", revalidateAccess);
-      window.removeEventListener("focus", revalidateAccess);
+      window.removeEventListener("online", online);
+      window.removeEventListener("focus", focus);
     };
   }, [restoreSession, session]);
 

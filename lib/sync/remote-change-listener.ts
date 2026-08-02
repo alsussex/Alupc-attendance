@@ -4,12 +4,12 @@ import type {
   RealtimeChannel,
   SupabaseClient,
 } from "@supabase/supabase-js";
-import type { UserContext } from "@/lib/domain";
+import type { PullTable, UserContext } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
 import { announceDataChanged } from "@/lib/storage/data-events";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
-type RemoteChangeListener = () => void;
+type RemoteChangeListener = (table: PullTable) => void;
 
 interface SharedSubscription {
   channel: RealtimeChannel;
@@ -44,8 +44,8 @@ export function subscribeToRemoteOrganizationChanges(
   if (!shared) {
     const listeners = new Set<RemoteChangeListener>();
     let channel = client.channel(`church-sync-${user.organizationId}`);
-    const notify = () => {
-      for (const current of listeners) current();
+    const notify = (table: PullTable) => {
+      for (const current of listeners) current(table);
     };
 
     channel = channel.on(
@@ -56,7 +56,7 @@ export function subscribeToRemoteOrganizationChanges(
         table: "organizations",
         filter: `id=eq.${user.organizationId}`,
       },
-      notify,
+      () => notify("organizations"),
     );
     for (const table of REMOTE_TABLES) {
       channel = channel.on(
@@ -78,7 +78,7 @@ export function subscribeToRemoteOrganizationChanges(
               announceDataChanged();
             });
           }
-          notify();
+          notify(table);
         },
       );
     }

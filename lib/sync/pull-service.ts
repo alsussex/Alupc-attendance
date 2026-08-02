@@ -21,6 +21,27 @@ import {
 
 const PAGE_SIZE = 500;
 
+const PULL_COLUMNS: Record<PullTable, string> = {
+  organizations:
+    "id,name,slug,created_by,created_at,updated_at,version",
+  profiles:
+    "id,organization_id,display_name,role,is_active,theme_preference,version,created_at,updated_at",
+  organization_settings:
+    "id,organization_id,settings,version,created_by,updated_by,created_at,updated_at",
+  people:
+    "id,organization_id,first_name,last_name,display_name,person_type,is_active,duplicate_name_allowed,email,phone,inactive_at,restored_at,deleted_at,merged_into_id,merged_from_ids,version,created_by,updated_by,created_at,updated_at",
+  member_private_details:
+    "id,organization_id,member_id,notes,version,created_by,updated_by,created_at,updated_at",
+  services:
+    "id,organization_id,service_date,service_type,custom_name,service_time,notes,status,unnamed_visitor_count,sunday_school_kids_count,is_archived,deleted_at,version,created_by,updated_by,created_at,updated_at",
+  service_attendance:
+    "id,organization_id,service_id,person_id,present,version,created_by,updated_by,created_at,updated_at",
+  service_visitors:
+    "id,organization_id,service_id,first_name,last_name,display_name,saved_as_member,member_person_id,notes,deleted_at,version,created_by,updated_by,created_at,updated_at",
+  audit_log:
+    "id,organization_id,entity_type,entity_id,action,user_id,user_display_name,role,occurred_at,device_id,details,created_at,updated_at",
+};
+
 type LocalStore =
   | "organizations"
   | "organizationSettings"
@@ -44,6 +65,7 @@ export interface PullSource {
     updatedAt: string | undefined,
     offset: number,
     limit: number,
+    recordId?: string,
   ): Promise<PullPage>;
 }
 
@@ -146,24 +168,40 @@ async function putLocalRecord(
 
 export function createSupabasePullSource(): PullSource {
   return {
-    async fetchPage(table, organizationId, updatedAt, offset, limit) {
+    async fetchPage(
+      table,
+      organizationId,
+      updatedAt,
+      offset,
+      limit,
+      recordId,
+    ) {
       let query = getSupabaseClient()
         .from(table)
-        .select("*")
+        .select(PULL_COLUMNS[table])
         .order("updated_at", { ascending: true })
         .order("id", { ascending: true });
       query =
         table === "organizations"
           ? query.eq("id", organizationId)
           : query.eq("organization_id", organizationId);
-      if (updatedAt) query = query.gte("updated_at", updatedAt);
+      if (updatedAt && recordId) {
+        query = query.or(
+          `updated_at.gt.${updatedAt},and(updated_at.eq.${updatedAt},id.gt.${recordId})`,
+        );
+      } else if (updatedAt) {
+        // Legacy cursors did not store the final record ID. Use one inclusive
+        // boundary request, then persist the composite cursor so subsequent
+        // pulls download only records strictly after the last received row.
+        query = query.gte("updated_at", updatedAt);
+      }
       const { data, error } = await query.range(offset, offset + limit - 1);
       if (error) {
         throw new Error(
           `${table}: ${error.code ? `${error.code}: ` : ""}${error.message}`,
         );
       }
-      const rows = (data ?? []) as Record<string, unknown>[];
+      const rows = (data ?? []) as unknown as Record<string, unknown>[];
       return { rows, hasMore: rows.length === limit };
     },
   };
@@ -172,7 +210,10 @@ export function createSupabasePullSource(): PullSource {
 export async function pullOrganizationData(
   userOrOrganization: UserContext | string,
   source: PullSource = createSupabasePullSource(),
-  options: { fullSnapshot?: boolean } = {},
+  options: {
+    fullSnapshot?: boolean;
+    tables?: readonly PullTable[];
+  } = {},
 ): Promise<PullResult> {
   const organizationId =
     typeof userOrOrganization === "string"
@@ -198,7 +239,8 @@ export async function pullOrganizationData(
     skippedOlder: 0,
   };
 
-  for (const table of PULL_TABLES) {
+  const requestedTables = options.tables ?? PULL_TABLES;
+  for (const table of requestedTables) {
     const scopedCursorId = cursorId(userId, organizationId, table);
     const existingCursor = await database.get(
       "syncCursors",
@@ -207,6 +249,7 @@ export async function pullOrganizationData(
     const cursor = options.fullSnapshot ? undefined : existingCursor;
     let offset = 0;
     let newestUpdatedAt = cursor?.updatedAt;
+    let newestRecordId = cursor?.recordId;
 
     while (true) {
       const page = await source.fetchPage(
@@ -215,6 +258,7 @@ export async function pullOrganizationData(
         cursor?.updatedAt,
         offset,
         PAGE_SIZE,
+        cursor?.recordId,
       );
       result.downloaded += page.rows.length;
 
@@ -272,11 +316,16 @@ export async function pullOrganizationData(
           await putLocalRecord(database, store, record);
           result.merged += 1;
         }
+        const cloudRecordId = String(row.id);
+        const updatedAt = recordUpdatedAt(record);
         if (
           !newestUpdatedAt ||
-          Date.parse(recordUpdatedAt(record)) > Date.parse(newestUpdatedAt)
+          updatedAt > newestUpdatedAt ||
+          (updatedAt === newestUpdatedAt &&
+            (!newestRecordId || cloudRecordId > newestRecordId))
         ) {
-          newestUpdatedAt = recordUpdatedAt(record);
+          newestUpdatedAt = updatedAt;
+          newestRecordId = cloudRecordId;
         }
       }
 
@@ -291,6 +340,7 @@ export async function pullOrganizationData(
         organizationId,
         table,
         updatedAt: newestUpdatedAt,
+        recordId: newestRecordId,
         lastSuccessfulPullAt: new Date().toISOString(),
       };
       await database.put("syncCursors", cursor);

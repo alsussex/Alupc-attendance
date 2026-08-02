@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import type { SyncPhase } from "@/lib/domain";
+import type { PullTable, SyncPhase } from "@/lib/domain";
 import { subscribeToQueuedMutations } from "@/lib/storage/data-events";
 import { getQueueCount } from "@/lib/sync/queue";
 import type { RecoveryState } from "@/lib/sync/presentation";
@@ -50,6 +50,7 @@ const SyncContext = createContext<SyncContextValue | null>(null);
 const MUTATION_DEBOUNCE_MS = 450;
 const PENDING_VISIBILITY_DELAY_MS = 2_000;
 const RECOVERY_CONFIRMATION_MS = 2_500;
+const FOCUS_PULL_COOLDOWN_MS = 5 * 60_000;
 
 export function SyncProvider({ children }: { children: ReactNode }) {
   const { user, refreshAccess, recoverSession, authRevision } = useAuth();
@@ -72,15 +73,17 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const manualAttempt = useRef<Promise<SyncAttemptOutcome> | null>(null);
   const manualConfirmationTimer = useRef<number | undefined>(undefined);
   const observedAuthRevision = useRef(0);
+  const lastPullAttemptAt = useRef(0);
 
   const attemptSynchronization = useCallback(
     async (
       drainQueue = false,
       trigger: SyncTrigger = "automatic",
+      pullTables?: readonly PullTable[],
     ): Promise<SyncAttemptOutcome> => {
       if (!user) return { status: "error", pendingCount: 0 };
       let activeUser = user;
-      if (trigger !== "automatic") {
+      if (trigger === "manual") {
         const refreshed = await refreshAccess();
         if (!refreshed) {
           const preserved = await getQueueCount(user.organizationId);
@@ -111,19 +114,28 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       activeAttemptCount.current += 1;
       setIsSyncing(true);
       try {
-        const cycles = drainQueue ? 2 : 1;
+        const skipPull =
+          trigger === "automatic" ||
+          (trigger === "focus" &&
+            Date.now() - lastPullAttemptAt.current < FOCUS_PULL_COOLDOWN_MS);
+        const cycles = drainQueue && trigger !== "manual" ? 2 : 1;
         for (let cycle = 0; cycle < cycles; cycle += 1) {
           const result =
             trigger === "manual"
               ? await synchronizeNow(activeUser, {
                   onPhase: setPhase,
                   recoverAccess: recoverSession,
+                  pullTables,
+                  skipPull,
                 })
               : await synchronizeWithSessionRecovery(activeUser, {
                   onPhase: setPhase,
                   trigger,
                   recoverAccess: recoverSession,
+                  pullTables,
+                  skipPull,
                 });
+          if (!skipPull) lastPullAttemptAt.current = Date.now();
           count = await getQueueCount(activeUser.organizationId);
           setPendingCount(count);
           if (result.upload.errors.length) {
@@ -228,6 +240,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     let pendingVisibilityTimer: number | undefined;
     let recoveryTimer: number | undefined;
     let remoteTimer: number | undefined;
+    const remoteTables = new Set<PullTable>();
     let failedAttempts = 0;
     let stopped = false;
     let recovering = false;
@@ -258,9 +271,14 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
     const runAutomaticSync = async (
       trigger: SyncTrigger = "automatic",
+      pullTables?: readonly PullTable[],
     ) => {
       if (stopped || !navigator.onLine) return;
-      const outcome = await attemptSynchronization(false, trigger);
+      const outcome = await attemptSynchronization(
+        false,
+        trigger,
+        pullTables,
+      );
       if (stopped) return;
       if (outcome.status === "synced") {
         failedAttempts = 0;
@@ -279,7 +297,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (outcome.status === "error") {
-        scheduleRetry(() => void runAutomaticSync("automatic"));
+        scheduleRetry(() => void runAutomaticSync(trigger, pullTables));
       }
     };
 
@@ -321,10 +339,15 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     );
     const stopRemoteChanges = subscribeToRemoteOrganizationChanges(
       user,
-      () => {
+      (table) => {
+        remoteTables.add(table);
         clearTimer(remoteTimer);
         remoteTimer = window.setTimeout(
-          () => void runAutomaticSync("remote"),
+          () => {
+            const tables = [...remoteTables];
+            remoteTables.clear();
+            void runAutomaticSync("remote", tables);
+          },
           MUTATION_DEBOUNCE_MS,
         );
       },

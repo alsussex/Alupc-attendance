@@ -156,7 +156,7 @@ Screen -> repository -> IndexedDB transaction -> mutation queue
 - `lib/storage/database.ts` defines the durable local stores.
 - `lib/sync/queue.ts` coalesces repeated upserts for the same record.
 - Upload and pull remain separate, testable operations and run in dependency order.
-- Sync runs after login/startup, shortly after every local change, on reconnection/focus, after a Realtime notification, every 30 seconds while open and online, and after capped exponential retry delays. Rapid mutations are coalesced per stable record ID before upload.
+- Sync runs after login/startup, shortly after every local change, on reconnection/focus, after a Realtime notification, every five minutes as a missed-event fallback while open and online, and after capped exponential retry delays. Rapid mutations are coalesced per stable record ID before upload. A routine local write performs an upload-only pass; it does not query every cloud table.
 - Queue insertion emits a dedicated mutation event, so automatic synchronization does not depend on a general UI refresh event. Startup, focus, reconnection, and manual sync also recover failed entries and processing entries stale for more than two minutes.
 - Client UUIDs remain stable locally and in Supabase.
 - Cache Storage holds only the application shell; IndexedDB holds church records and pending mutations. A service-worker update does not delete IndexedDB.
@@ -211,7 +211,20 @@ Disabling an account takes effect immediately for online database/API access. A 
 
 After login, the profile identifies the active organization. The coordinator uploads pending writes, then downloads organization/profile parents, people/services, and finally attendance/visitors. A fresh browser downloads all permitted records.
 
-Each user, organization, and table stores its own durable `updated_at` cursor. Later pulls use deterministic `updated_at, id` pagination from an inclusive cursor. Repeated boundary rows are safe because IndexedDB upserts are idempotent. A cursor advances only after a complete table pull.
+Each user, organization, and table stores its own durable composite
+`(updated_at, id)` cursor. Later pulls request only records strictly newer than
+that tuple, so an unchanged boundary row is not downloaded repeatedly. Legacy
+timestamp-only cursors perform one safe inclusive upgrade request and then
+become composite cursors. A cursor advances only after a complete table pull.
+
+Realtime notifications identify the table that changed, and normal remote
+reconciliation queries only that table. Startup, reconnection, manual sync,
+and the five-minute missed-event fallback check every table, but still request
+only rows after each table's cursor. Cloud pulls select only fields used by the
+local model instead of `select *`. A complete snapshot is reserved for a fresh
+device or the explicit **Repair local sync state** action. Focus/visibility
+checks are retained for mobile and tablet recovery but are capped to one
+all-table delta check per five minutes.
 
 ### Remote changes and session recovery
 
@@ -274,7 +287,7 @@ phase, error code/status, and safe account identifiers without logging access or
 refresh tokens.
 
 The complete reconciliation order is: recover queue locks, upload pending
-parents and children in dependency order, pull organization-scoped updates,
+parents and children in dependency order, pull organization-scoped deltas,
 merge records without pending local writes, notify the interface, and store
 per-user synchronization metadata. **Sync now** performs this same full
 bidirectional process. **Settings > Device & Sync > Repair local sync state**
@@ -291,8 +304,9 @@ rows, named visitors, and unnamed visitor count.
 
 Draft discovery runs at startup and sign-in, after token refresh, on browser
 focus, on network reconnection, after an organization-filtered Realtime event,
-after each successful upload, through **Sync now**, and through the 30-second
-incremental reconciliation fallback. A pull announces a local data change, so
+through **Sync now**, and through the five-minute incremental reconciliation
+fallback. Local mutations upload automatically without starting an unrelated
+all-table download. A pull announces a local data change, so
 an open Services or attendance screen refreshes from IndexedDB without a page
 reload. Realtime is an accelerator; the durable cursor-based pull is the source
 of recovery after a missed event or direct Supabase edit.

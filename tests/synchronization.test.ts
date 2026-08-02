@@ -125,7 +125,7 @@ function attendanceRow(
 }
 
 class MemoryPullSource implements PullSource {
-  calls: Array<{ table: PullTable; updatedAt?: string }> = [];
+  calls: Array<{ table: PullTable; updatedAt?: string; recordId?: string }> = [];
 
   constructor(
     private readonly records: Partial<
@@ -140,8 +140,9 @@ class MemoryPullSource implements PullSource {
     updatedAt: string | undefined,
     offset: number,
     limit: number,
+    recordId?: string,
   ) {
-    this.calls.push({ table, updatedAt });
+    this.calls.push({ table, updatedAt, recordId });
     if (this.failuresRemaining > 0) {
       this.failuresRemaining -= 1;
       throw new Error("Temporary network failure");
@@ -149,7 +150,9 @@ class MemoryPullSource implements PullSource {
     const eligible = (this.records[table] ?? []).filter(
       (record) =>
         !updatedAt ||
-        String(record.updated_at).localeCompare(updatedAt) >= 0,
+        String(record.updated_at) > updatedAt ||
+        (String(record.updated_at) === updatedAt &&
+          (!recordId || String(record.id) > recordId)),
     );
     const rows = eligible.slice(offset, offset + limit);
     return { rows, hasMore: offset + limit < eligible.length };
@@ -208,9 +211,43 @@ describe("pull synchronization", () => {
 
     const peopleCall = incremental.calls.find((call) => call.table === "people");
     expect(peopleCall?.updatedAt).toBe(earlier);
+    expect(peopleCall?.recordId).toBe(
+      "30000000-0000-4000-8000-000000000001",
+    );
     expect((await listActiveMembers(organizationId))[0].displayName).toBe(
       "Avery North",
     );
+  });
+
+  it("does not download unchanged boundary rows again", async () => {
+    const records = {
+      organizations: [organizationRow()],
+      profiles: [profileRow()],
+      people: [personRow()],
+      services: [serviceRow()],
+    };
+    await pullOrganizationData(user, new MemoryPullSource(records));
+
+    const unchanged = new MemoryPullSource(records);
+    const result = await pullOrganizationData(user, unchanged);
+
+    expect(result.downloaded).toBe(0);
+    expect(
+      unchanged.calls
+        .filter((call) => call.table in records)
+        .every((call) => Boolean(call.recordId)),
+    ).toBe(true);
+  });
+
+  it("queries only tables named by a Realtime delta", async () => {
+    const source = new MemoryPullSource({ people: [personRow()] });
+
+    const result = await pullOrganizationData(user, source, {
+      tables: ["people"],
+    });
+
+    expect(result.downloaded).toBe(1);
+    expect(source.calls.map((call) => call.table)).toEqual(["people"]);
   });
 
   it("does not overwrite a pending local write with older cloud data", async () => {
