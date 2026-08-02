@@ -232,11 +232,15 @@ describe("Sunday School Kids attendance counter", () => {
     expect(source).toContain(
       'className="unnamed-visitor-counter sunday-school-kids-counter"',
     );
-    expect(source).toContain("childProgram.label");
+    expect(source).toContain("<h2>Unnamed {childProgram.label}</h2>");
+    expect(source).toContain(
+      'aria-label={`Unnamed ${childProgram.label} count`}',
+    );
     expect(source).toContain("childProgram.helperText");
     expect(source).toContain(
       "{childProgram.label}: {active.sundaySchoolKidsCount ?? 0}",
     );
+    expect(source).not.toContain("Everyone visiting this service");
     expect(source).toContain("childProgramSummary(item.service)");
     const dashboardSource = readFileSync(
       resolve("components/dashboard/Dashboard.tsx"),

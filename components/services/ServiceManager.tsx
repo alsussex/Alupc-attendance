@@ -1118,14 +1118,14 @@ export function ServiceManager() {
               {childProgram && (
                 <section className="unnamed-visitor-counter sunday-school-kids-counter">
                   <div>
-                    <h2>{childProgram.label}</h2>
+                    <h2>Unnamed {childProgram.label}</h2>
                     <p>{childProgram.helperText}</p>
                   </div>
                   {!serviceLocked && (
                     <div
                       className="visitor-stepper"
                       role="group"
-                      aria-label={`${childProgram.label} count`}
+                      aria-label={`Unnamed ${childProgram.label} count`}
                     >
                       <button
                         type="button"
@@ -1165,7 +1165,6 @@ export function ServiceManager() {
                     {childProgram.label}: {active.sundaySchoolKidsCount ?? 0}
                   </span>
                 )}
-                <span>Everyone visiting this service</span>
               </div>
               <div className="visitor-card-grid">
                 {filteredVisitors.map((visitor) => (
