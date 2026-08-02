@@ -175,6 +175,18 @@ describe("meaningful audit recording", () => {
       }),
     ).toHaveLength(1);
   });
+
+  it("filters audit reports by the selected user", async () => {
+    await saveMember(admin, { firstName: "Admin", lastName: "Entry" });
+    await saveMember(taker, { firstName: "Volunteer", lastName: "Entry" });
+
+    const entries = await listAuditEntries(admin, { userId: taker.userId });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      userId: taker.userId,
+      userDisplayName: "Fictional Volunteer",
+    });
+  });
 });
 
 describe("offline, security, and export behavior", () => {

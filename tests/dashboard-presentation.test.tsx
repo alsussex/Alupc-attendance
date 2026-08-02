@@ -115,11 +115,10 @@ describe("dashboard presentation", () => {
       "href",
       "/settings",
     );
-    expect(
-      screen.getByRole("button", {
-        name: "Reports, coming in a future release",
-      }),
-    ).toBeDisabled();
+    expect(screen.getByRole("link", { name: /Reports/ })).toHaveAttribute(
+      "href",
+      "/reports",
+    );
     expect(
       within(
         screen.getByRole("region", { name: "Attendance overview" }),

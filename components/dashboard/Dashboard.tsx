@@ -358,20 +358,12 @@ export function DashboardView({
             label="Services"
             description="Browse attendance history"
           />
-          <button
-            className="dashboard-action-link unavailable"
-            type="button"
-            disabled
-            aria-label="Reports, coming in a future release"
-          >
-            <span className="dashboard-action-icon" aria-hidden="true">
-              <FileChartColumn />
-            </span>
-            <span>
-              <strong>Reports</strong>
-              <small>Coming in a future release</small>
-            </span>
-          </button>
+          <QuickAction
+            href="/reports"
+            icon={FileChartColumn}
+            label="Reports"
+            description="Print and export attendance"
+          />
           {isAdministrator && (
             <QuickAction
               href="/settings"

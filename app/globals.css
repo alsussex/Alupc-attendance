@@ -2954,6 +2954,86 @@ a.dashboard-focus-card:hover { border-color: var(--brand); transform: translateY
   .attendance-person-grid { grid-template-columns: 1fr; }
 }
 
+/* Reports workspace */
+.reports-page { display: grid; gap: 1.75rem; }
+.reports-page-header { align-items: end; }
+.report-data-source { max-width: 35rem; color: var(--muted); font-size: .78rem; line-height: 1.5; }
+.reports-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: clamp(2rem, 4vw, 4.5rem); align-items: start; }
+.reports-navigation { position: sticky; top: 1rem; }
+.reports-navigation nav { display: grid; border-left: 1px solid var(--line); }
+.reports-navigation nav button { min-height: 58px; display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: center; gap: .75rem; padding: .65rem .85rem; border: 0; border-left: 2px solid transparent; background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
+.reports-navigation nav button:hover { color: var(--ink); background: var(--surface-muted); }
+.reports-navigation nav button.active { color: var(--primary); border-left-color: var(--primary); background: var(--brand-soft); }
+.reports-navigation nav svg { width: 18px; height: 18px; }
+.reports-navigation nav span { display: grid; gap: .08rem; min-width: 0; }
+.reports-navigation nav strong { color: inherit; font-size: .82rem; }
+.reports-navigation nav small { color: var(--muted); font-size: .68rem; font-weight: 500; }
+.reports-mobile-selector { display: none; }
+.reports-content { min-width: 0; }
+.report-section { display: grid; gap: 1.5rem; }
+.report-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid var(--line); }
+.report-section-heading h2 { margin: .15rem 0 .3rem; font-size: clamp(1.4rem, 2vw, 1.9rem); }
+.report-section-heading p { margin: 0; color: var(--muted); }
+.report-metrics { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line); }
+.report-metrics > div { min-height: 112px; padding: 1.15rem 1rem; border-bottom: 1px solid var(--line); }
+.report-metrics > div:not(:nth-child(3n + 1)) { border-left: 1px solid var(--line); }
+.report-metrics dt { color: var(--muted); font-size: .76rem; font-weight: 650; }
+.report-metrics dd { margin: .45rem 0 0; color: var(--ink); font-size: clamp(1.65rem, 3vw, 2.4rem); font-weight: 760; letter-spacing: -.04em; }
+.report-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; padding: .8rem 0 1rem; border-bottom: 1px solid var(--line); }
+.report-toolbar label { min-width: 145px; display: grid; gap: .35rem; color: var(--muted); font-size: .72rem; font-weight: 650; }
+.report-toolbar input, .report-toolbar select { min-height: 44px; }
+.report-member-search { flex: 1 1 260px; }
+.report-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .6rem; }
+.report-table-scroll { max-width: 100%; overflow-x: auto; border-bottom: 1px solid var(--line); }
+.report-data-table, .attendance-report-preview table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.report-data-table th, .report-data-table td, .attendance-report-preview th, .attendance-report-preview td { padding: .8rem .7rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.report-data-table thead th, .attendance-report-preview thead th { color: var(--muted); font-size: .69rem; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+.report-data-table tbody tr:hover { background: var(--surface-muted); }
+.report-data-table td small { display: block; margin-top: .2rem; color: var(--muted); }
+.attendance-report-preview h3 { margin: 0; padding: 1rem; text-align: center; }
+.attendance-report-preview th:not(:first-child), .attendance-report-preview td { text-align: center; }
+.attendance-report-preview tbody th { min-width: 220px; }
+.attendance-report-preview .report-section-row th, .attendance-report-preview .report-summary-row th, .attendance-report-preview .report-summary-row td { font-weight: 750; background: var(--surface-muted); }
+.report-record-list { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--line); }
+.report-record-list li { min-height: 74px; display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .9rem .25rem; border-bottom: 1px solid var(--line); }
+.report-record-list li div { display: grid; gap: .2rem; }
+.report-record-list span { color: var(--muted); font-size: .76rem; }
+.report-record-list b { font-size: 1.55rem; }
+.report-row-actions { display: flex; align-items: center; gap: .65rem; white-space: nowrap; }
+.text-button { padding: 0; border: 0; background: transparent; color: var(--primary); font: inherit; font-weight: 700; cursor: pointer; }
+.text-button:hover, .text-button:focus-visible { text-decoration: underline; }
+
+@media (max-width: 900px) {
+  .reports-layout { grid-template-columns: 1fr; gap: 1.25rem; }
+  .reports-navigation { position: static; }
+  .reports-navigation nav { display: none; }
+  .reports-mobile-selector { display: grid; gap: .35rem; color: var(--muted); font-size: .72rem; font-weight: 650; }
+  .reports-mobile-selector select { min-height: 48px; }
+  .report-data-source { max-width: none; }
+}
+
+@media (max-width: 620px) {
+  .report-section-heading { align-items: stretch; flex-direction: column; }
+  .report-actions { justify-content: stretch; }
+  .report-actions .button { flex: 1 1 140px; }
+  .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .report-metrics > div:not(:nth-child(3n + 1)) { border-left: 0; }
+  .report-metrics > div:nth-child(even) { border-left: 1px solid var(--line); }
+  .report-toolbar > label, .report-toolbar > .button { flex: 1 1 100%; }
+  .report-data-table th, .report-data-table td { padding: .72rem .55rem; }
+}
+
+@media print {
+  .sidebar, .topbar, .mobile-nav-overlay, .sync-banner, .no-print, .reports-page-header, .reports-navigation { display: none !important; }
+  .app-layout, .content-column, .page-content, .reports-layout { display: block !important; width: 100% !important; max-width: none !important; padding: 0 !important; margin: 0 !important; }
+  .reports-content, .report-section, .print-report { width: 100%; }
+  .report-section-heading { break-after: avoid; }
+  .report-table-scroll { overflow: visible; }
+  .report-data-table, .attendance-report-preview table { font-size: 9pt; }
+  .report-data-table tr, .attendance-report-preview tr { break-inside: avoid; }
+  body { background: white !important; color: black !important; }
+}
+
 /* Open-layout structural system -------------------------------------------------
    Page content uses one canvas. Borders and surfaces are reserved for dialogs,
    tactile attendance controls, and genuinely independent callouts. */

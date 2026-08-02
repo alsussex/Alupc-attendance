@@ -121,6 +121,7 @@ describe("application navigation", () => {
     expect(container.querySelector(".lucide-layout-dashboard")).toBeTruthy();
     expect(container.querySelector(".lucide-users-round")).toBeTruthy();
     expect(container.querySelector(".lucide-calendar-days")).toBeTruthy();
+    expect(container.querySelector(".lucide-file-chart-column")).toBeTruthy();
     expect(container.querySelector(".lucide-settings")).toBeTruthy();
   });
 
@@ -177,5 +178,6 @@ describe("application navigation", () => {
     expect(mainNavigation().getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
     expect(mainNavigation().getByRole("link", { name: "People" })).toBeInTheDocument();
     expect(mainNavigation().getByRole("link", { name: "Services" })).toBeInTheDocument();
+    expect(mainNavigation().getByRole("link", { name: "Reports" })).toBeInTheDocument();
   });
 });

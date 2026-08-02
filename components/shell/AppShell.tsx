@@ -13,6 +13,7 @@ import {
 } from "react";
 import {
   CalendarDays,
+  FileChartColumn,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -48,6 +49,7 @@ const navigation: NavigationItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/people", label: "People", icon: UsersRound },
   { href: "/services", label: "Services", icon: CalendarDays },
+  { href: "/reports", label: "Reports", icon: FileChartColumn },
 ];
 
 const adminNavigation: NavigationItem[] = [

@@ -15,6 +15,7 @@ import type {
   AuditEntityType,
   AuditLogEntry,
   ChurchService,
+  Profile,
 } from "@/lib/domain";
 import { downloadText } from "@/lib/settings/exports";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
@@ -111,6 +112,8 @@ export function AuditHistory({
   const [action, setAction] = useState("");
   const [serviceId, setServiceId] = useState("");
   const [services, setServices] = useState<ChurchService[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [selectedUser, setSelectedUser] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [error, setError] = useState("");
@@ -124,11 +127,12 @@ export function AuditHistory({
       relatedEntityIds,
       query: query || undefined,
       action: action || undefined,
+      userId: selectedUser || undefined,
       from: from ? new Date(`${from}T00:00:00`).toISOString() : undefined,
       to: to ? new Date(`${to}T23:59:59.999`).toISOString() : undefined,
       limit: compact ? 20 : 50,
     }),
-    [action, compact, entityId, entityType, from, query, relatedEntityId, relatedEntityIds, selectedEntity, serviceId, to],
+    [action, compact, entityId, entityType, from, query, relatedEntityId, relatedEntityIds, selectedEntity, selectedUser, serviceId, to],
   );
 
   const load = useCallback(async () => {
@@ -189,21 +193,32 @@ export function AuditHistory({
 
   useEffect(() => {
     if (compact || !user || !isAdmin(user)) return;
-    void getDatabase()
-      .then((database) =>
+    void getDatabase().then(async (database) => {
+      const [serviceRecords, profileRecords] = await Promise.all([
         database.getAllFromIndex(
           "services",
           "organizationId",
           user.organizationId,
         ),
-      )
-      .then((records) =>
-        setServices(
-          records
-            .filter((service) => !service.deletedAt)
-            .sort((a, b) => b.serviceDate.localeCompare(a.serviceDate)),
+        database.getAllFromIndex(
+          "profiles",
+          "organizationId",
+          user.organizationId,
+        ),
+      ]);
+      setProfiles(
+        profileRecords.sort((left, right) =>
+          (left.displayName ?? left.id).localeCompare(
+            right.displayName ?? right.id,
+          ),
         ),
       );
+        setServices(
+          serviceRecords
+            .filter((service) => !service.deletedAt)
+            .sort((a, b) => b.serviceDate.localeCompare(a.serviceDate)),
+        );
+    });
   }, [compact, user]);
 
   if (!user || !isAdmin(user)) {
@@ -313,6 +328,20 @@ export function AuditHistory({
                 placeholder="For example: completed"
                 onChange={(event) => setAction(event.target.value)}
               />
+            </label>
+            <label>
+              User
+              <select
+                value={selectedUser}
+                onChange={(event) => setSelectedUser(event.target.value)}
+              >
+                <option value="">All users</option>
+                {profiles.map((profile) => (
+                  <option value={profile.id} key={profile.id}>
+                    {profile.displayName || "Church user"}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               Service
