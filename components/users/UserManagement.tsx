@@ -180,7 +180,7 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
       {message && <div className="notice success" role="status">{message}</div>}
       {error && <div className="notice error" role="alert">{error}</div>}
 
-      <section className="panel users-panel" aria-label="Authorized church users">
+      <section className="users-directory" aria-label="Authorized church users">
         <div className="users-table-header" aria-hidden="true">
           <span>User</span>
           <span>Role</span>

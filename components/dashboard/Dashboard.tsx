@@ -332,7 +332,7 @@ export function DashboardView({
           title="Quick actions"
           id="quick-actions-title"
         />
-        <div className="dashboard-action-grid">
+        <nav className="dashboard-action-list" aria-label="Dashboard shortcuts">
           <QuickAction
             href="/services?new=1"
             icon={Plus}
@@ -359,7 +359,7 @@ export function DashboardView({
             description="Browse attendance history"
           />
           <button
-            className="dashboard-action-card unavailable"
+            className="dashboard-action-link unavailable"
             type="button"
             disabled
             aria-label="Reports, coming in a future release"
@@ -380,7 +380,7 @@ export function DashboardView({
               description="Church preferences"
             />
           )}
-        </div>
+        </nav>
       </section>
 
       <section aria-labelledby="overview-title">
@@ -389,7 +389,7 @@ export function DashboardView({
           title="Attendance overview"
           id="overview-title"
         />
-        <div className="dashboard-metric-grid" aria-label="Attendance statistics">
+        <div className="dashboard-stat-strip" aria-label="Attendance statistics">
           {loading
             ? Array.from({ length: 6 }, (_, index) => (
                 <MetricSkeleton key={index} />
@@ -398,9 +398,9 @@ export function DashboardView({
         </div>
       </section>
 
-      <div className="dashboard-content-grid">
+      <div className="dashboard-content-flow">
         <section
-          className="dashboard-surface dashboard-services-surface"
+          className="dashboard-section dashboard-services-section"
           aria-labelledby="recent-services-title"
         >
           <DashboardPanelHeading
@@ -444,7 +444,7 @@ export function DashboardView({
                     </button>
                     {expanded && (
                       <div
-                        className="dashboard-service-card-grid"
+                        className="dashboard-service-row-list"
                         id={`month-${group.key}`}
                       >
                         {group.services.map((service) => (
@@ -477,7 +477,7 @@ export function DashboardView({
         </section>
 
         <section
-          className="dashboard-surface dashboard-activity-surface"
+          className="dashboard-section dashboard-activity-section"
           aria-labelledby="activity-title"
         >
           <DashboardPanelHeading
@@ -576,8 +576,8 @@ function QuickAction({
     <Link
       className={
         primary
-          ? "dashboard-action-card primary"
-          : "dashboard-action-card"
+          ? "dashboard-action-link primary"
+          : "dashboard-action-link"
       }
       href={href}
     >
@@ -609,7 +609,7 @@ function MetricCard({
   tone: "neutral" | "current" | "draft";
 }) {
   return (
-    <article className={`dashboard-metric-card ${tone}`}>
+    <article className={`dashboard-stat ${tone}`}>
       <span className="dashboard-metric-icon" aria-hidden="true">
         <Icon />
       </span>
@@ -629,7 +629,7 @@ function ServiceCard({
 }) {
   return (
     <Link
-      className="dashboard-service-card"
+      className="dashboard-service-row"
       href={`/services?service=${service.id}`}
       aria-label={`Open ${service.title}, ${service.status}`}
     >
@@ -687,7 +687,7 @@ function HeroSkeleton() {
 
 function MetricSkeleton() {
   return (
-    <article className="dashboard-metric-card skeleton-card" aria-hidden="true">
+    <article className="dashboard-stat skeleton-card" aria-hidden="true">
       <SkeletonLine className="metric-icon" />
       <SkeletonLine className="metric-number" />
       <SkeletonLine />
@@ -699,12 +699,12 @@ function MetricSkeleton() {
 function RecentServicesSkeleton() {
   return (
     <div
-      className="dashboard-card-skeleton-grid"
+      className="dashboard-service-row-list"
       role="status"
       aria-label="Loading recent services"
     >
       {[0, 1].map((item) => (
-        <div className="dashboard-service-card skeleton-card" key={item}>
+        <div className="dashboard-service-row skeleton-card" key={item}>
           <SkeletonLine className="pill" />
           <SkeletonLine className="title" />
           <SkeletonLine />

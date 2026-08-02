@@ -818,7 +818,7 @@ export function ServiceManager() {
             )}
           </div>
         ))}
-        <section className="panel attendance-people-workspace">
+        <section className="attendance-people-workspace">
           <div
             className="attendance-tabs"
             role="tablist"
@@ -1517,7 +1517,7 @@ export function ServiceManager() {
       </div>
       {servicesView === "list" ? (
         <>
-      <section className="panel service-directory-toolbar">
+      <section className="service-directory-toolbar" aria-label="Find and filter services">
         <label className="search-field">
           <span className="sr-only">Search organization services</span>
           <span aria-hidden="true">⌕</span>

@@ -325,7 +325,7 @@ export function PeopleDirectory() {
         </div>
       </div>
 
-      <section className="panel">
+      <section className="people-directory-workspace" aria-label="Member directory">
         <div
           className="member-filter-tabs"
           role="tablist"

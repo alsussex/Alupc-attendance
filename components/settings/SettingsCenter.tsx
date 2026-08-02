@@ -288,7 +288,7 @@ export function SettingsCenter() {
 
   if (!settings) {
     return (
-      <section className="panel">
+      <section className="settings-loading">
         <LoadingSkeleton label="Loading settings" rows={5} />
       </section>
     );
@@ -543,9 +543,7 @@ export function SettingsCenter() {
             </div>
           )}
           {section === "audit" && (
-            <div className="settings-card">
-              <AuditHistory />
-            </div>
+            <AuditHistory />
           )}
           {section === "data" && (
             <DataExportSection onExport={(value) => void exportData(value)} />
@@ -702,7 +700,7 @@ function SettingsSectionCard({
   saving: boolean;
 }) {
   return (
-    <section className="panel settings-card">
+    <section className="settings-section">
       <div className="settings-card-heading">
         <p className="eyebrow">{eyebrow}</p>
         <h2>{title}</h2>
@@ -750,7 +748,7 @@ function SettingsOverview({
           </span>
         </div>
       </section>
-      <section className="settings-quick-grid" aria-label="Settings quick links">
+      <nav className="settings-quick-links" aria-label="Settings quick links">
         {(["general", "services", "users", "sync"] as const).map((id) => {
           const item = sections.find((section) => section.id === id)!;
           return (
@@ -760,7 +758,7 @@ function SettingsOverview({
             </button>
           );
         })}
-      </section>
+      </nav>
     </div>
   );
 }
@@ -944,7 +942,7 @@ function ServiceSettings({
 
 function PermissionSummary() {
   return (
-    <section className="panel settings-card permission-summary">
+    <section className="settings-section permission-summary">
       <div className="settings-card-heading">
         <p className="eyebrow">Permission summary</p>
         <h2>Church access roles</h2>
@@ -979,7 +977,7 @@ function DataExportSection({
   return (
     <div className="page-stack">
       <MonthlyAttendanceExport />
-      <section className="panel settings-card">
+      <section className="settings-section">
         <div className="settings-card-heading">
           <p className="eyebrow">Organization data</p>
           <h2>Data & Export</h2>
@@ -996,11 +994,11 @@ function DataExportSection({
           ))}
         </div>
       </section>
-      <section className="panel settings-card settings-unavailable">
+      <section className="settings-section settings-unavailable">
         <h2>Import and restore</h2>
         <p>Import and restore will be added in a future version.</p>
       </section>
-      <section className="panel settings-card danger-zone">
+      <section className="settings-section danger-zone">
         <p className="eyebrow">Danger area</p>
         <h2>Organization deletion unavailable</h2>
         <p>Permanent organization deletion is intentionally excluded from this release.</p>
@@ -1034,7 +1032,7 @@ function DeviceSyncSection({
 }) {
   return (
     <div className="page-stack">
-      <section className="panel settings-card">
+      <section className="settings-section">
         <div className="settings-card-heading">
           <p className="eyebrow">This device</p>
           <h2>Device & Sync</h2>
@@ -1069,7 +1067,7 @@ function DeviceSyncSection({
           </div>
         )}
       </section>
-      <section className="panel settings-card danger-zone">
+      <section className="settings-section danger-zone">
         <p className="eyebrow">This device only</p>
         <h2>Clear local device data</h2>
         <p>This removes locally stored attendance data from this device. Cloud data will not be deleted.</p>
@@ -1106,7 +1104,7 @@ function SecuritySection({
 }) {
   return (
     <div className="page-stack">
-      <section className="panel settings-card">
+      <section className="settings-section">
         <div className="settings-card-heading">
           <p className="eyebrow">Administrator account</p>
           <h2>Security</h2>

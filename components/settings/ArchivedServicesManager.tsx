@@ -110,7 +110,7 @@ export function ArchivedServicesManager() {
   }
 
   return (
-    <section className="panel settings-card archived-services-settings">
+    <section className="settings-section archived-services-settings">
       <div className="settings-card-heading">
         <p className="eyebrow">Service archive</p>
         <h2>Archived services</h2>

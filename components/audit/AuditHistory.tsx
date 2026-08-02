@@ -378,7 +378,7 @@ export function AuditHistory({
             return (
               <li key={entry.id}>
                 <span className="audit-marker" aria-hidden="true" />
-                <div className="audit-entry">
+                <div className="audit-entry-row">
                   <div className="audit-entry-heading">
                     <strong>{titleCase(entry.action)}</strong>
                     <span className="audit-entity">

@@ -156,7 +156,7 @@ export function MonthlyAttendanceExport() {
 
   return (
     <>
-      <section className="panel settings-card monthly-attendance-export-card">
+      <section className="settings-section monthly-attendance-export-card">
         <div className="settings-card-heading">
           <p className="eyebrow">Print-ready Excel</p>
           <h2>Attendance Export</h2>

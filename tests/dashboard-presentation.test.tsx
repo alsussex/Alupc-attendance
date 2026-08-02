@@ -82,7 +82,7 @@ const snapshot: DashboardSnapshot = {
 afterEach(cleanup);
 
 describe("dashboard presentation", () => {
-  it("renders a clear hero, quick actions, and equal overview cards", () => {
+  it("renders a clear hero, open quick actions, and an integrated overview", () => {
     render(
       <DashboardView
         snapshot={snapshot}
@@ -123,6 +123,9 @@ describe("dashboard presentation", () => {
         screen.getByRole("region", { name: "Attendance overview" }),
       ).getAllByRole("article"),
     ).toHaveLength(6);
+    expect(
+      screen.getByRole("navigation", { name: "Dashboard shortcuts" }),
+    ).toHaveClass("dashboard-action-list");
   });
 
   it("keeps role-aware actions and the draft resume workflow intact", () => {
@@ -146,7 +149,7 @@ describe("dashboard presentation", () => {
     );
   });
 
-  it("shows spacious service cards with status, totals, and update time", () => {
+  it("shows open service rows with status, totals, and update time", () => {
     render(
       <DashboardView
         snapshot={snapshot}

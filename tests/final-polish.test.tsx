@@ -124,11 +124,12 @@ describe("final application polish", () => {
     expect(source).toContain("advancedFiltersOpen &&");
   });
 
-  it("uses restrained shared surfaces instead of heavy nested cards", () => {
+  it("uses an open structural system instead of nested page cards", () => {
     const styles = readFileSync(resolve("app/globals.css"), "utf8");
-    expect(styles).toContain("Production polish: quieter surfaces");
-    expect(styles).toContain(".settings-card { border: 0;");
-    expect(styles).toContain(".service-year-folder {");
-    expect(styles).toContain("box-shadow: none;");
+    expect(styles).toContain("Open-layout structural system");
+    expect(styles).toContain(".dashboard-action-list {");
+    expect(styles).toContain(".settings-section {");
+    expect(styles).toContain(".people-directory-workspace,");
+    expect(styles).toContain(".users-directory,");
   });
 });
