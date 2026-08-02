@@ -299,4 +299,21 @@ describe("offline, security, and export behavior", () => {
     expect(users).toContain('"disabled"');
     expect(users).toContain('"restored"');
   });
+
+  it("repairs the compound audit-history index on existing devices", () => {
+    const databaseSource = readFileSync(
+      resolve("lib/storage/database.ts"),
+      "utf8",
+    );
+    expect(databaseSource).toContain(
+      'openDB<AttendanceDatabase>("church-attendance", 7',
+    );
+    expect(databaseSource).toContain("if (oldVersion < 7)");
+    expect(databaseSource).toContain(
+      'indexNames.contains("organizationOccurredAtId")',
+    );
+    expect(databaseSource).toContain(
+      '["organizationId", "occurredAt", "id"]',
+    );
+  });
 });

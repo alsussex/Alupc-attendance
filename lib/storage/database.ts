@@ -94,8 +94,8 @@ let databasePromise: Promise<IDBPDatabase<AttendanceDatabase>> | null = null;
 
 export function getDatabase() {
   if (!databasePromise) {
-    databasePromise = openDB<AttendanceDatabase>("church-attendance", 6, {
-      upgrade(database, oldVersion) {
+    databasePromise = openDB<AttendanceDatabase>("church-attendance", 7, {
+      upgrade(database, oldVersion, _newVersion, transaction) {
         if (oldVersion < 1) {
           const people = database.createObjectStore("people", { keyPath: "id" });
           people.createIndex("organizationId", "organizationId");
@@ -174,6 +174,34 @@ export function getDatabase() {
             { keyPath: "id" },
           );
           monthlyCoverage.createIndex("organizationId", "organizationId");
+        }
+        if (oldVersion < 7) {
+          // Some long-lived devices created the audit store before the
+          // compound pagination index was introduced. Merely changing the
+          // version-4 creation block does not update an existing database, so
+          // repair every required audit index during this dedicated upgrade.
+          const auditLog = transaction.objectStore("auditLog");
+          if (!auditLog.indexNames.contains("organizationId")) {
+            auditLog.createIndex("organizationId", "organizationId");
+          }
+          if (!auditLog.indexNames.contains("entityId")) {
+            auditLog.createIndex("entityId", "entityId");
+          }
+          if (!auditLog.indexNames.contains("occurredAt")) {
+            auditLog.createIndex("occurredAt", "occurredAt");
+          }
+          if (!auditLog.indexNames.contains("organizationOccurredAt")) {
+            auditLog.createIndex(
+              "organizationOccurredAt",
+              ["organizationId", "occurredAt"],
+            );
+          }
+          if (!auditLog.indexNames.contains("organizationOccurredAtId")) {
+            auditLog.createIndex(
+              "organizationOccurredAtId",
+              ["organizationId", "occurredAt", "id"],
+            );
+          }
         }
       },
     });

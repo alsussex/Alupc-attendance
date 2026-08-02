@@ -31,7 +31,8 @@ const entityLabels: Record<AuditEntityType, string> = {
   settings: "Settings",
 };
 
-function titleCase(value: string) {
+function titleCase(value: unknown, fallback = "Activity") {
+  if (typeof value !== "string" || !value.trim()) return fallback;
   return value
     .replaceAll("_", " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -79,7 +80,9 @@ function detailSummary(entry: AuditLogEntry) {
 }
 
 function formatTimestamp(value: string) {
-  return formatDateTime(value);
+  return typeof value === "string"
+    ? formatDateTime(value, "Time unavailable")
+    : "Time unavailable";
 }
 
 export function AuditHistory({
@@ -147,13 +150,32 @@ export function AuditHistory({
 
   useEffect(() => {
     if (!user || !isAdmin(user) || !navigator.onLine) return;
-    void refreshTables(["audit_log"]);
-    return subscribeToRemoteOrganizationChanges(
-      user,
-      () => void refreshTables(["audit_log"]),
-      undefined,
-      ["audit_log"],
-    );
+    let stopped = false;
+    const refreshAudit = async () => {
+      try {
+        await refreshTables(["audit_log"]);
+      } catch (caught) {
+        if (!stopped) {
+          console.error("Audit history refresh failed", caught);
+        }
+      }
+    };
+    void refreshAudit();
+    let unsubscribe = () => {};
+    try {
+      unsubscribe = subscribeToRemoteOrganizationChanges(
+        user,
+        () => void refreshAudit(),
+        undefined,
+        ["audit_log"],
+      );
+    } catch (caught) {
+      console.error("Audit history live updates could not start", caught);
+    }
+    return () => {
+      stopped = true;
+      unsubscribe();
+    };
   }, [refreshTables, user]);
 
   useEffect(() => {
@@ -203,6 +225,13 @@ export function AuditHistory({
       });
       setEntries((current) => [...current, ...page]);
       setHasMore(page.length === (filters.limit ?? 50));
+      setError("");
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Older history could not be loaded.",
+      );
     } finally {
       setLoadingOlder(false);
     }
@@ -322,7 +351,15 @@ export function AuditHistory({
 
       {error && (
         <div className="notice error" role="alert">
-          {error}
+          <span>{error}</span>
+          <button
+            className="button subtle"
+            type="button"
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            Retry history
+          </button>
         </div>
       )}
       {loading ? (
@@ -345,13 +382,13 @@ export function AuditHistory({
                   <div className="audit-entry-heading">
                     <strong>{titleCase(entry.action)}</strong>
                     <span className="audit-entity">
-                      {entityLabels[entry.entityType]}
+                      {entityLabels[entry.entityType] ?? "Activity"}
                     </span>
                   </div>
                   {summary && <p>{summary}</p>}
                   <div className="audit-entry-meta">
-                    <span>{entry.userDisplayName}</span>
-                    <span>{titleCase(entry.role)}</span>
+                    <span>{entry.userDisplayName || "Church user"}</span>
+                    <span>{titleCase(entry.role, "Unknown role")}</span>
                     <time dateTime={entry.occurredAt}>
                       {formatTimestamp(entry.occurredAt)}
                     </time>

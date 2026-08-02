@@ -369,6 +369,29 @@ describe("remote subscription lifecycle", () => {
     stop();
   });
 
+  it("uses a distinct realtime topic for on-demand audit history", () => {
+    const fake = fakeRealtimeClient();
+    const stopMain = subscribeToRemoteOrganizationChanges(
+      user,
+      vi.fn(),
+      fake.client,
+    );
+    const stopAudit = subscribeToRemoteOrganizationChanges(
+      user,
+      vi.fn(),
+      fake.client,
+      ["audit_log"],
+    );
+
+    const topics = vi.mocked(fake.client.channel).mock.calls.map(([topic]) => topic);
+    expect(topics).toHaveLength(2);
+    expect(new Set(topics).size).toBe(2);
+    expect(activeRemoteSubscriptionCount()).toBe(2);
+
+    stopAudit();
+    stopMain();
+  });
+
   it("removes the previous organization subscription when users switch", () => {
     const first = fakeRealtimeClient();
     const stopFirst = subscribeToRemoteOrganizationChanges(

@@ -49,7 +49,10 @@ export function subscribeToRemoteOrganizationChanges(
 
   if (!shared) {
     const listeners = new Set<RemoteChangeListener>();
-    let channel = client.channel(`church-sync-${user.organizationId}`);
+    const subscriptionScope = normalizedTables.join("-");
+    let channel = client.channel(
+      `church-sync-${user.organizationId}-${subscriptionScope}`,
+    );
     const notify = (table: PullTable) => {
       for (const current of listeners) current(table);
     };
