@@ -44,6 +44,7 @@ Requirements: Node.js 22.13 or newer, npm, and a Supabase project.
    - `supabase/migrations/202607300004_intelligent_member_management.sql`
    - `supabase/migrations/202607300005_fix_audit_log_sync.sql`
    - `supabase/migrations/202607300006_secure_user_account_deletion.sql`
+   - `supabase/migrations/202607300007_sunday_school_kids_count.sql`
 
 4. Create the first user and organization using the steps below.
 5. Put the project URL, browser-safe anon key, and server-only service-role key in `.env.local`. The service-role key must never have a `NEXT_PUBLIC_` prefix.
@@ -182,8 +183,9 @@ new services; historical service rows are not rewritten.
 
 CSV exports are available for members, inactive members, services, attendance,
 and visitors. Service-related exports include `members_present`,
-`named_visitor_count`, `unnamed_visitor_count`, `visitor_total`, and
-`total_present`. The JSON backup includes the same values in
+`named_visitor_count`, `unnamed_visitor_count`,
+`sunday_school_kids_count`, `visitor_total`, and `total_present`. The JSON
+backup includes the same values in
 `serviceAttendanceSummaries` alongside the organization-scoped application
 records, but excludes sessions, passwords, access/refresh tokens, invitation
 tokens, environment variables, and synchronization diagnostics. These
@@ -230,6 +232,16 @@ running **Total Present** is members present plus that combined visitor total.
 Named visitors remain editable service records; unnamed visitors remain only an
 aggregate count on the service. Completed services preserve both forms with the
 original service and attendance UUIDs.
+
+Migration `202607300007_sunday_school_kids_count.sql` adds one independent,
+non-negative `sunday_school_kids_count` aggregate to every service, defaulting
+existing history to zero. The same stored value is labelled **Sunday School
+Kids** for Sunday Morning and Special Service records and **Children’s Church**
+for Wednesday Bible Study; it is hidden for Sunday Evening and Other services.
+The count always contributes to **Total Present** without changing the
+named-plus-unnamed **Visitors** subtotal. It uses the existing versioned service
+mutation, IndexedDB storage, pull synchronization, completed-service locking,
+audit history, reports, and exports.
 
 Supabase continues refreshing tokens automatically. The authentication provider
 also handles `SIGNED_IN`, `TOKEN_REFRESHED`, and `SIGNED_OUT` explicitly,

@@ -23,9 +23,10 @@ import { enqueueChange } from "@/lib/sync/queue";
 import { toCloudRecord } from "@/lib/sync/serialization";
 import { recordAuditEntry } from "@/lib/audit/audit-repository";
 import { memberContactValidation } from "@/lib/people/member-contact";
+import { childProgramForService } from "@/lib/services/child-program";
 
 const attendanceWriteChains = new Map<string, Promise<AttendanceRecord>>();
-const unnamedVisitorWriteChains = new Map<string, Promise<ChurchService>>();
+const serviceCountWriteChains = new Map<string, Promise<ChurchService>>();
 export const COMPLETED_SERVICE_LOCK_MESSAGE =
   "This service is completed and locked. Reopen it before making changes.";
 
@@ -449,6 +450,7 @@ export async function saveService(
     notes?: string;
     status: ServiceStatus;
     unnamedVisitorCount?: number;
+    sundaySchoolKidsCount?: number;
   },
 ) {
   const notes = input.notes?.trim() || undefined;
@@ -491,6 +493,8 @@ export async function saveService(
     status: input.status,
     unnamedVisitorCount:
       input.unnamedVisitorCount ?? existing?.unnamedVisitorCount ?? 0,
+    sundaySchoolKidsCount:
+      input.sundaySchoolKidsCount ?? existing?.sundaySchoolKidsCount ?? 0,
     isArchived: existing?.isArchived ?? false,
     deletedAt: existing?.deletedAt,
     createdAt: existing?.createdAt ?? timestamp,
@@ -574,7 +578,7 @@ export function adjustUnnamedVisitorCount(
   serviceId: string,
   change: number,
 ) {
-  const previous = unnamedVisitorWriteChains.get(serviceId);
+  const previous = serviceCountWriteChains.get(serviceId);
   const write = (previous?.catch(() => undefined) ?? Promise.resolve()).then(
     async () => {
       const service = await requireEditableService(user, serviceId);
@@ -585,10 +589,77 @@ export function adjustUnnamedVisitorCount(
       );
     },
   );
-  unnamedVisitorWriteChains.set(serviceId, write);
+  serviceCountWriteChains.set(serviceId, write);
   const cleanUp = () => {
-    if (unnamedVisitorWriteChains.get(serviceId) === write) {
-      unnamedVisitorWriteChains.delete(serviceId);
+    if (serviceCountWriteChains.get(serviceId) === write) {
+      serviceCountWriteChains.delete(serviceId);
+    }
+  };
+  void write.then(cleanUp, cleanUp);
+  return write;
+}
+
+export async function setSundaySchoolKidsCount(
+  user: UserContext,
+  serviceId: string,
+  count: number,
+) {
+  const database = await getDatabase();
+  const service = await requireEditableService(user, serviceId);
+  const updated: ChurchService = {
+    ...service,
+    sundaySchoolKidsCount: Math.max(0, Math.min(10000, Math.trunc(count))),
+    updatedAt: nowIso(),
+    updatedBy: user.userId,
+  };
+  await database.put("services", updated);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "services",
+    recordId: updated.id,
+    payload: toCloudRecord(updated),
+  });
+  if (
+    (service.sundaySchoolKidsCount ?? 0) !==
+    updated.sundaySchoolKidsCount
+  ) {
+    const program = childProgramForService(service.serviceType);
+    await recordAuditEntry(user, {
+      entityType: "visitor",
+      entityId: serviceId,
+      action: "sunday_school_kids_count_changed",
+      details: {
+        serviceId,
+        name: program?.label ?? "Children’s attendance",
+        from: service.sundaySchoolKidsCount ?? 0,
+        to: updated.sundaySchoolKidsCount ?? 0,
+      },
+    });
+  }
+  announceDataChanged();
+  return updated;
+}
+
+export function adjustSundaySchoolKidsCount(
+  user: UserContext,
+  serviceId: string,
+  change: number,
+) {
+  const previous = serviceCountWriteChains.get(serviceId);
+  const write = (previous?.catch(() => undefined) ?? Promise.resolve()).then(
+    async () => {
+      const service = await requireEditableService(user, serviceId);
+      return setSundaySchoolKidsCount(
+        user,
+        serviceId,
+        (service.sundaySchoolKidsCount ?? 0) + change,
+      );
+    },
+  );
+  serviceCountWriteChains.set(serviceId, write);
+  const cleanUp = () => {
+    if (serviceCountWriteChains.get(serviceId) === write) {
+      serviceCountWriteChains.delete(serviceId);
     }
   };
   void write.then(cleanUp, cleanUp);

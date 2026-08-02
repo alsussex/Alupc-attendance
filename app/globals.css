@@ -913,6 +913,20 @@ details[open] > summary > .folder-icon { transform: rotate(90deg); }
 }
 .unnamed-visitor-counter h2 { margin: 0; font-size: 1rem; }
 .unnamed-visitor-counter p { margin: .2rem 0 0; color: var(--muted); font-size: .76rem; }
+.sunday-school-kids-counter {
+  border-color: #bcdcc8;
+  background: #f5fbf7;
+}
+.sunday-school-kids-counter .completed-unnamed-visitor-count {
+  color: #246842;
+}
+.sunday-school-kids-counter .visitor-stepper button {
+  border-color: #9ec9ae;
+  color: #246842;
+}
+.sunday-school-kids-counter .visitor-stepper button:hover:not(:disabled) {
+  background: #e5f4ea;
+}
 .completed-unnamed-visitor-count {
   min-width: 52px;
   text-align: center;

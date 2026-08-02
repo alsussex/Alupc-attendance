@@ -8,11 +8,16 @@ export interface ServiceAttendanceSummary {
   membersPresent: number;
   namedVisitorCount: number;
   unnamedVisitorCount: number;
+  sundaySchoolKidsCount: number;
   visitorTotal: number;
   totalPresent: number;
 }
 
 export function normalizeUnnamedVisitorCount(value: number | undefined) {
+  return Math.max(0, Math.trunc(value ?? 0));
+}
+
+export function normalizeSundaySchoolKidsCount(value: number | undefined) {
   return Math.max(0, Math.trunc(value ?? 0));
 }
 
@@ -51,12 +56,16 @@ export function summarizeServiceAttendance(
     service.unnamedVisitorCount,
   );
   const visitorTotal = namedVisitorCount + unnamedVisitorCount;
+  const sundaySchoolKidsCount = normalizeSundaySchoolKidsCount(
+    service.sundaySchoolKidsCount,
+  );
 
   return {
     membersPresent,
     namedVisitorCount,
     unnamedVisitorCount,
+    sundaySchoolKidsCount,
     visitorTotal,
-    totalPresent: membersPresent + visitorTotal,
+    totalPresent: membersPresent + visitorTotal + sundaySchoolKidsCount,
   };
 }

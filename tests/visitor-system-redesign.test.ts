@@ -284,12 +284,13 @@ describe("visitor reporting and exports", () => {
       "members_present",
       "named_visitor_count",
       "unnamed_visitor_count",
+      "sunday_school_kids_count",
       "visitor_total",
       "total_present",
     ]) {
       expect(csv).toContain(`"${field}"`);
     }
-    expect(csv).toContain('"0","1","2","3","3"');
+    expect(csv).toContain('"0","1","2","0","3","3"');
 
     const backup = JSON.parse(
       await buildOrganizationExport(user, "backup"),
@@ -302,6 +303,7 @@ describe("visitor reporting and exports", () => {
       members_present: 0,
       named_visitor_count: 1,
       unnamed_visitor_count: 2,
+      sunday_school_kids_count: 0,
       visitor_total: 3,
       total_present: 3,
     });

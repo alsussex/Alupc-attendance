@@ -30,6 +30,7 @@ import {
 } from "@/lib/domain";
 import {
   addServiceVisitor,
+  adjustSundaySchoolKidsCount,
   adjustUnnamedVisitorCount,
   editServiceVisitor,
   findExactMemberMatches,
@@ -84,6 +85,7 @@ import {
   setPreferredServicesView,
   subscribeToServicesView,
 } from "@/lib/services/view-preference";
+import { childProgramForService } from "@/lib/services/child-program";
 
 type AttendanceTab = "members" | "visitors" | "history";
 
@@ -429,8 +431,10 @@ export function ServiceManager() {
         visitors,
         settings.includeVisitorsInTotal,
         active?.unnamedVisitorCount ?? 0,
+        active?.sundaySchoolKidsCount ?? 0,
       ),
     [
+      active?.sundaySchoolKidsCount,
       active?.unnamedVisitorCount,
       selected,
       settings.includeVisitorsInTotal,
@@ -447,6 +451,7 @@ export function ServiceManager() {
       ),
     [active?.status, visitorSearch, visitors],
   );
+  const childProgram = childProgramForService(active?.serviceType);
 
   function selectAttendanceTab(tab: AttendanceTab, focus = false) {
     if (tab === attendanceTab) return;
@@ -469,6 +474,18 @@ export function ServiceManager() {
   async function changeUnnamedVisitorCount(change: number) {
     if (!user || !active || active.status === "completed") return;
     const updated = await adjustUnnamedVisitorCount(user, active.id, change);
+    activeRef.current = updated;
+    setActive(updated);
+    await refreshLists();
+  }
+
+  async function changeSundaySchoolKidsCount(change: number) {
+    if (!user || !active || active.status === "completed") return;
+    const updated = await adjustSundaySchoolKidsCount(
+      user,
+      active.id,
+      change,
+    );
     activeRef.current = updated;
     setActive(updated);
     await refreshLists();
@@ -758,7 +775,10 @@ export function ServiceManager() {
             <article className="attendance-metric total">
               <span>Total Present</span>
               <strong>{presentCounts.total}</strong>
-              <small>Members + visitors</small>
+              <small>
+                Members + visitors
+                {childProgram ? ` + ${childProgram.label}` : ""}
+              </small>
             </article>
             <article className="attendance-metric status">
               <span>Service Status</span>
@@ -1082,6 +1102,49 @@ export function ServiceManager() {
                   </strong>
                 )}
               </section>
+              {childProgram && (
+                <section className="unnamed-visitor-counter sunday-school-kids-counter">
+                  <div>
+                    <h2>{childProgram.label}</h2>
+                    <p>{childProgram.helperText}</p>
+                  </div>
+                  {!serviceLocked && (
+                    <div
+                      className="visitor-stepper"
+                      role="group"
+                      aria-label={`${childProgram.label} count`}
+                    >
+                      <button
+                        type="button"
+                        aria-label={`Remove one from ${childProgram.label}`}
+                        disabled={
+                          serviceLocked ||
+                          (active.sundaySchoolKidsCount ?? 0) === 0
+                        }
+                        onClick={() => void changeSundaySchoolKidsCount(-1)}
+                      >
+                        −
+                      </button>
+                      <strong aria-live="polite">
+                        {active.sundaySchoolKidsCount ?? 0}
+                      </strong>
+                      <button
+                        type="button"
+                        aria-label={`Add one to ${childProgram.label}`}
+                        disabled={serviceLocked}
+                        onClick={() => void changeSundaySchoolKidsCount(1)}
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
+                  {serviceLocked && (
+                    <strong className="completed-unnamed-visitor-count">
+                      {active.sundaySchoolKidsCount ?? 0}
+                    </strong>
+                  )}
+                </section>
+              )}
               <div className="visitor-tab-summary">
                 <strong>{presentCounts.visitors} visitors</strong>
                 <span>Everyone visiting this service</span>

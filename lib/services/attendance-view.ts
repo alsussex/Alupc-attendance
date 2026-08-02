@@ -55,10 +55,14 @@ export function attendancePresentCounts(
   visitors: ServiceVisitor[],
   includeVisitors = true,
   unnamedVisitorCount = 0,
+  sundaySchoolKidsCount = 0,
 ) {
   const visitorCount = countVisitors(visitors, unnamedVisitorCount);
   return {
-    total: presentMemberIds.size + (includeVisitors ? visitorCount : 0),
+    total:
+      presentMemberIds.size +
+      (includeVisitors ? visitorCount : 0) +
+      Math.max(0, Math.trunc(sundaySchoolKidsCount)),
     members: presentMemberIds.size,
     visitors: visitorCount,
   };

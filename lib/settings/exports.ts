@@ -79,6 +79,7 @@ export async function buildOrganizationExport(
             members_present: summary.membersPresent,
             named_visitor_count: summary.namedVisitorCount,
             unnamed_visitor_count: summary.unnamedVisitorCount,
+            sunday_school_kids_count: summary.sundaySchoolKidsCount,
             visitor_total: summary.visitorTotal,
             total_present: summary.totalPresent,
           };
@@ -137,6 +138,7 @@ export async function buildOrganizationExport(
         "members_present",
         "named_visitor_count",
         "unnamed_visitor_count",
+        "sunday_school_kids_count",
         "visitor_total",
         "total_present",
       ],
@@ -153,6 +155,7 @@ export async function buildOrganizationExport(
           summary.membersPresent,
           summary.namedVisitorCount,
           summary.unnamedVisitorCount,
+          summary.sundaySchoolKidsCount,
           summary.visitorTotal,
           summary.totalPresent,
         ];
@@ -171,6 +174,7 @@ export async function buildOrganizationExport(
         "members_present",
         "named_visitor_count",
         "unnamed_visitor_count",
+        "sunday_school_kids_count",
         "visitor_total",
         "total_present",
       ],
@@ -185,6 +189,7 @@ export async function buildOrganizationExport(
           summary?.membersPresent ?? 0,
           summary?.namedVisitorCount ?? 0,
           summary?.unnamedVisitorCount ?? 0,
+          summary?.sundaySchoolKidsCount ?? 0,
           summary?.visitorTotal ?? 0,
           summary?.totalPresent ?? 0,
         ];
@@ -203,6 +208,7 @@ export async function buildOrganizationExport(
       "members_present",
       "named_visitor_count",
       "unnamed_visitor_count",
+      "sunday_school_kids_count",
       "visitor_total",
       "total_present",
     ],
@@ -220,6 +226,7 @@ export async function buildOrganizationExport(
           summary?.membersPresent ?? 0,
           summary?.namedVisitorCount ?? 0,
           summary?.unnamedVisitorCount ?? 0,
+          summary?.sundaySchoolKidsCount ?? 0,
           summary?.visitorTotal ?? 0,
           summary?.totalPresent ?? 0,
         ];

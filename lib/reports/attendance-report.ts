@@ -13,6 +13,7 @@ export interface AttendanceReportRow {
   membersPresent: number;
   namedVisitorCount: number;
   unnamedVisitorCount: number;
+  sundaySchoolKidsCount: number;
   visitorTotal: number;
   totalPresent: number;
 }

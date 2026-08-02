@@ -198,6 +198,10 @@ export function fromCloudRecord(
         typeof row.unnamed_visitor_count === "number"
           ? row.unnamed_visitor_count
           : 0,
+      sundaySchoolKidsCount:
+        typeof row.sunday_school_kids_count === "number"
+          ? row.sunday_school_kids_count
+          : 0,
       isArchived: optionalBoolean(row, "is_archived"),
       deletedAt: optionalString(row, "deleted_at"),
     };

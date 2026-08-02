@@ -80,6 +80,7 @@ export interface ChurchService extends AuditedRecord {
   notes?: string;
   status: ServiceStatus;
   unnamedVisitorCount?: number;
+  sundaySchoolKidsCount?: number;
   isArchived: boolean;
   deletedAt?: string | null;
 }
