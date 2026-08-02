@@ -3062,6 +3062,9 @@ a.dashboard-focus-card:hover { border-color: var(--brand); transform: translateY
 .dashboard-service-row > .dashboard-service-updated { grid-column: 1; }
 .dashboard-service-row .dashboard-service-stats { grid-column: 2; grid-row: 1 / span 3; }
 .dashboard-service-row .dashboard-service-updated { margin: 0; }
+.dashboard-service-row .dashboard-service-stats {
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+}
 .dashboard-service-month { border-bottom: 1px solid var(--line); }
 .dashboard-activity-list li { padding-inline: 0; }
 

@@ -102,6 +102,13 @@ function serviceTitle(service: ChurchService) {
   return service.customName || service.serviceType;
 }
 
+function childProgramSummary(service: ChurchService) {
+  const program = childProgramForService(service.serviceType);
+  return program
+    ? ` · ${program.label}: ${service.sundaySchoolKidsCount ?? 0}`
+    : "";
+}
+
 export function ServiceManager() {
   const { user } = useAuth();
   const { syncNow } = useSynchronization();
@@ -772,6 +779,11 @@ export function ServiceManager() {
             <article className="attendance-metric visitors">
               <span>Visitors</span>
               <strong>{presentCounts.visitors}</strong>
+              {childProgram && (
+                <small>
+                  {childProgram.label}: {active.sundaySchoolKidsCount ?? 0}
+                </small>
+              )}
             </article>
             <article className="attendance-metric total">
               <span>Total Present</span>
@@ -1148,6 +1160,11 @@ export function ServiceManager() {
               )}
               <div className="visitor-tab-summary">
                 <strong>{presentCounts.visitors} visitors</strong>
+                {childProgram && (
+                  <span>
+                    {childProgram.label}: {active.sundaySchoolKidsCount ?? 0}
+                  </span>
+                )}
                 <span>Everyone visiting this service</span>
               </div>
               <div className="visitor-card-grid">
@@ -1720,6 +1737,7 @@ export function ServiceManager() {
                           <span>Total present</span>
                           <small>
                             {item.membersPresent} members · {item.visitorsPresent} visitors
+                            {childProgramSummary(item.service)}
                           </small>
                         </span>
                         <span className="service-directory-state">

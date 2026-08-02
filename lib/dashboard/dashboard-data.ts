@@ -6,6 +6,7 @@ import type {
   ServiceVisitor,
 } from "@/lib/domain";
 import { summarizeServiceAttendance } from "@/lib/services/attendance-summary";
+import { childProgramForService } from "@/lib/services/child-program";
 import { getDatabase } from "@/lib/storage/database";
 
 export interface DashboardService {
@@ -16,6 +17,8 @@ export interface DashboardService {
   status: ChurchService["status"];
   attendanceTotal: number;
   visitorCount: number;
+  sundaySchoolKidsCount?: number;
+  childProgramLabel?: string;
   updatedAt: string;
 }
 
@@ -52,6 +55,7 @@ function summarizeService(
   visitors: ServiceVisitor[],
 ): DashboardService {
   const summary = summarizeServiceAttendance(service, attendance, visitors);
+  const childProgram = childProgramForService(service.serviceType);
   return {
     id: service.id,
     title: serviceTitle(service),
@@ -60,6 +64,8 @@ function summarizeService(
     status: service.status,
     attendanceTotal: summary.totalPresent,
     visitorCount: summary.visitorTotal,
+    sundaySchoolKidsCount: summary.sundaySchoolKidsCount,
+    childProgramLabel: childProgram?.label,
     updatedAt: service.updatedAt,
   };
 }

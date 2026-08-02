@@ -234,6 +234,16 @@ describe("Sunday School Kids attendance counter", () => {
     );
     expect(source).toContain("childProgram.label");
     expect(source).toContain("childProgram.helperText");
+    expect(source).toContain(
+      "{childProgram.label}: {active.sundaySchoolKidsCount ?? 0}",
+    );
+    expect(source).toContain("childProgramSummary(item.service)");
+    const dashboardSource = readFileSync(
+      resolve("components/dashboard/Dashboard.tsx"),
+      "utf8",
+    );
+    expect(dashboardSource).toContain("service.childProgramLabel");
+    expect(dashboardSource).toContain("service.sundaySchoolKidsCount ?? 0");
     const css = readFileSync(resolve("app/globals.css"), "utf8");
     expect(css).toContain(".sunday-school-kids-counter");
     expect(css).toContain(".unnamed-visitor-counter { margin: .7rem;");

@@ -40,6 +40,7 @@ describe("dashboard snapshot", () => {
       serviceDate: "2026-08-09",
       serviceType: "Sunday Morning",
       status: "draft",
+      sundaySchoolKidsCount: 2,
     });
     await setMemberAttendance(user, service.id, member.id, true);
     await addServiceVisitor(user, service.id, {
@@ -57,13 +58,15 @@ describe("dashboard snapshot", () => {
     expect(snapshot.churchName).toBe("Abundant Life UPC");
     expect(snapshot.totalPeople).toBe(1);
     expect(snapshot.servicesThisMonth).toBe(1);
-    expect(snapshot.attendanceThisMonth).toBe(4);
+    expect(snapshot.attendanceThisMonth).toBe(6);
     expect(snapshot.visitorsThisMonth).toBe(3);
-    expect(snapshot.averageAttendance).toBe(4);
+    expect(snapshot.averageAttendance).toBe(6);
     expect(snapshot.draftService?.id).toBe(service.id);
     expect(snapshot.services[0]).toMatchObject({
-      attendanceTotal: 4,
+      attendanceTotal: 6,
       visitorCount: 3,
+      sundaySchoolKidsCount: 2,
+      childProgramLabel: "Sunday School Kids",
       status: "draft",
     });
     expect(snapshot.activity.map((item) => item.type)).toEqual(

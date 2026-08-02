@@ -658,6 +658,12 @@ function ServiceCard({
           <strong>{service.visitorCount}</strong>
           <small>Visitors</small>
         </span>
+        {service.childProgramLabel && (
+          <span>
+            <strong>{service.sundaySchoolKidsCount ?? 0}</strong>
+            <small>{service.childProgramLabel}</small>
+          </span>
+        )}
       </div>
       <small className="dashboard-service-updated">
         Updated {relativeTime(service.updatedAt, now)}

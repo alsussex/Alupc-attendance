@@ -51,6 +51,8 @@ const snapshot: DashboardSnapshot = {
       status: "completed",
       attendanceTotal: 52,
       visitorCount: 4,
+      sundaySchoolKidsCount: 3,
+      childProgramLabel: "Sunday School Kids",
       updatedAt: "2026-07-26T15:00:00.000Z",
     },
     {
@@ -169,6 +171,8 @@ describe("dashboard presentation", () => {
     expect(within(service).getByText("Completed")).toBeVisible();
     expect(within(service).getByText("52")).toBeVisible();
     expect(within(service).getByText("4")).toBeVisible();
+    expect(within(service).getByText("3")).toBeVisible();
+    expect(within(service).getByText("Sunday School Kids")).toBeVisible();
     expect(within(service).getByText(/Updated/)).toBeVisible();
 
     const juneToggle = screen.getByRole("button", { name: /June 2026/ });
