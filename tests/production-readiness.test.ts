@@ -1,16 +1,21 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const environmentExample = readFileSync(resolve(".env.example"), "utf8");
 const serviceWorker = readFileSync(resolve("public/sw.js"), "utf8");
+const rootLayout = readFileSync(resolve("app/layout.tsx"), "utf8");
 const developmentSeed = readFileSync(
   resolve("lib/seed/development-seed.ts"),
   "utf8",
 );
 const manifest = JSON.parse(
   readFileSync(resolve("public/manifest.webmanifest"), "utf8"),
-) as { icons: Array<{ sizes: string }> };
+) as {
+  name: string;
+  short_name: string;
+  icons: Array<{ src: string; sizes: string; purpose: string }>;
+};
 
 describe("production deployment safeguards", () => {
   it("keeps the committed environment template non-production", () => {
@@ -49,10 +54,34 @@ describe("production deployment safeguards", () => {
     expect(serviceWorker).not.toContain("indexedDB.deleteDatabase");
   });
 
-  it("provides standard install icons", () => {
+  it("provides ALUPC install branding and standard plus maskable icons", async () => {
+    expect(manifest.name).toBe("ALUPC Attendance");
+    expect(manifest.short_name).toBe("ALUPC Attendance");
+    expect(rootLayout).toContain('applicationName: "ALUPC Attendance"');
+    expect(rootLayout).toContain('title: "ALUPC Attendance"');
+    expect(rootLayout).toContain('url: "/apple-touch-icon.png"');
     expect(manifest.icons.map((icon) => icon.sizes)).toEqual([
       "192x192",
       "512x512",
+      "512x512",
     ]);
+    expect(manifest.icons[2]).toMatchObject({
+      src: "/icon-maskable-512.png",
+      purpose: "maskable",
+    });
+    for (const [path, size] of [
+      ["public/icon-192.png", 192],
+      ["public/icon-512.png", 512],
+      ["public/icon-maskable-512.png", 512],
+      ["public/apple-touch-icon.png", 180],
+      ["public/favicon-32.png", 32],
+    ] as const) {
+      const png = readFileSync(resolve(path));
+      expect(png.readUInt32BE(16)).toBe(size);
+      expect(png.readUInt32BE(20)).toBe(size);
+    }
+    expect(existsSync(resolve("public/favicon.svg"))).toBe(false);
+    expect(serviceWorker).toContain('"/icon-maskable-512.png"');
+    expect(serviceWorker).toContain('"/apple-touch-icon.png"');
   });
 });

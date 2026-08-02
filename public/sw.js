@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "church-attendance-shell-";
-const CACHE = `${CACHE_PREFIX}v5`;
+const CACHE = `${CACHE_PREFIX}v6`;
 const SHELL = [
   "/",
   "/login",
@@ -8,9 +8,11 @@ const SHELL = [
   "/services",
   "/settings",
   "/manifest.webmanifest",
-  "/favicon.svg",
+  "/favicon-32.png",
+  "/apple-touch-icon.png",
   "/icon-192.png",
   "/icon-512.png",
+  "/icon-maskable-512.png",
 ];
 
 self.addEventListener("install", (event) => {

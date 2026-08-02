@@ -1,11 +1,11 @@
 {
-  "name": "Church Attendance",
-  "short_name": "Attendance",
+  "name": "ALUPC Attendance",
+  "short_name": "ALUPC Attendance",
   "description": "Record church service attendance, including while offline.",
   "start_url": "/dashboard",
   "display": "standalone",
-  "background_color": "#f4f7f5",
-  "theme_color": "#24493f",
+  "background_color": "#000000",
+  "theme_color": "#0b0d10",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -18,6 +18,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

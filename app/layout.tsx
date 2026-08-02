@@ -22,18 +22,37 @@ export async function generateMetadata(): Promise<Metadata> {
   const image = `${protocol}://${host}/og.png`;
   const description = "A focused, offline-capable church attendance workspace.";
   return {
-    title: { default: "Church Attendance", template: "%s · Church Attendance" },
+    applicationName: "ALUPC Attendance",
+    title: { default: "ALUPC Attendance", template: "%s · ALUPC Attendance" },
     description,
     manifest: "/manifest.webmanifest",
-    icons: { icon: "/favicon.svg" },
+    icons: {
+      icon: [
+        { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+        { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      ],
+      shortcut: "/favicon-32.png",
+      apple: [
+        {
+          url: "/apple-touch-icon.png",
+          sizes: "180x180",
+          type: "image/png",
+        },
+      ],
+    },
+    appleWebApp: {
+      capable: true,
+      title: "ALUPC Attendance",
+      statusBarStyle: "black-translucent",
+    },
     openGraph: {
-      title: "Church Attendance",
+      title: "ALUPC Attendance",
       description,
       images: [{ url: image, width: 1787, height: 909 }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Church Attendance",
+      title: "ALUPC Attendance",
       description,
       images: [image],
     },
