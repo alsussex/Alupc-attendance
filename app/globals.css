@@ -4358,4 +4358,47 @@ textarea { border-radius: var(--radius-sm); }
   .dashboard-month-toggle { padding-inline: 0; }
   .dashboard-service-card-grid { padding-inline: 0; }
   .dashboard-service-card { min-height: 170px; }
+
+  .service-directory-toolbar {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .service-directory-toolbar > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .service-directory-toolbar .search-field {
+    width: 100%;
+    max-width: none;
+  }
+  .service-directory-toolbar .search-field input {
+    width: 100%;
+    min-width: 0;
+  }
+  .service-directory-filters {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .service-directory-filters button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: .45rem;
+  }
+  .service-filter-disclosure { width: 100%; }
+  .service-advanced-filters {
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .service-advanced-filters label,
+  .service-advanced-filters select,
+  .service-advanced-filters .button {
+    width: 100%;
+    min-width: 0;
+  }
 }
