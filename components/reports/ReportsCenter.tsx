@@ -9,6 +9,7 @@ import {
   FileClock,
   Gauge,
   History,
+  LibraryBig,
   Printer,
   UsersRound,
   UserRoundSearch,
@@ -20,32 +21,29 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { EmptyState } from "@/components/feedback/EmptyState";
 import { LoadingSkeleton } from "@/components/feedback/LoadingSkeleton";
 import { AttendanceExportReport } from "@/components/reports/AttendanceExportReport";
+import { MonthlySnapshotsReport } from "@/components/reports/MonthlySnapshotsReport";
 import { isAdmin } from "@/lib/auth/permissions";
 import type { ReportsDataset, ServiceReportRow } from "@/lib/reports/report-center";
 import {
   completedServiceReportRows,
+  adminReportDashboard,
+  adminReportStatistics,
+  adminYearlyReport,
   loadReportsDataset,
   memberAttendanceReport,
   reportCsv,
-  reportDashboard,
-  reportStatistics,
   visitorReportRows,
-  yearlyReport,
 } from "@/lib/reports/report-center";
 import { formatDate, formatTime } from "@/lib/format/date-time";
 import { downloadText } from "@/lib/settings/exports";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
+import {
+  canAccessReportSection,
+  defaultReportSection,
+  type ReportSectionId,
+} from "@/lib/reports/permissions";
 
-type ReportSection =
-  | "dashboard"
-  | "monthly"
-  | "range"
-  | "services"
-  | "members"
-  | "visitors"
-  | "yearly"
-  | "statistics"
-  | "audit";
+type ReportSection = ReportSectionId;
 
 interface SectionDefinition {
   id: ReportSection;
@@ -56,14 +54,15 @@ interface SectionDefinition {
 }
 
 const sections: SectionDefinition[] = [
-  { id: "dashboard", label: "Dashboard", description: "Current attendance overview", icon: Gauge },
+  { id: "dashboard", label: "Dashboard", description: "Current attendance overview", icon: Gauge, adminOnly: true },
   { id: "monthly", label: "Monthly Attendance", description: "Official monthly worksheet", icon: ClipboardList },
   { id: "range", label: "Custom Date Range", description: "Any inclusive date range", icon: CalendarRange },
   { id: "services", label: "Service History", description: "Completed services", icon: FileClock },
   { id: "members", label: "Member Attendance", description: "Individual history", icon: UserRoundSearch },
   { id: "visitors", label: "Visitor Report", description: "Named visitor history", icon: UsersRound },
-  { id: "yearly", label: "Yearly Summary", description: "Annual church totals", icon: History },
-  { id: "statistics", label: "Statistics", description: "Useful attendance records", icon: BarChart3 },
+  { id: "snapshots", label: "Monthly Attendance Snapshots", description: "Finalized office records", icon: LibraryBig },
+  { id: "yearly", label: "Yearly Summary", description: "Annual church totals", icon: History, adminOnly: true },
+  { id: "statistics", label: "Statistics", description: "Useful attendance records", icon: BarChart3, adminOnly: true },
   { id: "audit", label: "Audit Reports", description: "Administrative history", icon: History, adminOnly: true },
 ];
 
@@ -98,7 +97,9 @@ function ReportMetrics({ values }: { values: Array<{ label: string; value: strin
 }
 
 function DashboardReport({ dataset }: { dataset: ReportsDataset }) {
-  const summary = reportDashboard(dataset);
+  const { user } = useAuth();
+  if (!user) return null;
+  const summary = adminReportDashboard(user, dataset);
   const metrics = [
     { label: "Active members", value: summary.activeMembers },
     { label: "Archived members", value: summary.archivedMembers },
@@ -166,9 +167,11 @@ function VisitorReport({ dataset }: { dataset: ReportsDataset }) {
 }
 
 function YearlySummaryReport({ dataset }: { dataset: ReportsDataset }) {
+  const { user } = useAuth();
   const availableYears = [...new Set(dataset.services.filter((service) => !service.deletedAt).map((service) => Number(service.serviceDate.slice(0, 4))))].sort((a, b) => b - a);
   const [year, setYear] = useState(availableYears[0] ?? new Date().getFullYear());
-  const summary = yearlyReport(dataset, year);
+  if (!user) return null;
+  const summary = adminYearlyReport(user, dataset, year);
   const values = [
     { label: "Services held", value: summary.servicesHeld }, { label: "Average Sunday AM", value: summary.averageSundayMorning }, { label: "Average Sunday PM", value: summary.averageSundayEvening }, { label: "Average Wednesday", value: summary.averageWednesday }, { label: "Total visitors", value: summary.totalVisitors }, { label: "Sunday School Kids", value: summary.totalSundaySchoolKids }, { label: "Highest attendance", value: summary.highestAttendance }, { label: "Lowest attendance", value: summary.lowestAttendance }, { label: "Average attendance", value: summary.averageAttendance },
   ];
@@ -176,7 +179,9 @@ function YearlySummaryReport({ dataset }: { dataset: ReportsDataset }) {
 }
 
 function StatisticsReport({ dataset }: { dataset: ReportsDataset }) {
-  const stats = reportStatistics(dataset);
+  const { user } = useAuth();
+  if (!user) return null;
+  const stats = adminReportStatistics(user, dataset);
   const record = (label: string, row: ServiceReportRow | undefined, value = row?.total ?? 0) => ({ label, value, detail: row ? `${serviceName(row)} · ${formatDate(row.service.serviceDate)}` : "No completed services" });
   const records = [record("Highest attendance ever", stats.highestEver), record("Highest Sunday AM", stats.highestSundayMorning), record("Highest Sunday PM", stats.highestSundayEvening), record("Highest Wednesday", stats.highestWednesday), record("Largest visitor service", stats.largestVisitorService, stats.largestVisitorService?.visitors), record("Largest Sunday School attendance", stats.largestSundaySchool, stats.largestSundaySchool?.sundaySchoolKids), { label: "Average attendance this year", value: stats.averageThisYear, detail: String(new Date().getFullYear()) }, { label: "Average attendance all time", value: stats.averageAllTime, detail: "All completed services" }];
   return <section className="report-section print-report"><header className="report-section-heading"><div><p className="eyebrow">Church records</p><h2>Statistics</h2><p>Useful attendance records without unnecessary charts.</p></div><PrintExportActions onExport={() => downloadCsv("ALUPC-attendance-statistics.csv", ["Statistic", "Value", "Detail"], records.map((item) => [item.label, item.value, item.detail]))} /></header><ol className="report-record-list">{records.map((item) => <li key={item.label}><div><strong>{item.label}</strong><span>{item.detail}</span></div><b>{item.value}</b></li>)}</ol></section>;
@@ -194,10 +199,14 @@ export function ReportsCenter() {
   const [dataset, setDataset] = useState<ReportsDataset>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const visibleSections = sections.filter((item) => !item.adminOnly || isAdmin(user));
+  const fallbackSection = defaultReportSection(user?.role ?? "attendance_taker");
+  const visibleSections = sections.filter(
+    (item) =>
+      user && canAccessReportSection(user.role, item.id),
+  );
   const activeSection = visibleSections.some((item) => item.id === section)
     ? section
-    : "dashboard";
+    : fallbackSection;
 
   const refresh = useCallback(async () => {
     if (!user) return;
@@ -239,6 +248,7 @@ export function ReportsCenter() {
             {activeSection === "services" && <ServiceHistoryReport dataset={dataset} />}
             {activeSection === "members" && <MemberReport dataset={dataset} />}
             {activeSection === "visitors" && <VisitorReport dataset={dataset} />}
+            {activeSection === "snapshots" && <MonthlySnapshotsReport />}
             {activeSection === "yearly" && <YearlySummaryReport dataset={dataset} />}
             {activeSection === "statistics" && <StatisticsReport dataset={dataset} />}
             {activeSection === "audit" && isAdmin(user) && <section className="report-section print-report"><div className="report-actions no-print"><button className="button subtle" type="button" onClick={() => window.print()}><Printer aria-hidden="true" /> Print</button></div><AuditHistory /></section>}

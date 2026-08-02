@@ -30,6 +30,7 @@ const entityLabels: Record<AuditEntityType, string> = {
   member: "Member",
   user: "User",
   settings: "Settings",
+  report_snapshot: "Monthly snapshot",
 };
 
 function titleCase(value: unknown, fallback = "Activity") {

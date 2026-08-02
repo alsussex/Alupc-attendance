@@ -3002,6 +3002,20 @@ a.dashboard-focus-card:hover { border-color: var(--brand); transform: translateY
 .report-row-actions { display: flex; align-items: center; gap: .65rem; white-space: nowrap; }
 .text-button { padding: 0; border: 0; background: transparent; color: var(--primary); font: inherit; font-weight: 700; cursor: pointer; }
 .text-button:hover, .text-button:focus-visible { text-decoration: underline; }
+.text-button { display: inline-flex; align-items: center; gap: .3rem; }
+.text-button svg { width: 15px; height: 15px; }
+.snapshot-admin-tools { display: grid; gap: 1rem; padding: 1rem 0 1.25rem; border-bottom: 1px solid var(--line); }
+.snapshot-admin-tools h3, .snapshot-list-section h3, .snapshot-selected-view h3 { margin: 0 0 .25rem; }
+.snapshot-admin-tools p, .snapshot-list-section p, .snapshot-selected-view p { margin: 0; color: var(--muted); }
+.snapshot-finalize-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 1rem; }
+.snapshot-finalize-controls label { display: grid; gap: .35rem; color: var(--muted); font-size: .72rem; font-weight: 650; }
+.snapshot-finalize-controls textarea { min-height: 86px; resize: vertical; }
+.snapshot-status { width: fit-content; padding: .35rem .6rem; border-radius: 999px; font-size: .72rem; font-weight: 750; }
+.snapshot-status.draft { color: var(--warning-text); background: var(--warning-bg); }
+.snapshot-status.finalized { color: var(--success); background: var(--success-bg); }
+.snapshot-status.not-created { color: var(--muted); background: var(--surface-muted); }
+.snapshot-list-section, .snapshot-selected-view { display: grid; gap: 1rem; padding-top: .5rem; }
+.snapshot-selected-view { border-top: 1px solid var(--line); padding-top: 1.5rem; }
 
 @media (max-width: 900px) {
   .reports-layout { grid-template-columns: 1fr; gap: 1.25rem; }
@@ -3020,6 +3034,8 @@ a.dashboard-focus-card:hover { border-color: var(--brand); transform: translateY
   .report-metrics > div:not(:nth-child(3n + 1)) { border-left: 0; }
   .report-metrics > div:nth-child(even) { border-left: 1px solid var(--line); }
   .report-toolbar > label, .report-toolbar > .button { flex: 1 1 100%; }
+  .snapshot-finalize-controls { grid-template-columns: 1fr; }
+  .snapshot-finalize-controls .button { width: 100%; }
   .report-data-table th, .report-data-table td { padding: .72rem .55rem; }
 }
 

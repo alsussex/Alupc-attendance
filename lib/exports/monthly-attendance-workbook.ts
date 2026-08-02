@@ -270,7 +270,7 @@ export function attendanceServiceColumns(dataset: MonthlyAttendanceDataset) {
   const headings = serviceHeadings(services, dataset.dateRange);
   return services.map((service, index) => ({
     service,
-    heading: headings[index],
+    heading: dataset.serviceHeadings?.[service.id] ?? headings[index],
   }));
 }
 
@@ -378,7 +378,7 @@ export function monthlyWorkbookLayout(
       )
     : `${monthName} ${dataset.year}`;
   return {
-    title: `Abundant Life Attendance - ${periodTitle}`,
+    title: `${dataset.churchName || "Abundant Life"} Attendance - ${periodTitle}`,
     finalColumn: excelColumnName(dataset.services.length + 1),
     finalRow: totalAttendanceRow,
     memberStartRow,

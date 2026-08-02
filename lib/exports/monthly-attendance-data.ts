@@ -47,6 +47,8 @@ export interface MonthlyAttendanceDataset {
   monthKey: string;
   year: number;
   month: number;
+  churchName?: string;
+  serviceHeadings?: Record<string, string>;
   dateRange?: {
     startDate: string;
     endDate: string;

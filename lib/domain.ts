@@ -111,7 +111,8 @@ export type AuditEntityType =
   | "visitor"
   | "member"
   | "user"
-  | "settings";
+  | "settings"
+  | "report_snapshot";
 
 export interface AuditLogEntry {
   id: string;

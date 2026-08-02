@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReportsCenter } from "@/components/reports/ReportsCenter";
 import type {
@@ -18,6 +18,10 @@ import {
   type ReportsDataset,
 } from "@/lib/reports/report-center";
 import { clearLocalDatabase, getDatabase } from "@/lib/storage/database";
+import {
+  assertReportSectionAccess,
+  canAccessReportSection,
+} from "@/lib/reports/permissions";
 
 let role: "admin" | "attendance_taker" = "admin";
 
@@ -230,24 +234,66 @@ describe("ReportsCenter", () => {
   it("offers monthly, custom range, member, visitor, yearly, statistics, and Admin audit reports", async () => {
     render(<ReportsCenter />);
     await waitFor(() => expect(screen.queryByLabelText("Loading reports")).toBeNull());
+    const reportNavigation = within(
+      screen.getByRole("navigation", { name: "Report categories" }),
+    );
     for (const name of [
       "Monthly Attendance",
       "Custom Date Range",
       "Member Attendance",
       "Visitor Report",
+      "Monthly Attendance Snapshots",
       "Yearly Summary",
       "Statistics",
       "Audit Reports",
     ]) {
-      expect(screen.getByRole("button", { name: new RegExp(name) })).toBeInTheDocument();
+      expect(reportNavigation.getByText(name, { selector: "strong" })).toBeVisible();
     }
   });
 
   it("does not expose audit reports to Attendance Takers", async () => {
     role = "attendance_taker";
     render(<ReportsCenter />);
-    await screen.findByRole("heading", { name: "Attendance dashboard" });
+    await screen.findByRole("heading", { name: "Monthly attendance" });
+    const reportNavigation = within(
+      screen.getByRole("navigation", { name: "Report categories" }),
+    );
+    for (const permitted of [
+      "Monthly Attendance",
+      "Custom Date Range",
+      "Service History",
+      "Member Attendance",
+      "Visitor Report",
+      "Monthly Attendance Snapshots",
+    ]) {
+      expect(reportNavigation.getByText(permitted, { selector: "strong" })).toBeVisible();
+    }
+    for (const restricted of [
+      "Dashboard",
+      "Yearly Summary",
+      "Statistics",
+      "Audit Reports",
+    ]) {
+      expect(reportNavigation.queryByText(restricted, { selector: "strong" })).toBeNull();
+    }
     expect(screen.queryByRole("button", { name: /Audit Reports/ })).toBeNull();
     expect(screen.queryByRole("option", { name: "Audit Reports" })).toBeNull();
+  });
+
+  it("enforces Admin report access in the data-access permission layer", () => {
+    expect(canAccessReportSection("attendance_taker", "monthly")).toBe(true);
+    expect(canAccessReportSection("attendance_taker", "snapshots")).toBe(true);
+    expect(canAccessReportSection("attendance_taker", "dashboard")).toBe(false);
+    expect(() =>
+      assertReportSectionAccess(
+        {
+          userId: "taker-1",
+          organizationId: "org-1",
+          email: "taker@example.test",
+          role: "attendance_taker",
+        },
+        "statistics",
+      ),
+    ).toThrow("Administrator");
   });
 });

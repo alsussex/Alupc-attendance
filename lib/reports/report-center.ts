@@ -6,7 +6,9 @@ import type {
   Organization,
   Person,
   ServiceVisitor,
+  UserContext,
 } from "@/lib/domain";
+import { assertReportSectionAccess } from "@/lib/reports/permissions";
 import { summarizeServiceAttendance } from "@/lib/services/attendance-summary";
 import { getDatabase } from "@/lib/storage/database";
 
@@ -301,6 +303,33 @@ export function reportStatistics(dataset: ReportsDataset, now = new Date()) {
     averageThisYear: average(currentYear),
     averageAllTime: average(rows),
   };
+}
+
+export function adminReportDashboard(
+  user: UserContext,
+  dataset: ReportsDataset,
+  now = new Date(),
+) {
+  assertReportSectionAccess(user, "dashboard");
+  return reportDashboard(dataset, now);
+}
+
+export function adminYearlyReport(
+  user: UserContext,
+  dataset: ReportsDataset,
+  year: number,
+) {
+  assertReportSectionAccess(user, "yearly");
+  return yearlyReport(dataset, year);
+}
+
+export function adminReportStatistics(
+  user: UserContext,
+  dataset: ReportsDataset,
+  now = new Date(),
+) {
+  assertReportSectionAccess(user, "statistics");
+  return reportStatistics(dataset, now);
 }
 
 function csvCell(value: unknown) {
