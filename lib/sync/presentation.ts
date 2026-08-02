@@ -43,7 +43,7 @@ export function syncIndicatorPresentation(input: SyncPresentationInput) {
       tone: "pending",
     };
   }
-  return { label: "Online", tone: "online" };
+  return { label: "Up to date", tone: "online" };
 }
 
 export function syncBannerPresentation(input: SyncPresentationInput) {

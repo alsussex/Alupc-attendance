@@ -367,8 +367,8 @@ describe("lifecycle retry data safety", () => {
 });
 
 describe("sync status presentation", () => {
-  it("presents Online, Syncing, All changes synced, then Online", () => {
-    expect(syncIndicatorPresentation(presentation()).label).toBe("Online");
+  it("presents Up to date, Syncing, All changes synced, then Up to date", () => {
+    expect(syncIndicatorPresentation(presentation()).label).toBe("Up to date");
     expect(
       syncIndicatorPresentation(
         presentation({
@@ -386,7 +386,7 @@ describe("sync status presentation", () => {
     ).toBe("All changes synced");
     expect(
       syncIndicatorPresentation(presentation({ recoveryState: "idle" })).label,
-    ).toBe("Online");
+    ).toBe("Up to date");
   });
 
   it("shows the safe user-facing failure message and a real manual action", () => {

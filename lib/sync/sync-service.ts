@@ -1,12 +1,13 @@
 "use client";
 
 import type {
+  SyncCursor,
   PullTable,
   SyncPhase,
   SyncStatusRecord,
   UserContext,
 } from "@/lib/domain";
-import { PULL_TABLES } from "@/lib/domain";
+import { BACKGROUND_PULL_TABLES, PULL_TABLES } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
 import { hasSupabaseConfig } from "@/lib/supabase/client";
 import {
@@ -40,6 +41,7 @@ export interface SynchronizationOptions {
   fullSnapshot?: boolean;
   pullTables?: readonly PullTable[];
   skipPull?: boolean;
+  onRemoteChangesDetected?: () => void;
   recoverAccess?: () => Promise<UserContext | null>;
 }
 
@@ -72,6 +74,46 @@ function activePullCovers(
 
 export function syncRetryDelay(failedAttempts: number) {
   return Math.min(2_000 * 2 ** Math.max(0, failedAttempts), 60_000);
+}
+
+export const STARTUP_CURSOR_MAX_AGE_MS = 24 * 60 * 60_000;
+
+export function evaluateStartupCursors(
+  cursors: SyncCursor[],
+  user: UserContext,
+  now = Date.now(),
+) {
+  const scoped = new Map(
+    cursors
+      .filter(
+        (cursor) =>
+          cursor.userId === user.userId &&
+          cursor.organizationId === user.organizationId,
+      )
+      .map((cursor) => [cursor.table, cursor]),
+  );
+  if (BACKGROUND_PULL_TABLES.some((table) => !scoped.has(table))) {
+    return { required: true, reason: "integrity" as const };
+  }
+  if (
+    BACKGROUND_PULL_TABLES.some((table) => {
+      const pulledAt = Date.parse(scoped.get(table)?.lastSuccessfulPullAt ?? "");
+      return !Number.isFinite(pulledAt) || now - pulledAt > STARTUP_CURSOR_MAX_AGE_MS;
+    })
+  ) {
+    return { required: true, reason: "expired_cursor" as const };
+  }
+  return { required: false, reason: "current" as const };
+}
+
+export async function inspectStartupSynchronization(user: UserContext) {
+  const database = await getDatabase();
+  const cursors = await database.getAllFromIndex(
+    "syncCursors",
+    "organizationId",
+    user.organizationId,
+  );
+  return evaluateStartupCursors(cursors, user);
 }
 
 async function storeStatus(
@@ -157,6 +199,7 @@ async function runSynchronization(
       pull = await pullOrganizationData(user, options.pullSource, {
         fullSnapshot: options.fullSnapshot,
         tables: options.pullTables,
+        onRemoteChangesDetected: options.onRemoteChangesDetected,
       });
     }
     if (upload.errors.length) {

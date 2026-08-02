@@ -22,6 +22,7 @@ import { getQueueCount } from "@/lib/sync/queue";
 import type { RecoveryState } from "@/lib/sync/presentation";
 import {
   registerAutomaticSync,
+  inspectStartupSynchronization,
   syncRetryDelay,
   synchronizeNow,
   synchronizeWithSessionRecovery,
@@ -60,7 +61,7 @@ const FOCUS_PULL_COOLDOWN_MS = 5 * 60_000;
 
 export function SyncProvider({ children }: { children: ReactNode }) {
   const { user, refreshAccess, recoverSession, authRevision } = useAuth();
-  const [phase, setPhase] = useState<SyncPhase>("loading");
+  const [phase, setPhase] = useState<SyncPhase>("complete");
   const [error, setError] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingVisible, setPendingVisible] = useState(false);
@@ -86,6 +87,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       drainQueue = false,
       trigger: SyncTrigger = "automatic",
       pullTables?: readonly PullTable[],
+      forceVisibleProgress = false,
     ): Promise<SyncAttemptOutcome> => {
       if (!user) return { status: "error", pendingCount: 0 };
       let activeUser = user;
@@ -117,13 +119,42 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         return { status: "offline", pendingCount: count };
       }
 
+      const skipPull =
+        trigger === "automatic" ||
+        (trigger === "focus" &&
+          Date.now() - lastPullAttemptAt.current < FOCUS_PULL_COOLDOWN_MS);
+      if (count === 0 && skipPull) {
+        setError(null);
+        setPhase("complete");
+        return { status: "synced", pendingCount: 0 };
+      }
+
+      const silentProbe =
+        !forceVisibleProgress &&
+        count === 0 &&
+        (trigger === "startup" ||
+          trigger === "focus" ||
+          trigger === "scheduled");
+      let progressVisible = !silentProbe;
+      const revealProgress = () => {
+        if (progressVisible) return;
+        progressVisible = true;
+        setIsSyncing(true);
+        setPhase("downloading");
+      };
+      const handlePhase = (nextPhase: SyncPhase) => {
+        if (
+          silentProbe &&
+          !progressVisible &&
+          (nextPhase === "loading" || nextPhase === "downloading")
+        ) {
+          return;
+        }
+        setPhase(nextPhase);
+      };
       activeAttemptCount.current += 1;
-      setIsSyncing(true);
+      if (progressVisible) setIsSyncing(true);
       try {
-        const skipPull =
-          trigger === "automatic" ||
-          (trigger === "focus" &&
-            Date.now() - lastPullAttemptAt.current < FOCUS_PULL_COOLDOWN_MS);
         const effectivePullTables =
           pullTables ??
           (trigger === "manual"
@@ -136,17 +167,19 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           const result =
             trigger === "manual"
               ? await synchronizeNow(activeUser, {
-                  onPhase: setPhase,
+                  onPhase: handlePhase,
                   recoverAccess: recoverSession,
                   pullTables: effectivePullTables,
                   skipPull,
+                  onRemoteChangesDetected: revealProgress,
                 })
               : await synchronizeWithSessionRecovery(activeUser, {
-                  onPhase: setPhase,
+                  onPhase: handlePhase,
                   trigger,
                   recoverAccess: recoverSession,
                   pullTables: effectivePullTables,
                   skipPull,
+                  onRemoteChangesDetected: revealProgress,
                 });
           if (!skipPull) lastPullAttemptAt.current = Date.now();
           count = await getQueueCount(activeUser.organizationId);
@@ -291,12 +324,14 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     const runAutomaticSync = async (
       trigger: SyncTrigger = "automatic",
       pullTables?: readonly PullTable[],
+      forceVisibleProgress = false,
     ) => {
       if (stopped || !navigator.onLine) return;
       const outcome = await attemptSynchronization(
         false,
         trigger,
         pullTables,
+        forceVisibleProgress,
       );
       if (stopped) return;
       if (outcome.status === "synced") {
@@ -346,7 +381,8 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       if (count > 0) {
         await startRecovery("Restoring saved changes", "startup");
       } else {
-        await runAutomaticSync("startup");
+        const inspection = await inspectStartupSynchronization(user);
+        await runAutomaticSync("startup", undefined, inspection.required);
       }
     };
 

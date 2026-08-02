@@ -6,6 +6,7 @@ import {
   BACKGROUND_PULL_TABLES,
   OPERATIONAL_PULL_TABLES,
   type PullTable,
+  type SyncCursor,
   type SyncQueueItem,
   type UserContext,
 } from "@/lib/domain";
@@ -20,7 +21,11 @@ import {
   pullOrganizationData,
   type PullSource,
 } from "@/lib/sync/pull-service";
-import { synchronizeOrganization } from "@/lib/sync/sync-service";
+import {
+  evaluateStartupCursors,
+  STARTUP_CURSOR_MAX_AGE_MS,
+  synchronizeOrganization,
+} from "@/lib/sync/sync-service";
 import type { UploadTarget } from "@/lib/sync/upload-service";
 
 const organizationId = "20000000-0000-4000-8000-000000000088";
@@ -127,6 +132,90 @@ describe("low-egress bidirectional synchronization", () => {
       "service_attendance",
       "service_visitors",
     ]);
+  });
+
+  it("keeps an empty delta probe silent and reports actual remote rows", async () => {
+    let detections = 0;
+    await pullOrganizationData(user, new CountingPullSource(), {
+      tables: ["people"],
+      onRemoteChangesDetected: () => {
+        detections += 1;
+      },
+    });
+    expect(detections).toBe(0);
+
+    const changedSource: PullSource = {
+      async fetchPage() {
+        return {
+          rows: [
+            {
+              id: "30000000-0000-4000-8000-000000000088",
+              organization_id: organizationId,
+              first_name: "Avery",
+              last_name: "River",
+              display_name: "Avery River",
+              person_type: "member",
+              is_active: true,
+              version: 1,
+              created_by: user.userId,
+              updated_by: user.userId,
+              created_at: "2026-08-02T10:00:00.000Z",
+              updated_at: "2026-08-02T10:00:00.000Z",
+            },
+          ],
+          hasMore: false,
+        };
+      },
+    };
+    await pullOrganizationData(user, changedSource, {
+      tables: ["people"],
+      onRemoteChangesDetected: () => {
+        detections += 1;
+      },
+    });
+    expect(detections).toBe(1);
+  });
+
+  it("requires visible startup work only for missing or expired cursors", () => {
+    const now = Date.parse("2026-08-02T12:00:00.000Z");
+    const cursors = BACKGROUND_PULL_TABLES.map(
+      (table): SyncCursor => ({
+        id: `${user.userId}:${organizationId}:${table}`,
+        userId: user.userId,
+        organizationId,
+        table,
+        updatedAt: "2026-08-02T10:00:00.000Z",
+        lastSuccessfulPullAt: "2026-08-02T11:55:00.000Z",
+      }),
+    );
+
+    expect(evaluateStartupCursors(cursors, user, now)).toEqual({
+      required: false,
+      reason: "current",
+    });
+    expect(evaluateStartupCursors(cursors.slice(1), user, now).reason).toBe(
+      "integrity",
+    );
+    expect(
+      evaluateStartupCursors(
+        cursors.map((cursor) => ({
+          ...cursor,
+          lastSuccessfulPullAt: new Date(
+            now - STARTUP_CURSOR_MAX_AGE_MS - 1,
+          ).toISOString(),
+        })),
+        user,
+        now,
+      ).reason,
+    ).toBe("expired_cursor");
+  });
+
+  it("keeps zero-work startup probes out of the visible syncing state", () => {
+    const source = readFileSync(resolve("components/sync/SyncProvider.tsx"), "utf8");
+    expect(source).toContain('trigger === "startup"');
+    expect(source).toContain("const silentProbe =");
+    expect(source).toContain("onRemoteChangesDetected: revealProgress");
+    expect(source).toContain("inspectStartupSynchronization(user)");
   });
 
   it("loads audit history only when explicitly targeted", async () => {

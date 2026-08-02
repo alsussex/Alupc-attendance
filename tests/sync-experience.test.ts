@@ -202,7 +202,7 @@ describe("offline and retry visibility", () => {
   });
 
   it("keeps normal online work quiet and exposes errors only after repeated failures", () => {
-    expect(syncIndicatorPresentation(presentation()).label).toBe("Online");
+    expect(syncIndicatorPresentation(presentation()).label).toBe("Up to date");
     expect(
       syncBannerPresentation(
         presentation({ consecutiveFailures: 2, pendingCount: 3 }),

@@ -213,6 +213,7 @@ export async function pullOrganizationData(
   options: {
     fullSnapshot?: boolean;
     tables?: readonly PullTable[];
+    onRemoteChangesDetected?: () => void;
   } = {},
 ): Promise<PullResult> {
   const organizationId =
@@ -240,6 +241,7 @@ export async function pullOrganizationData(
   };
 
   const requestedTables = options.tables ?? BACKGROUND_PULL_TABLES;
+  let remoteChangesDetected = false;
   for (const table of requestedTables) {
     const scopedCursorId = cursorId(userId, organizationId, table);
     const existingCursor = await database.get(
@@ -260,6 +262,10 @@ export async function pullOrganizationData(
         PAGE_SIZE,
         cursor?.recordId,
       );
+      if (page.rows.length > 0 && !remoteChangesDetected) {
+        remoteChangesDetected = true;
+        options.onRemoteChangesDetected?.();
+      }
       result.downloaded += page.rows.length;
 
       for (const row of page.rows) {
@@ -333,13 +339,15 @@ export async function pullOrganizationData(
       offset += PAGE_SIZE;
     }
 
-    if (newestUpdatedAt) {
+    const durableUpdatedAt =
+      newestUpdatedAt ?? cursor?.updatedAt ?? "1970-01-01T00:00:00.000Z";
+    if (durableUpdatedAt) {
       const cursor: SyncCursor = {
         id: scopedCursorId,
         userId,
         organizationId,
         table,
-        updatedAt: newestUpdatedAt,
+        updatedAt: durableUpdatedAt,
         recordId: newestRecordId,
         lastSuccessfulPullAt: new Date().toISOString(),
       };
@@ -347,6 +355,6 @@ export async function pullOrganizationData(
     }
   }
 
-  announceDataChanged();
+  if (result.merged > 0) announceDataChanged();
   return result;
 }
