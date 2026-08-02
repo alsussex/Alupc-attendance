@@ -4,9 +4,11 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
+import { Archive, CheckSquare2, RotateCcw, X } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { AuditHistory } from "@/components/audit/AuditHistory";
 import { BulkMemberEntryModal } from "@/components/people/BulkMemberEntryModal";
@@ -26,6 +28,11 @@ import {
   type MemberDirectoryView,
 } from "@/lib/people/member-directory";
 import { findLikelyMemberMatches } from "@/lib/people/member-matching";
+import {
+  bulkUpdateMemberLifecycle,
+  type BulkMemberLifecycleAction,
+  type BulkMemberLifecycleResult,
+} from "@/lib/people/bulk-member-management";
 import {
   findExactMemberMatches,
   getLastAttendanceDates,
@@ -86,11 +93,21 @@ export function PeopleDirectory() {
   const [mergeOpen, setMergeOpen] = useState(false);
   const [sort, setSort] = useState<MemberDirectorySort>("name");
   const [saving, setSaving] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkProcessing, setBulkProcessing] = useState(false);
+  const bulkProcessingRef = useRef(false);
+  const bulkSubmissionRef = useRef(false);
+  const [bulkConfirming, setBulkConfirming] = useState(false);
+  const [bulkResult, setBulkResult] =
+    useState<BulkMemberLifecycleResult | null>(null);
+
+  const admin = isAdmin(user);
 
   const refresh = useCallback(async () => {
     if (!user) return;
     const [members, candidates, dates, counts] = await Promise.all([
-      isAdmin(user)
+      admin
         ? listMembers(user.organizationId)
         : listActiveMembers(user.organizationId),
       listMemberCandidates(user.organizationId),
@@ -104,11 +121,13 @@ export function PeopleDirectory() {
     setProfile((current) =>
       current ? members.find((member) => member.id === current.id) ?? null : null,
     );
-  }, [user]);
+  }, [admin, user]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0);
-    const unsubscribe = subscribeToDataChanges(() => void refresh());
+    const unsubscribe = subscribeToDataChanges(() => {
+      if (!bulkProcessingRef.current) void refresh();
+    });
     return () => {
       window.clearTimeout(timer);
       unsubscribe();
@@ -116,7 +135,7 @@ export function PeopleDirectory() {
   }, [refresh]);
 
   const effectiveView =
-    !isAdmin(user) && (view === "inactive" || view === "all") ? "active" : view;
+    !admin && (view === "inactive" || view === "all") ? "active" : view;
   const filtered = useMemo(
     () =>
       sortDirectoryMembers(
@@ -140,6 +159,38 @@ export function PeopleDirectory() {
   );
 
   const inactiveCount = people.filter((person) => !person.isActive).length;
+  const visibleIds = useMemo(
+    () => filtered.map((person) => person.id),
+    [filtered],
+  );
+  const allVisibleSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+
+  useEffect(() => {
+    if (!admin || !selectionMode) return;
+    const handleSelectAll = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "a") {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) {
+        return;
+      }
+      event.preventDefault();
+      setSelectedIds((current) => {
+        const next = new Set(current);
+        visibleIds.forEach((id) => next.add(id));
+        return next;
+      });
+    };
+    window.addEventListener("keydown", handleSelectAll);
+    return () => window.removeEventListener("keydown", handleSelectAll);
+  }, [admin, selectionMode, visibleIds]);
 
   useEscapeKey(
     () => {
@@ -154,6 +205,9 @@ export function PeopleDirectory() {
         setReactivateTarget(null);
       } else if (profile) {
         setProfile(null);
+      } else if (selectionMode) {
+        setSelectionMode(false);
+        setSelectedIds(new Set());
       }
     },
     Boolean(
@@ -161,9 +215,102 @@ export function PeopleDirectory() {
         form ||
         multipleMatches.length ||
         reactivateTarget ||
-        profile,
+        profile ||
+        selectionMode,
     ),
   );
+
+  function exitSelectionMode() {
+    if (bulkProcessing || bulkConfirming) return;
+    setSelectionMode(false);
+    setSelectedIds(new Set());
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllVisible() {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) visibleIds.forEach((id) => next.delete(id));
+      else visibleIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  async function runBulkAction(action: BulkMemberLifecycleAction) {
+    if (
+      !user ||
+      !admin ||
+      bulkSubmissionRef.current ||
+      selectedIds.size === 0
+    ) {
+      return;
+    }
+    bulkSubmissionRef.current = true;
+    setBulkConfirming(true);
+    const verb = action === "archive" ? "Archive" : "Restore";
+    const approved = await confirmAction({
+      title: `${verb} ${selectedIds.size} selected ${
+        selectedIds.size === 1 ? "member" : "members"
+      }?`,
+      message:
+        action === "archive"
+          ? "Selected active members will leave attendance lists. Their history, notes, UUIDs, and relationships will be preserved."
+          : "Selected inactive members will return to the active directory and attendance lists. Existing history and relationships will remain attached.",
+      confirmLabel: `${verb} selected`,
+      tone: action === "archive" ? "danger" : "default",
+    });
+    if (!approved) {
+      bulkSubmissionRef.current = false;
+      setBulkConfirming(false);
+      return;
+    }
+
+    setBulkConfirming(false);
+    bulkProcessingRef.current = true;
+    setBulkProcessing(true);
+    setBulkResult(null);
+    try {
+      const result = await bulkUpdateMemberLifecycle(user, selectedIds, action);
+      setBulkResult(result);
+      const summary = `Updated ${result.updated}. Skipped ${result.skipped}. Failed ${result.failed.length}.`;
+      showToast(summary, {
+        key: `bulk-members:${action}:${[...selectedIds].sort().join(",")}`,
+        tone: result.failed.length > 0 ? "error" : "success",
+      });
+      if (result.failed.length > 0) {
+        setSelectedIds(new Set(result.failed.map((failure) => failure.id)));
+      } else {
+        setSelectionMode(false);
+        setSelectedIds(new Set());
+      }
+      await refresh();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "The bulk action could not be completed.";
+      setBulkResult({
+        action,
+        requested: selectedIds.size,
+        updated: 0,
+        skipped: 0,
+        failed: [{ id: "bulk-action", name: "Selected members", message }],
+        updatedIds: [],
+        skippedIds: [],
+      });
+      showToast(message, { key: `bulk-members:${action}:error`, tone: "error" });
+    } finally {
+      bulkSubmissionRef.current = false;
+      bulkProcessingRef.current = false;
+      setBulkProcessing(false);
+    }
+  }
 
   async function submit(
     event: Pick<FormEvent, "preventDefault">,
@@ -296,7 +443,24 @@ export function PeopleDirectory() {
           <p>Active members appear automatically when you record a service.</p>
         </div>
         <div className="button-row people-add-actions">
-          {isAdmin(user) && (
+          {admin && (
+            <button
+              className={selectionMode ? "button secondary" : "button subtle"}
+              type="button"
+              aria-pressed={selectionMode}
+              onClick={() => {
+                if (selectionMode) exitSelectionMode();
+                else {
+                  setSelectionMode(true);
+                  setBulkResult(null);
+                }
+              }}
+            >
+              <CheckSquare2 aria-hidden="true" />
+              {selectionMode ? "Exit selection" : "Select"}
+            </button>
+          )}
+          {admin && (
             <button
               className="button subtle"
               type="button"
@@ -336,7 +500,7 @@ export function PeopleDirectory() {
               ["active", "Active Members"],
               ["recently_added", "Recently Added"],
               ["recently_restored", "Recently Restored"],
-              ...(isAdmin(user)
+              ...(admin
                 ? ([
                     ["inactive", `Inactive Members (${inactiveCount})`],
                     ["all", "All Members"],
@@ -382,6 +546,18 @@ export function PeopleDirectory() {
               <option value="attendance_count">Attendance count</option>
             </select>
           </label>
+          {selectionMode && admin && (
+            <button
+              className="button subtle select-visible-members"
+              type="button"
+              aria-pressed={allVisibleSelected}
+              disabled={visibleIds.length === 0 || bulkProcessing || bulkConfirming}
+              onClick={toggleAllVisible}
+            >
+              <CheckSquare2 aria-hidden="true" />
+              {allVisibleSelected ? "Deselect visible" : "Select all visible"}
+            </button>
+          )}
           <span className="count-label">
             {filtered.length}{" "}
             {effectiveView === "all" ? "total" : effectiveView} members
@@ -391,9 +567,23 @@ export function PeopleDirectory() {
         <div className="person-list">
           {filtered.map((person) => (
             <article
-              className={`person-row ${person.isActive ? "" : "inactive"}`}
+              className={`person-row ${person.isActive ? "" : "inactive"} ${
+                selectedIds.has(person.id) ? "selected" : ""
+              }`}
               key={person.id}
             >
+              {selectionMode && admin && (
+                <label className="member-selection-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(person.id)}
+                    disabled={bulkProcessing || bulkConfirming}
+                    onChange={() => toggleSelected(person.id)}
+                    aria-label={`Select ${person.displayName}`}
+                  />
+                  <span aria-hidden="true" />
+                </label>
+              )}
               <span className="avatar" aria-hidden="true">
                 {person.firstName[0]}
                 {person.lastName[0]}
@@ -439,7 +629,7 @@ export function PeopleDirectory() {
                 >
                   Edit
                 </button>
-                {isAdmin(user) &&
+                {admin &&
                   (person.isActive ? (
                     <button
                       className="button danger-text"
@@ -488,13 +678,74 @@ export function PeopleDirectory() {
             />
           )}
         </div>
+        {bulkResult && (
+          <div
+            className={`notice ${bulkResult.failed.length > 0 ? "warning" : "success"}`}
+            role="status"
+          >
+            <strong>
+              {bulkResult.action === "archive" ? "Archive" : "Restore"} complete
+            </strong>
+            <span>
+              Updated {bulkResult.updated}. Skipped {bulkResult.skipped}. Failed{" "}
+              {bulkResult.failed.length}.
+            </span>
+            {bulkResult.failed.length > 0 && (
+              <ul>
+                {bulkResult.failed.map((failure) => (
+                  <li key={failure.id}>
+                    {failure.name}: {failure.message}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </section>
+
+      {admin && selectionMode && selectedIds.size > 0 && (
+        <div
+          className="bulk-member-toolbar"
+          role="toolbar"
+          aria-label="Bulk member actions"
+          aria-busy={bulkProcessing || bulkConfirming}
+        >
+          <strong>{selectedIds.size} selected</strong>
+          <span className="bulk-member-toolbar-divider" aria-hidden="true" />
+          <button
+            className="button danger-text"
+            type="button"
+            disabled={bulkProcessing || bulkConfirming}
+            onClick={() => void runBulkAction("archive")}
+          >
+            <Archive aria-hidden="true" /> Archive selected
+          </button>
+          <button
+            className="button subtle"
+            type="button"
+            disabled={bulkProcessing || bulkConfirming}
+            onClick={() => void runBulkAction("restore")}
+          >
+            <RotateCcw aria-hidden="true" /> Restore selected
+          </button>
+          <button
+            className="icon-button"
+            type="button"
+            aria-label="Cancel member selection"
+            disabled={bulkProcessing || bulkConfirming}
+            onClick={exitSelectionMode}
+          >
+            <X aria-hidden="true" />
+          </button>
+          {bulkProcessing && <span className="sr-only">Processing selected members</span>}
+        </div>
+      )}
 
       {profile && (
         <MemberProfileModal
           person={profile}
           lastAttendanceDate={lastAttendance.get(profile.id)}
-          canManageLifecycle={isAdmin(user)}
+          canManageLifecycle={admin}
           notes={profileNotes}
           onClose={() => setProfile(null)}
           onEdit={() => void edit(profile)}
@@ -716,7 +967,7 @@ export function PeopleDirectory() {
                   />
                 </label>
               </div>
-              {isAdmin(user) && (
+              {admin && (
                 <label>
                   Administrative notes{" "}
                   <span className="optional">(optional, Admin only)</span>
@@ -807,7 +1058,7 @@ export function PeopleDirectory() {
           onCompleted={refresh}
         />
       )}
-      {mergeOpen && isAdmin(user) && (
+      {mergeOpen && admin && (
         <MemberMergeModal
           members={memberCandidates}
           onClose={() => setMergeOpen(false)}
