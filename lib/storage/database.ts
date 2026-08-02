@@ -8,6 +8,7 @@ import type {
   Organization,
   OrganizationSettings,
   MemberPrivateDetails,
+  MonthlyExportCoverage,
   Person,
   Profile,
   ServiceVisitor,
@@ -82,13 +83,18 @@ export interface AttendanceDatabase extends DBSchema {
     value: SyncStatusRecord;
     indexes: { organizationId: string };
   };
+  monthlyExportCoverage: {
+    key: string;
+    value: MonthlyExportCoverage;
+    indexes: { organizationId: string };
+  };
 }
 
 let databasePromise: Promise<IDBPDatabase<AttendanceDatabase>> | null = null;
 
 export function getDatabase() {
   if (!databasePromise) {
-    databasePromise = openDB<AttendanceDatabase>("church-attendance", 5, {
+    databasePromise = openDB<AttendanceDatabase>("church-attendance", 6, {
       upgrade(database, oldVersion) {
         if (oldVersion < 1) {
           const people = database.createObjectStore("people", { keyPath: "id" });
@@ -162,6 +168,13 @@ export function getDatabase() {
           privateDetails.createIndex("organizationId", "organizationId");
           privateDetails.createIndex("memberId", "memberId");
         }
+        if (oldVersion < 6) {
+          const monthlyCoverage = database.createObjectStore(
+            "monthlyExportCoverage",
+            { keyPath: "id" },
+          );
+          monthlyCoverage.createIndex("organizationId", "organizationId");
+        }
       },
     });
   }
@@ -191,6 +204,7 @@ export async function clearLocalDatabase() {
       "syncQueue",
       "syncCursors",
       "syncStatus",
+      "monthlyExportCoverage",
     ],
     "readwrite",
   );
@@ -207,6 +221,7 @@ export async function clearLocalDatabase() {
     transaction.objectStore("syncQueue").clear(),
     transaction.objectStore("syncCursors").clear(),
     transaction.objectStore("syncStatus").clear(),
+    transaction.objectStore("monthlyExportCoverage").clear(),
     transaction.done,
   ]);
 }

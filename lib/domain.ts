@@ -309,6 +309,14 @@ export interface SyncStatusRecord {
   lastError?: string;
 }
 
+export interface MonthlyExportCoverage {
+  id: string;
+  userId: string;
+  organizationId: string;
+  monthKey: string;
+  verifiedAt: string;
+}
+
 export function normalizeName(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }

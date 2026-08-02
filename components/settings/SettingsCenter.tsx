@@ -14,6 +14,7 @@ import { useToast } from "@/components/feedback/ToastProvider";
 import { useConfirmation } from "@/components/feedback/ConfirmationProvider";
 import { LoadingSkeleton } from "@/components/feedback/LoadingSkeleton";
 import { ArchivedServicesManager } from "@/components/settings/ArchivedServicesManager";
+import { MonthlyAttendanceExport } from "@/components/settings/MonthlyAttendanceExport";
 import {
   type ApplicationSettings,
   type Organization,
@@ -977,6 +978,7 @@ function DataExportSection({
   ];
   return (
     <div className="page-stack">
+      <MonthlyAttendanceExport />
       <section className="panel settings-card">
         <div className="settings-card-heading">
           <p className="eyebrow">Organization data</p>

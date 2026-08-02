@@ -194,6 +194,24 @@ summaries provide reporting-ready historical totals without changing completed
 service records. Import/restore and permanent organization deletion are
 explicitly unavailable in this release.
 
+**Settings > Data & Export > Export Monthly Attendance** creates the church's
+print-ready monthly `.xlsx` sheet. Choose a month/year and either completed
+services only or completed plus open services. The single **Monthly Attendance**
+worksheet places members in column A, one chronological service per following
+column, named visitors below a blank separator, and the unnamed visitor,
+Sunday School Kids, and total rows at the bottom. Same-day services receive
+separate AM/PM headings. Marks and totals use the same attendance rules as the
+service screen.
+
+The export reads IndexedDB first. A durable per-account, per-organization,
+per-month coverage marker records whether the entire selected month has been
+downloaded. When coverage is missing and the device is online, the export loads
+only that month's services and their attendance/visitor rows, plus the church's
+member directory, then safely merges the records without replacing pending
+local writes. The marker is written only after every request succeeds. Offline
+exports are blocked when that marker is absent, so the application never
+silently produces a partial workbook. Archived services remain eligible.
+
 User invitations and role management now live at **Settings > Users**. Invites,
 role changes, access changes, password reset, and global sign-out remain
 online-only security operations. **Device & Sync** can invoke the real sync
@@ -545,7 +563,7 @@ tests/                       behavior, synchronization, security, and production
 
 ## Intentionally unfinished
 
-This release does not include Excel export, charts, import/restore, permanent organization deletion, advanced field-level conflict editing, service-worker background sync, push notifications, visitor conversion after a service, or multi-organization switching.
+This release does not include charts, import/restore, permanent organization deletion, advanced field-level conflict editing, service-worker background sync, push notifications, visitor conversion after a service, or multi-organization switching.
 
 ## Two-device manual verification
 

@@ -2285,6 +2285,9 @@ a.dashboard-focus-card:hover {
 .export-list > div { min-height: 72px; padding: .7rem 0; display: flex; align-items: center; justify-content: space-between; gap: 1rem; border-bottom: 1px solid var(--line); }
 .export-list > div > span { display: grid; }
 .export-list small { color: var(--muted); }
+.monthly-attendance-export-card { border-color: var(--success-border); }
+.monthly-attendance-export-modal { width: min(560px, calc(100vw - 2rem)); }
+.monthly-export-fields { margin: 1.25rem 0 1rem; }
 .settings-unavailable, .danger-zone { padding: 1.4rem 1.5rem; }
 .settings-unavailable p, .danger-zone p { margin-bottom: 0; color: var(--muted); }
 .danger-zone { border-color: var(--danger-border); background: var(--danger-bg); }
