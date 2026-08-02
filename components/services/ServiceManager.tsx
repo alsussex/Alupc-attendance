@@ -9,6 +9,7 @@ import {
   useSyncExternalStore,
   type FormEvent,
 } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useSynchronization } from "@/components/sync/SyncProvider";
 import { useToast } from "@/components/feedback/ToastProvider";
@@ -113,6 +114,8 @@ function childProgramSummary(service: ChurchService) {
 }
 
 export function ServiceManager() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { user } = useAuth();
   const { syncNow } = useSynchronization();
   const { showToast } = useToast();
@@ -172,6 +175,8 @@ export function ServiceManager() {
   const [recentMemberId, setRecentMemberId] = useState("");
   const [recentVisitorId, setRecentVisitorId] = useState("");
   const handledDashboardIntent = useRef("");
+  const pendingServiceRoute = useRef("");
+  const pendingServicesListRoute = useRef(false);
   const initializedServiceFolders = useRef("");
   const selectedRef = useRef<Set<string>>(new Set());
   const activeRef = useRef<ChurchService | null>(null);
@@ -263,6 +268,33 @@ export function ServiceManager() {
     [settings.showInactiveInAttendance],
   );
 
+  const closeActiveService = useCallback(() => {
+    activeRef.current = null;
+    setActive(null);
+  }, []);
+
+  const navigateToService = useCallback(
+    (service: ChurchService) => {
+      const query = `service=${encodeURIComponent(service.id)}`;
+      pendingServicesListRoute.current = false;
+      pendingServiceRoute.current = service.id;
+      handledDashboardIntent.current = query;
+      void openService(service);
+      router.push(`/services?${query}`, { scroll: false });
+    },
+    [openService, router],
+  );
+
+  const navigateBackFromService = useCallback(() => {
+    if (window.history.length > 1) {
+      router.back();
+      return;
+    }
+    pendingServicesListRoute.current = true;
+    router.replace("/services", { scroll: false });
+    closeActiveService();
+  }, [closeActiveService, router]);
+
   useEffect(() => {
     const refresh = () => {
       void refreshLists().then((directory) => {
@@ -287,19 +319,41 @@ export function ServiceManager() {
   }, [openService, refreshLists]);
 
   useEffect(() => {
-    const query = window.location.search;
-    if (!query || handledDashboardIntent.current === query) return;
+    const query = searchParams.toString();
     const parameters = new URLSearchParams(query);
     if (parameters.get("new") === "1") {
+      if (handledDashboardIntent.current === query) return;
       handledDashboardIntent.current = query;
+      router.replace("/services", { scroll: false });
       const timer = window.setTimeout(() => setCreateOpen(true), 0);
       return () => window.clearTimeout(timer);
     }
     const serviceId = parameters.get("service");
+    if (!serviceId) {
+      pendingServicesListRoute.current = false;
+      if (
+        pendingServiceRoute.current &&
+        activeRef.current?.id === pendingServiceRoute.current
+      ) {
+        return;
+      }
+      pendingServiceRoute.current = "";
+      handledDashboardIntent.current = query;
+      if (activeRef.current) closeActiveService();
+      return;
+    }
+    if (pendingServicesListRoute.current) return;
+    pendingServiceRoute.current = "";
+    if (
+      handledDashboardIntent.current === query &&
+      activeRef.current?.id === serviceId
+    ) {
+      return;
+    }
     const visibleService = services.find(
       (service) => service.id === serviceId,
     );
-    if (!serviceId || !user) return;
+    if (!user) return;
     const openRequestedService = async () => {
       const requestedService =
         visibleService ??
@@ -313,7 +367,7 @@ export function ServiceManager() {
       }
     };
     void openRequestedService();
-  }, [openService, services, user]);
+  }, [closeActiveService, openService, router, searchParams, services, user]);
 
   useEffect(() => {
     if (!recentMemberId && !recentVisitorId) return;
@@ -651,12 +705,9 @@ export function ServiceManager() {
           <button
             className="button subtle"
             type="button"
-            onClick={() => {
-              activeRef.current = null;
-              setActive(null);
-            }}
+            onClick={navigateBackFromService}
           >
-            ← All services
+            ← Back
           </button>
           <div className="service-admin-actions">
             <span className={`status-pill ${active.status}`}>{active.status}</span>
@@ -1526,7 +1577,7 @@ export function ServiceManager() {
             onSaved={async (service) => {
               setDuplicateSource(null);
               await refreshLists();
-              await openService(service);
+              navigateToService(service);
               showToast("Service duplicated as a new draft.", {
                 key: `service-duplicated:${service.id}`,
               });
@@ -1737,7 +1788,7 @@ export function ServiceManager() {
                         className="service-directory-row"
                         type="button"
                         key={item.service.id}
-                        onClick={() => void openService(item.service)}
+                        onClick={() => navigateToService(item.service)}
                       >
                         <span className="service-directory-date">
                           <strong>
@@ -1860,7 +1911,7 @@ export function ServiceManager() {
           items={serviceDirectory}
           currentMonthKey={localDate(settings.timezone).slice(0, 7)}
           todayKey={localDate(settings.timezone)}
-          onOpenService={openService}
+          onOpenService={navigateToService}
         />
       )}
       {createOpen && user && (
@@ -1871,7 +1922,7 @@ export function ServiceManager() {
           onSaved={async (service) => {
             setCreateOpen(false);
             await refreshLists();
-            await openService(service);
+            navigateToService(service);
             showToast("Service created.", {
               key: `service-created:${service.id}`,
             });
