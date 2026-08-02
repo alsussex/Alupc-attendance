@@ -32,6 +32,7 @@ import {
   addServiceVisitor,
   adjustSundaySchoolKidsCount,
   adjustUnnamedVisitorCount,
+  duplicateService,
   editServiceVisitor,
   findExactMemberMatches,
   getLastAttendanceDates,
@@ -86,6 +87,7 @@ import {
   subscribeToServicesView,
 } from "@/lib/services/view-preference";
 import { childProgramForService } from "@/lib/services/child-program";
+import { runUndoGroup } from "@/lib/undo/undo-service";
 
 type AttendanceTab = "members" | "visitors" | "history";
 
@@ -263,7 +265,12 @@ export function ServiceManager() {
         const current = directory.find(
           (item) => item.service.id === activeRef.current?.id,
         )?.service;
-        if (current) void openService(current, { resetView: false });
+        if (current) {
+          void openService(current, { resetView: false });
+        } else {
+          activeRef.current = null;
+          setActive(null);
+        }
       });
     };
     const timer = window.setTimeout(refresh, 0);
@@ -343,9 +350,11 @@ export function ServiceManager() {
     const previouslySelected = [...selectedRef.current];
     selectedRef.current = new Set();
     setSelected(new Set());
-    await Promise.all(
-      previouslySelected.map((personId) =>
-        setMemberAttendance(user, active.id, personId, false),
+    await runUndoGroup("Mark all members absent", () =>
+      Promise.all(
+        previouslySelected.map((personId) =>
+          setMemberAttendance(user, active.id, personId, false),
+        ),
       ),
     );
     await recordAuditEntry(user, {
@@ -692,6 +701,27 @@ export function ServiceManager() {
                   onClick={() => setEditOpen(true)}
                 >
                   Edit
+                </button>
+                <button
+                  className="button subtle"
+                  type="button"
+                  disabled={serviceAction !== null}
+                  onClick={async () => {
+                    if (!user) return;
+                    setServiceAction("draft");
+                    try {
+                      const duplicated = await duplicateService(user, active.id);
+                      await refreshLists();
+                      await openService(duplicated);
+                      showToast("Service duplicated as a draft.", {
+                        key: `service-duplicated:${duplicated.id}`,
+                      });
+                    } finally {
+                      setServiceAction(null);
+                    }
+                  }}
+                >
+                  Duplicate
                 </button>
                 <button
                   className="button danger-text"

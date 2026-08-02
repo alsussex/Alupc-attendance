@@ -24,11 +24,48 @@ import { toCloudRecord } from "@/lib/sync/serialization";
 import { recordAuditEntry } from "@/lib/audit/audit-repository";
 import { memberContactValidation } from "@/lib/people/member-contact";
 import { childProgramForService } from "@/lib/services/child-program";
+import {
+  currentUndoDirection,
+  recordUndoAction,
+  runWithoutUndoCapture,
+} from "@/lib/undo/undo-service";
 
 const attendanceWriteChains = new Map<string, Promise<AttendanceRecord>>();
 const serviceCountWriteChains = new Map<string, Promise<ChurchService>>();
 export const COMPLETED_SERVICE_LOCK_MESSAGE =
   "This service is completed and locked. Reopen it before making changes.";
+
+function undoAuditDetails() {
+  const historyOperation = currentUndoDirection();
+  return historyOperation ? { historyOperation } : {};
+}
+
+function sameValue(left: unknown, right: unknown) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+function serviceEditable(service: ChurchService | undefined) {
+  return Boolean(service && !service.deletedAt && service.status !== "completed");
+}
+
+function serviceCloudRecord(service: ChurchService) {
+  return {
+    ...toCloudRecord(service),
+    custom_name: service.customName ?? null,
+    service_time: service.serviceTime ?? null,
+    notes: service.notes ?? null,
+    deleted_at: service.deletedAt ?? null,
+  };
+}
+
+function visitorCloudRecord(visitor: ServiceVisitor) {
+  return {
+    ...toCloudRecord(visitor),
+    member_person_id: visitor.memberPersonId ?? null,
+    notes: visitor.notes ?? null,
+    deleted_at: visitor.deletedAt ?? null,
+  };
+}
 
 async function requireEditableService(
   user: UserContext,
@@ -326,10 +363,40 @@ export async function markMemberInactive(user: UserContext, id: string) {
       entityType: "member",
       entityId: id,
       action: "deactivated",
-      details: { name: updated.displayName },
+      details: { name: updated.displayName, ...undoAuditDetails() },
     });
   }
   announceDataChanged();
+  if (person.isActive) {
+    recordUndoAction({
+      id: createId(),
+      organizationId: user.organizationId,
+      userId: user.userId,
+      entityType: "member",
+      entityId: id,
+      label: `Archive ${updated.displayName}`,
+      canUndo: async () => {
+        const current = await (await getDatabase()).get("people", id);
+        return Boolean(
+          current &&
+            current.organizationId === user.organizationId &&
+            !current.isActive &&
+            !current.deletedAt,
+        );
+      },
+      canRedo: async () => {
+        const current = await (await getDatabase()).get("people", id);
+        return Boolean(
+          current &&
+            current.organizationId === user.organizationId &&
+            current.isActive &&
+            !current.deletedAt,
+        );
+      },
+      undo: () => restoreMember(user, id).then(() => undefined),
+      redo: () => markMemberInactive(user, id).then(() => undefined),
+    });
+  }
   return updated;
 }
 
@@ -364,10 +431,45 @@ export async function restoreMember(user: UserContext, id: string) {
       entityType: "member",
       entityId: id,
       action: person.deletedAt ? "restored" : "reactivated",
-      details: { name: updated.displayName },
+      details: { name: updated.displayName, ...undoAuditDetails() },
     });
   }
   announceDataChanged();
+  if (!person.isActive || person.deletedAt) {
+    const restoredRemovedMember = Boolean(person.deletedAt);
+    recordUndoAction({
+      id: createId(),
+      organizationId: user.organizationId,
+      userId: user.userId,
+      entityType: "member",
+      entityId: id,
+      label: `Restore ${updated.displayName}`,
+      canUndo: async () => {
+        const current = await (await getDatabase()).get("people", id);
+        return Boolean(
+          current &&
+            current.organizationId === user.organizationId &&
+            current.isActive &&
+            !current.deletedAt,
+        );
+      },
+      canRedo: async () => {
+        const current = await (await getDatabase()).get("people", id);
+        return Boolean(
+          current &&
+            current.organizationId === user.organizationId &&
+            !current.isActive &&
+            (restoredRemovedMember ? Boolean(current.deletedAt) : !current.deletedAt),
+        );
+      },
+      undo: () =>
+        (restoredRemovedMember
+          ? removeMember(user, id)
+          : markMemberInactive(user, id)
+        ).then(() => undefined),
+      redo: () => restoreMember(user, id).then(() => undefined),
+    });
+  }
   return updated;
 }
 
@@ -404,7 +506,7 @@ export async function removeMember(user: UserContext, id: string) {
     entityType: "member",
     entityId: id,
     action: "removed",
-    details: { name: updated.displayName },
+    details: { name: updated.displayName, ...undoAuditDetails() },
   });
   announceDataChanged();
   return updated;
@@ -507,7 +609,7 @@ export async function saveService(
     organizationId: user.organizationId,
     table: "services",
     recordId: service.id,
-    payload: toCloudRecord(service),
+    payload: serviceCloudRecord(service),
   });
   const serviceAction = !existing
     ? "created"
@@ -530,11 +632,143 @@ export async function saveService(
       details: {
         name: service.customName || service.serviceType,
         status: service.status,
+        ...undoAuditDetails(),
       },
     });
   }
   announceDataChanged();
+  const editableFieldsChanged =
+    existing &&
+    existing.status === service.status &&
+    (existing.serviceDate !== service.serviceDate ||
+      existing.serviceType !== service.serviceType ||
+      existing.customName !== service.customName ||
+      existing.serviceTime !== service.serviceTime ||
+      existing.notes !== service.notes);
+  if (existing && editableFieldsChanged) {
+    const before = {
+      serviceDate: existing.serviceDate,
+      serviceType: existing.serviceType,
+      customName: existing.customName,
+      serviceTime: existing.serviceTime,
+      notes: existing.notes,
+      status: existing.status,
+    };
+    const after = {
+      serviceDate: service.serviceDate,
+      serviceType: service.serviceType,
+      customName: service.customName,
+      serviceTime: service.serviceTime,
+      notes: service.notes,
+      status: service.status,
+    };
+    const currentMatches = async (expected: typeof before) => {
+      const current = await (await getDatabase()).get("services", service.id);
+      return Boolean(
+        current &&
+          current.organizationId === user.organizationId &&
+          !current.deletedAt &&
+          current.status !== "completed" &&
+          sameValue(current.serviceDate, expected.serviceDate) &&
+          sameValue(current.serviceType, expected.serviceType) &&
+          sameValue(current.customName, expected.customName) &&
+          sameValue(current.serviceTime, expected.serviceTime) &&
+          sameValue(current.notes, expected.notes) &&
+          sameValue(current.status, expected.status),
+      );
+    };
+    recordUndoAction({
+      id: createId(),
+      organizationId: user.organizationId,
+      userId: user.userId,
+      entityType: "service",
+      entityId: service.id,
+      label: `Edit ${service.customName || service.serviceType}`,
+      canUndo: () => currentMatches(after),
+      canRedo: () => currentMatches(before),
+      undo: () => saveService(user, { ...before, id: service.id }).then(() => undefined),
+      redo: () => saveService(user, { ...after, id: service.id }).then(() => undefined),
+    });
+  }
   return service;
+}
+
+export async function duplicateService(user: UserContext, sourceId: string) {
+  if (!isAdmin(user)) {
+    throw new Error("Only an administrator can duplicate services.");
+  }
+  const database = await getDatabase();
+  const source = await database.get("services", sourceId);
+  if (
+    !source ||
+    source.deletedAt ||
+    source.organizationId !== user.organizationId
+  ) {
+    throw new Error("Service not found");
+  }
+  const duplicate = await runWithoutUndoCapture(() =>
+    saveService(user, {
+      serviceDate: source.serviceDate,
+      serviceType: source.serviceType,
+      customName: source.customName,
+      serviceTime: source.serviceTime,
+      notes: source.notes,
+      status: "draft",
+      unnamedVisitorCount: 0,
+      sundaySchoolKidsCount: 0,
+    }),
+  );
+  await recordAuditEntry(user, {
+    entityType: "service",
+    entityId: duplicate.id,
+    action: "duplicated",
+    details: {
+      name: duplicate.customName || duplicate.serviceType,
+      sourceServiceId: source.id,
+    },
+  });
+  const canUndo = async () => {
+    const currentDatabase = await getDatabase();
+    const [current, attendance, visitors] = await Promise.all([
+      currentDatabase.get("services", duplicate.id),
+      currentDatabase.getAllFromIndex("attendance", "serviceId", duplicate.id),
+      currentDatabase.getAllFromIndex("visitors", "serviceId", duplicate.id),
+    ]);
+    return Boolean(
+      current &&
+        !current.deletedAt &&
+        current.organizationId === user.organizationId &&
+        current.status === "draft" &&
+        current.serviceDate === duplicate.serviceDate &&
+        current.serviceType === duplicate.serviceType &&
+        sameValue(current.customName, duplicate.customName) &&
+        current.serviceTime === duplicate.serviceTime &&
+        sameValue(current.notes, duplicate.notes) &&
+        attendance.length === 0 &&
+        visitors.length === 0,
+    );
+  };
+  const canRedo = async () => {
+    const current = await (await getDatabase()).get("services", duplicate.id);
+    return Boolean(
+      current &&
+        current.organizationId === user.organizationId &&
+        current.deletedAt,
+    );
+  };
+  recordUndoAction({
+    id: createId(),
+    organizationId: user.organizationId,
+    userId: user.userId,
+    entityType: "service",
+    entityId: duplicate.id,
+    label: `Duplicate ${source.customName || source.serviceType}`,
+    canUndo,
+    canRedo,
+    undo: () => removeService(user, duplicate.id).then(() => undefined),
+    redo: () => restoreRemovedService(user, duplicate.id).then(() => undefined),
+  });
+  return duplicate;
 }
 
 export async function setUnnamedVisitorCount(
@@ -555,7 +789,7 @@ export async function setUnnamedVisitorCount(
     organizationId: user.organizationId,
     table: "services",
     recordId: updated.id,
-    payload: toCloudRecord(updated),
+    payload: serviceCloudRecord(updated),
   });
   if ((service.unnamedVisitorCount ?? 0) !== updated.unnamedVisitorCount) {
     await recordAuditEntry(user, {
@@ -566,10 +800,35 @@ export async function setUnnamedVisitorCount(
         serviceId,
         from: service.unnamedVisitorCount ?? 0,
         to: updated.unnamedVisitorCount ?? 0,
+        ...undoAuditDetails(),
       },
     });
   }
   announceDataChanged();
+  const beforeCount = service.unnamedVisitorCount ?? 0;
+  const afterCount = updated.unnamedVisitorCount ?? 0;
+  if (beforeCount !== afterCount) {
+    const currentMatches = async (expected: number) => {
+      const current = await (await getDatabase()).get("services", serviceId);
+      return Boolean(
+        serviceEditable(current) &&
+          current?.organizationId === user.organizationId &&
+          (current.unnamedVisitorCount ?? 0) === expected,
+      );
+    };
+    recordUndoAction({
+      id: createId(),
+      organizationId: user.organizationId,
+      userId: user.userId,
+      entityType: "visitor",
+      entityId: serviceId,
+      label: "Change unnamed visitors",
+      canUndo: () => currentMatches(afterCount),
+      canRedo: () => currentMatches(beforeCount),
+      undo: () => setUnnamedVisitorCount(user, serviceId, beforeCount).then(() => undefined),
+      redo: () => setUnnamedVisitorCount(user, serviceId, afterCount).then(() => undefined),
+    });
+  }
   return updated;
 }
 
@@ -617,7 +876,7 @@ export async function setSundaySchoolKidsCount(
     organizationId: user.organizationId,
     table: "services",
     recordId: updated.id,
-    payload: toCloudRecord(updated),
+    payload: serviceCloudRecord(updated),
   });
   if (
     (service.sundaySchoolKidsCount ?? 0) !==
@@ -633,10 +892,35 @@ export async function setSundaySchoolKidsCount(
         name: program?.label ?? "Children’s attendance",
         from: service.sundaySchoolKidsCount ?? 0,
         to: updated.sundaySchoolKidsCount ?? 0,
+        ...undoAuditDetails(),
       },
     });
   }
   announceDataChanged();
+  const beforeCount = service.sundaySchoolKidsCount ?? 0;
+  const afterCount = updated.sundaySchoolKidsCount ?? 0;
+  if (beforeCount !== afterCount) {
+    const currentMatches = async (expected: number) => {
+      const current = await (await getDatabase()).get("services", serviceId);
+      return Boolean(
+        serviceEditable(current) &&
+          current?.organizationId === user.organizationId &&
+          (current.sundaySchoolKidsCount ?? 0) === expected,
+      );
+    };
+    recordUndoAction({
+      id: createId(),
+      organizationId: user.organizationId,
+      userId: user.userId,
+      entityType: "visitor",
+      entityId: serviceId,
+      label: "Change children attendance",
+      canUndo: () => currentMatches(afterCount),
+      canRedo: () => currentMatches(beforeCount),
+      undo: () => setSundaySchoolKidsCount(user, serviceId, beforeCount).then(() => undefined),
+      redo: () => setSundaySchoolKidsCount(user, serviceId, afterCount).then(() => undefined),
+    });
+  }
   return updated;
 }
 
@@ -688,15 +972,44 @@ export async function setServiceArchived(
     organizationId: user.organizationId,
     table: "services",
     recordId: id,
-    payload: toCloudRecord(updated),
+    payload: serviceCloudRecord(updated),
   });
   await recordAuditEntry(user, {
     entityType: "service",
     entityId: id,
     action: isArchived ? "archived" : "restored",
-    details: { name: updated.customName || updated.serviceType },
+    details: {
+      name: updated.customName || updated.serviceType,
+      ...undoAuditDetails(),
+    },
   });
   announceDataChanged();
+  if (service.isArchived !== isArchived) {
+    const currentMatches = async (expected: boolean) => {
+      const current = await (await getDatabase()).get("services", id);
+      return Boolean(
+        current &&
+          current.organizationId === user.organizationId &&
+          !current.deletedAt &&
+          current.isArchived === expected,
+      );
+    };
+    recordUndoAction({
+      id: createId(),
+      organizationId: user.organizationId,
+      userId: user.userId,
+      entityType: "service",
+      entityId: id,
+      label: `${isArchived ? "Archive" : "Restore"} ${
+        updated.customName || updated.serviceType
+      }`,
+      canUndo: () => currentMatches(isArchived),
+      canRedo: () => currentMatches(service.isArchived),
+      undo: () =>
+        setServiceArchived(user, id, service.isArchived).then(() => undefined),
+      redo: () => setServiceArchived(user, id, isArchived).then(() => undefined),
+    });
+  }
   return updated;
 }
 
@@ -720,13 +1033,54 @@ export async function removeService(user: UserContext, id: string) {
     organizationId: user.organizationId,
     table: "services",
     recordId: id,
-    payload: toCloudRecord(updated),
+    payload: serviceCloudRecord(updated),
   });
   await recordAuditEntry(user, {
     entityType: "service",
     entityId: id,
     action: "deleted",
     details: { name: updated.customName || updated.serviceType },
+  });
+  announceDataChanged();
+  return updated;
+}
+
+async function restoreRemovedService(user: UserContext, id: string) {
+  if (!isAdmin(user)) {
+    throw new Error("Only an administrator can restore removed services.");
+  }
+  const database = await getDatabase();
+  const service = await database.get("services", id);
+  if (
+    !service ||
+    !service.deletedAt ||
+    service.organizationId !== user.organizationId
+  ) {
+    throw new Error("Service cannot be restored");
+  }
+  const updated: ChurchService = {
+    ...service,
+    isArchived: false,
+    deletedAt: null,
+    updatedAt: nowIso(),
+    updatedBy: user.userId,
+  };
+  await database.put("services", updated);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "services",
+    recordId: id,
+    payload: serviceCloudRecord(updated),
+    basePayload: serviceCloudRecord(service),
+  });
+  await recordAuditEntry(user, {
+    entityType: "service",
+    entityId: id,
+    action: "restored",
+    details: {
+      name: updated.customName || updated.serviceType,
+      ...undoAuditDetails(),
+    },
   });
   announceDataChanged();
   return updated;
@@ -783,10 +1137,47 @@ export function setMemberAttendance(
             personName: person?.displayName,
             from: existing?.present ?? false,
             to: present,
+            ...undoAuditDetails(),
           },
         });
       }
       announceDataChanged();
+      const beforePresent = existing?.present ?? false;
+      if (beforePresent !== present) {
+        const currentMatches = async (expected: boolean) => {
+          const currentDatabase = await getDatabase();
+          const [current, service] = await Promise.all([
+            currentDatabase.get("attendance", id),
+            currentDatabase.get("services", serviceId),
+          ]);
+          return Boolean(
+            current &&
+              current.organizationId === user.organizationId &&
+              current.present === expected &&
+              serviceEditable(service),
+          );
+        };
+        recordUndoAction({
+          id: createId(),
+          organizationId: user.organizationId,
+          userId: user.userId,
+          entityType: "attendance",
+          entityId: id,
+          label: `${present ? "Mark" : "Unmark"} ${
+            person?.displayName ?? "member"
+          } present`,
+          canUndo: () => currentMatches(present),
+          canRedo: () => currentMatches(beforePresent),
+          undo: () =>
+            setMemberAttendance(user, serviceId, personId, beforePresent).then(
+              () => undefined,
+            ),
+          redo: () =>
+            setMemberAttendance(user, serviceId, personId, present).then(
+              () => undefined,
+            ),
+        });
+      }
       return record;
     },
   );
@@ -822,7 +1213,9 @@ export async function addServiceVisitor(
   let member: Person | undefined;
   if (input.saveAsMember) {
     member = await saveMember(user, { firstName, lastName });
-    await setMemberAttendance(user, serviceId, member.id, true);
+    await runWithoutUndoCapture(() =>
+      setMemberAttendance(user, serviceId, member!.id, true),
+    );
   }
 
   const visitor: ServiceVisitor = {
@@ -845,7 +1238,7 @@ export async function addServiceVisitor(
     organizationId: user.organizationId,
     table: "service_visitors",
     recordId: visitor.id,
-    payload: toCloudRecord(visitor),
+    payload: visitorCloudRecord(visitor),
   });
   await recordAuditEntry(user, {
     entityType: "visitor",
@@ -855,9 +1248,38 @@ export async function addServiceVisitor(
       serviceId,
       name: visitor.displayName,
       notes: visitor.notes,
+      ...undoAuditDetails(),
     },
   });
   announceDataChanged();
+  const visitorMatches = async (deleted: boolean) => {
+    const currentDatabase = await getDatabase();
+    const [current, service] = await Promise.all([
+      currentDatabase.get("visitors", visitor.id),
+      currentDatabase.get("services", serviceId),
+    ]);
+    return Boolean(
+      current &&
+        current.organizationId === user.organizationId &&
+        Boolean(current.deletedAt) === deleted &&
+        sameValue(current.firstName, visitor.firstName) &&
+        sameValue(current.lastName, visitor.lastName) &&
+        sameValue(current.notes, visitor.notes) &&
+        serviceEditable(service),
+    );
+  };
+  recordUndoAction({
+    id: createId(),
+    organizationId: user.organizationId,
+    userId: user.userId,
+    entityType: "visitor",
+    entityId: visitor.id,
+    label: `Add ${visitor.displayName}`,
+    canUndo: () => visitorMatches(false),
+    canRedo: () => visitorMatches(true),
+    undo: () => removeServiceVisitor(user, visitor.id).then(() => undefined),
+    redo: () => restoreServiceVisitor(user, visitor.id).then(() => undefined),
+  });
   return { visitor, member };
 }
 
@@ -907,8 +1329,8 @@ export async function editServiceVisitor(
     organizationId: user.organizationId,
     table: "service_visitors",
     recordId: updated.id,
-    payload: toCloudRecord(updated),
-    basePayload: toCloudRecord(visitor),
+    payload: visitorCloudRecord(updated),
+    basePayload: visitorCloudRecord(visitor),
   });
   if (
     visitor.displayName !== updated.displayName ||
@@ -929,8 +1351,103 @@ export async function editServiceVisitor(
           name: updated.displayName,
           notes: updated.notes,
         },
+        ...undoAuditDetails(),
       },
     });
+  }
+  announceDataChanged();
+  if (
+    visitor.displayName !== updated.displayName ||
+    visitor.notes !== updated.notes
+  ) {
+    const before = {
+      firstName: visitor.firstName,
+      lastName: visitor.lastName,
+      notes: visitor.notes,
+    };
+    const after = {
+      firstName: updated.firstName,
+      lastName: updated.lastName,
+      notes: updated.notes,
+    };
+    const currentMatches = async (expected: typeof before) => {
+      const currentDatabase = await getDatabase();
+      const [current, service] = await Promise.all([
+        currentDatabase.get("visitors", id),
+        currentDatabase.get("services", updated.serviceId),
+      ]);
+      return Boolean(
+        current &&
+          !current.deletedAt &&
+          current.organizationId === user.organizationId &&
+          sameValue(current.firstName, expected.firstName) &&
+          sameValue(current.lastName, expected.lastName) &&
+          sameValue(current.notes, expected.notes) &&
+          serviceEditable(service),
+      );
+    };
+    recordUndoAction({
+      id: createId(),
+      organizationId: user.organizationId,
+      userId: user.userId,
+      entityType: "visitor",
+      entityId: id,
+      label: `Edit ${updated.displayName}`,
+      canUndo: () => currentMatches(after),
+      canRedo: () => currentMatches(before),
+      undo: () => editServiceVisitor(user, id, before).then(() => undefined),
+      redo: () => editServiceVisitor(user, id, after).then(() => undefined),
+    });
+  }
+  return updated;
+}
+
+export async function restoreServiceVisitor(
+  user: UserContext,
+  id: string,
+  restoreLinkedAttendance = true,
+) {
+  const database = await getDatabase();
+  const visitor = await database.get("visitors", id);
+  if (
+    !visitor ||
+    !visitor.deletedAt ||
+    visitor.organizationId !== user.organizationId
+  ) {
+    throw new Error("Visitor cannot be restored");
+  }
+  await requireEditableService(user, visitor.serviceId);
+  const updated: ServiceVisitor = {
+    ...visitor,
+    deletedAt: null,
+    updatedAt: nowIso(),
+    updatedBy: user.userId,
+  };
+  await database.put("visitors", updated);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "service_visitors",
+    recordId: updated.id,
+    payload: visitorCloudRecord(updated),
+    basePayload: visitorCloudRecord(visitor),
+  });
+  await recordAuditEntry(user, {
+    entityType: "visitor",
+    entityId: updated.id,
+    action: "restored",
+    details: {
+      serviceId: updated.serviceId,
+      name: updated.displayName,
+      ...undoAuditDetails(),
+    },
+  });
+  if (restoreLinkedAttendance && updated.memberPersonId) {
+    await setMemberAttendance(
+      user,
+      updated.serviceId,
+      updated.memberPersonId,
+      true,
+    );
   }
   announceDataChanged();
   return updated;
@@ -947,6 +1464,12 @@ export async function removeServiceVisitor(user: UserContext, id: string) {
     throw new Error("Visitor not found");
   }
   await requireEditableService(user, visitor.serviceId);
+  const previousLinkedAttendance = visitor.memberPersonId
+    ? await database.get(
+        "attendance",
+        attendanceId(visitor.serviceId, visitor.memberPersonId),
+      )
+    : undefined;
   const timestamp = nowIso();
   const updated: ServiceVisitor = {
     ...visitor,
@@ -959,8 +1482,8 @@ export async function removeServiceVisitor(user: UserContext, id: string) {
     organizationId: user.organizationId,
     table: "service_visitors",
     recordId: updated.id,
-    payload: toCloudRecord(updated),
-    basePayload: toCloudRecord(visitor),
+    payload: visitorCloudRecord(updated),
+    basePayload: visitorCloudRecord(visitor),
   });
   await recordAuditEntry(user, {
     entityType: "visitor",
@@ -969,16 +1492,49 @@ export async function removeServiceVisitor(user: UserContext, id: string) {
     details: {
       serviceId: visitor.serviceId,
       name: visitor.displayName,
+      ...undoAuditDetails(),
     },
   });
   if (visitor.memberPersonId) {
-    await setMemberAttendance(
-      user,
-      visitor.serviceId,
-      visitor.memberPersonId,
-      false,
+    await runWithoutUndoCapture(() =>
+      setMemberAttendance(
+        user,
+        visitor.serviceId,
+        visitor.memberPersonId!,
+        false,
+      ),
     );
   }
   announceDataChanged();
+  const currentMatches = async (deleted: boolean) => {
+    const currentDatabase = await getDatabase();
+    const [current, service] = await Promise.all([
+      currentDatabase.get("visitors", id),
+      currentDatabase.get("services", visitor.serviceId),
+    ]);
+    return Boolean(
+      current &&
+        current.organizationId === user.organizationId &&
+        Boolean(current.deletedAt) === deleted &&
+        serviceEditable(service),
+    );
+  };
+  recordUndoAction({
+    id: createId(),
+    organizationId: user.organizationId,
+    userId: user.userId,
+    entityType: "visitor",
+    entityId: id,
+    label: `Remove ${visitor.displayName}`,
+    canUndo: () => currentMatches(true),
+    canRedo: () => currentMatches(false),
+    undo: () =>
+      restoreServiceVisitor(
+        user,
+        id,
+        previousLinkedAttendance?.present ?? false,
+      ).then(() => undefined),
+    redo: () => removeServiceVisitor(user, id).then(() => undefined),
+  });
   return updated;
 }

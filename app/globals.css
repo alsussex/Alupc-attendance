@@ -4160,7 +4160,28 @@ textarea { border-radius: var(--radius-sm); }
   font-size: 0.92rem;
   font-weight: 650;
   animation: toast-in 160ms ease-out;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  pointer-events: auto;
 }
+
+.toast > span { min-width: 0; }
+.toast > button {
+  min-width: 64px;
+  min-height: 40px;
+  padding: .45rem .75rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--brand-soft);
+  color: var(--brand);
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.toast > button:hover { background: var(--surface-subtle); }
+.toast > button:disabled { cursor: wait; opacity: .65; }
 
 .toast.success {
   border-left: 4px solid var(--success);

@@ -102,7 +102,7 @@ export interface ServiceVisitor extends AuditedRecord {
   savedAsMember: boolean;
   memberPersonId?: string;
   notes?: string;
-  deletedAt?: string;
+  deletedAt?: string | null;
 }
 
 export type AuditEntityType =

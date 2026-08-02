@@ -7,6 +7,7 @@ import {
   markMemberInactive,
   restoreMember,
 } from "@/lib/repositories/attendance-repository";
+import { runUndoGroup } from "@/lib/undo/undo-service";
 
 export type BulkMemberLifecycleAction = "archive" | "restore";
 
@@ -40,56 +41,62 @@ export async function bulkUpdateMemberLifecycle(
     throw new Error("Administrator access is required for bulk member management.");
   }
 
-  const requestedIds = [...new Set(memberIds)];
-  const members = await listMemberCandidates(user.organizationId);
-  const membersById = new Map(members.map((member) => [member.id, member]));
-  const result: BulkMemberLifecycleResult = {
-    action,
-    requested: requestedIds.length,
-    updated: 0,
-    skipped: 0,
-    failed: [],
-    updatedIds: [],
-    skippedIds: [],
-  };
+  return runUndoGroup(
+    `${action === "archive" ? "Archive" : "Restore"} selected members`,
+    async () => {
+      const requestedIds = [...new Set(memberIds)];
+      const members = await listMemberCandidates(user.organizationId);
+      const membersById = new Map(members.map((member) => [member.id, member]));
+      const result: BulkMemberLifecycleResult = {
+        action,
+        requested: requestedIds.length,
+        updated: 0,
+        skipped: 0,
+        failed: [],
+        updatedIds: [],
+        skippedIds: [],
+      };
 
-  for (const id of requestedIds) {
-    const member = membersById.get(id);
-    if (!member || member.organizationId !== user.organizationId) {
-      result.failed.push({
-        id,
-        name: "Unknown member",
-        message: "The member is unavailable or belongs to another organization.",
-      });
-      continue;
-    }
+      for (const id of requestedIds) {
+        const member = membersById.get(id);
+        if (!member || member.organizationId !== user.organizationId) {
+          result.failed.push({
+            id,
+            name: "Unknown member",
+            message:
+              "The member is unavailable or belongs to another organization.",
+          });
+          continue;
+        }
 
-    const alreadyInRequestedState =
-      action === "archive"
-        ? !member.isActive
-        : member.isActive && !member.deletedAt;
-    if (alreadyInRequestedState) {
-      result.skipped += 1;
-      result.skippedIds.push(id);
-      continue;
-    }
+        const alreadyInRequestedState =
+          action === "archive"
+            ? !member.isActive
+            : member.isActive && !member.deletedAt;
+        if (alreadyInRequestedState) {
+          result.skipped += 1;
+          result.skippedIds.push(id);
+          continue;
+        }
 
-    try {
-      if (action === "archive") {
-        await markMemberInactive(user, id);
-      } else {
-        await restoreMember(user, id);
+        try {
+          if (action === "archive") {
+            await markMemberInactive(user, id);
+          } else {
+            await restoreMember(user, id);
+          }
+          result.updated += 1;
+          result.updatedIds.push(id);
+        } catch (error) {
+          result.failed.push({
+            id,
+            name: member.displayName,
+            message: safeFailureMessage(error),
+          });
+        }
       }
-      result.updated += 1;
-      result.updatedIds.push(id);
-    } catch (error) {
-      result.failed.push({
-        id,
-        name: member.displayName,
-        message: safeFailureMessage(error),
-      });
-    }
-  }
 
-  return result;
+      return result;
+    },
+  );
 }

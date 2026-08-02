@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { AuthCallbackRouter } from "@/components/auth/AuthCallbackRouter";
 import { ToastProvider } from "@/components/feedback/ToastProvider";
+import { UndoHistorySession } from "@/components/feedback/UndoHistorySession";
 import { ConfirmationProvider } from "@/components/feedback/ConfirmationProvider";
 import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -79,6 +80,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <ThemeProvider>
             <AuthCallbackRouter />
             <ToastProvider>
+              <UndoHistorySession />
               <ConfirmationProvider>
                 <ServiceWorkerRegistration />
                 {children}
