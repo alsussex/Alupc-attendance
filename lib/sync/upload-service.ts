@@ -118,6 +118,7 @@ export class AttendanceSynchronizationConflictError extends SynchronizationConfl
 
 const UPLOAD_ORDER: SyncQueueItem["table"][] = [
   "organizations",
+  "profiles",
   "organization_settings",
   "people",
   "member_private_details",
@@ -174,6 +175,66 @@ export function createSupabaseUploadTarget(): UploadTarget {
             typeof data?.updated_at === "string"
               ? data.updated_at
               : undefined,
+        };
+      }
+
+      // Profiles already exist before the local application starts. Theme
+      // synchronization deliberately updates only the signed-in profile's
+      // preference and never uses an INSERT/UPSERT path that could affect role,
+      // organization membership, or account status.
+      if (table === "profiles") {
+        const currentQuery = client
+          .from(tableName)
+          .select("version,updated_at,last_mutation_id,theme_preference")
+          .eq("id", context.recordId)
+          .eq("organization_id", context.organizationId);
+        const { data: current, error: currentError } =
+          await currentQuery.maybeSingle();
+        if (currentError) {
+          throw new SupabaseUploadError(
+            currentError.message,
+            currentError.code,
+          );
+        }
+        if (!current) {
+          throw new SupabaseUploadError(
+            "The signed-in profile is unavailable.",
+            "PROFILE_NOT_FOUND",
+          );
+        }
+        if (
+          current.last_mutation_id === context.mutationToken ||
+          current.theme_preference === payload.theme_preference
+        ) {
+          return {
+            version: Number(current.version),
+            updatedAt:
+              typeof current.updated_at === "string"
+                ? current.updated_at
+                : undefined,
+          };
+        }
+        const { data, error } = await client
+          .from(tableName)
+          .update({
+            theme_preference: payload.theme_preference,
+            last_mutation_id: context.mutationToken,
+          })
+          .eq("id", context.recordId)
+          .eq("organization_id", context.organizationId)
+          .eq("version", current.version)
+          .select("version,updated_at,last_mutation_id")
+          .maybeSingle();
+        if (error) throw new SupabaseUploadError(error.message, error.code);
+        if (!data) {
+          throw new SynchronizationConflictError(
+            "Your appearance preference changed on another device. The newest local choice remains safely queued.",
+          );
+        }
+        return {
+          version: Number(data.version),
+          updatedAt:
+            typeof data.updated_at === "string" ? data.updated_at : undefined,
         };
       }
 

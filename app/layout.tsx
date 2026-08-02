@@ -5,6 +5,8 @@ import { AuthCallbackRouter } from "@/components/auth/AuthCallbackRouter";
 import { ToastProvider } from "@/components/feedback/ToastProvider";
 import { ConfirmationProvider } from "@/components/feedback/ConfirmationProvider";
 import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistration";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
+import { themeBootstrapScript } from "@/lib/theme/theme";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -46,16 +48,21 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript }} />
+      </head>
       <body>
         <AuthProvider>
-          <AuthCallbackRouter />
-          <ToastProvider>
-            <ConfirmationProvider>
-              <ServiceWorkerRegistration />
-              {children}
-            </ConfirmationProvider>
-          </ToastProvider>
+          <ThemeProvider>
+            <AuthCallbackRouter />
+            <ToastProvider>
+              <ConfirmationProvider>
+                <ServiceWorkerRegistration />
+                {children}
+              </ConfirmationProvider>
+            </ToastProvider>
+          </ThemeProvider>
         </AuthProvider>
       </body>
     </html>

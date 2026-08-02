@@ -1,6 +1,7 @@
 export type PersonType = "member" | "visitor";
 export type ServiceStatus = "draft" | "completed";
 export type UserRole = "admin" | "attendance_taker";
+export type ThemePreference = "light" | "dark" | "system";
 export type SyncState = "synced" | "local" | "pending" | "error";
 export type SyncPhase =
   | "loading"
@@ -47,6 +48,8 @@ export interface Profile {
   displayName?: string;
   role: "admin" | "attendance_taker";
   isActive: boolean;
+  themePreference?: ThemePreference;
+  version?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -175,6 +178,7 @@ export interface SyncQueueItem {
   organizationId: string;
   table:
     | "organizations"
+    | "profiles"
     | "organization_settings"
     | "member_private_details"
     | "people"

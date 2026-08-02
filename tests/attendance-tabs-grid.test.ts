@@ -100,7 +100,7 @@ describe("responsive attendance cards", () => {
     expect(source).toContain('checked ? "present" : "absent"');
     expect(source).toContain("Mark Present");
     expect(styles).toContain(".attendance-person-card.selected");
-    expect(styles).toContain("background: #def3e5");
+    expect(styles).toContain("background: var(--success-bg)");
     expect(styles).toContain(".attendance-person-card:focus-within");
   });
 

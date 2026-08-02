@@ -48,6 +48,7 @@ function entityLabel(table: SyncQueueItem["table"]) {
   if (table === "services") return "Service";
   if (table === "service_attendance") return "Attendance entry";
   if (table === "organization_settings") return "Church settings";
+  if (table === "profiles") return "Appearance preference";
   if (table === "audit_log") return "History entry";
   return "Church record";
 }

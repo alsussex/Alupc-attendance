@@ -31,6 +31,7 @@ import {
   subscribeToSidebarPreference,
 } from "@/lib/navigation/sidebar-preference";
 import { SyncBanner, SyncIndicator } from "./SyncIndicator";
+import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
 import {
   getOrganization,
   getOrganizationSettings,
@@ -188,6 +189,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="sidebar-footer">
           <div className="sidebar-label"><SyncIndicator /></div>
+          <ThemeSwitcher compact={sidebarCollapsed} />
           <span className="account-email sidebar-label">
             {user?.email} · {user?.role === "admin" ? "Admin" : "Attendance Taker"}
           </span>
@@ -283,6 +285,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </nav>
             <div className="mobile-nav-footer">
               <SyncIndicator />
+              <ThemeSwitcher />
               <span className="account-email">
                 {user?.email} · {user?.role === "admin" ? "Admin" : "Attendance Taker"}
               </span>

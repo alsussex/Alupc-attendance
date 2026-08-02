@@ -45,6 +45,7 @@ Requirements: Node.js 22.13 or newer, npm, and a Supabase project.
    - `supabase/migrations/202607300005_fix_audit_log_sync.sql`
    - `supabase/migrations/202607300006_secure_user_account_deletion.sql`
    - `supabase/migrations/202607300007_sunday_school_kids_count.sql`
+   - `supabase/migrations/202607300008_user_theme_preference.sql`
 
 4. Create the first user and organization using the steps below.
 5. Put the project URL, browser-safe anon key, and server-only service-role key in `.env.local`. The service-role key must never have a `NEXT_PUBLIC_` prefix.
@@ -242,6 +243,17 @@ The count always contributes to **Total Present** without changing the
 named-plus-unnamed **Visitors** subtotal. It uses the existing versioned service
 mutation, IndexedDB storage, pull synchronization, completed-service locking,
 audit history, reports, and exports.
+
+### Appearance preferences
+
+The application supports Light, Dark, and System appearance modes. New users
+default to System. A change applies immediately, is retained on the current
+device for startup/offline use, and is queued as a narrowly scoped profile
+mutation so the same user receives the preference on other devices. Migration
+`202607300008_user_theme_preference.sql` adds the validated profile preference,
+optimistic version fields, and RLS/trigger protection that permits users to
+change only their own theme without changing their role, organization, or
+account status.
 
 Supabase continues refreshing tokens automatically. The authentication provider
 also handles `SIGNED_IN`, `TOKEN_REFRESHED`, and `SIGNED_OUT` explicitly,

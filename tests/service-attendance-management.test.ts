@@ -163,7 +163,7 @@ describe("attendance-taking view", () => {
     expect(source).toContain("+ Add Member");
     expect(source).toContain("+ Add Visitor");
     expect(styles).toContain(".attendance-person-card.selected");
-    expect(styles).toContain("background: #def3e5");
+    expect(styles).toContain("background: var(--success-bg)");
     expect(styles).toContain("min-height: 116px");
   });
 

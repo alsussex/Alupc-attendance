@@ -245,7 +245,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const supabase = getSupabaseClient();
       const { data, error: profileError } = await supabase
         .from("profiles")
-        .select("organization_id, display_name, role, is_active, created_at, updated_at")
+        .select("organization_id, display_name, role, is_active, theme_preference, version, created_at, updated_at")
         .eq("id", authUser.id)
         .single();
 
@@ -335,6 +335,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             displayName: data.display_name ?? undefined,
             role: nextUser.role,
             isActive: data.is_active,
+            themePreference:
+              data.theme_preference === "light" ||
+              data.theme_preference === "dark"
+                ? data.theme_preference
+                : "system",
+            version:
+              typeof data.version === "number" ? data.version : undefined,
             createdAt: data.created_at,
             updatedAt: data.updated_at,
           }),

@@ -39,6 +39,10 @@ vi.mock("@/components/shell/SyncIndicator", () => ({
   SyncBanner: () => null,
 }));
 
+vi.mock("@/components/theme/ThemeSwitcher", () => ({
+  ThemeSwitcher: () => <span>Theme</span>,
+}));
+
 vi.mock("@/lib/repositories/settings-repository", () => ({
   getOrganization: async () => ({ name: "Abundant Life UPC" }),
   getOrganizationSettings: async () => ({

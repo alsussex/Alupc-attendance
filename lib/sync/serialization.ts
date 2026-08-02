@@ -105,12 +105,20 @@ export function fromCloudRecord(
     if (role !== "admin" && role !== "attendance_taker") {
       throw new Error("Cloud profile has an unsupported role.");
     }
+    const themePreference = optionalString(row, "theme_preference");
     return {
       id: requiredString(row, "id"),
       organizationId: requiredString(row, "organization_id"),
       displayName: optionalString(row, "display_name"),
       role,
       isActive: requiredBoolean(row, "is_active"),
+      themePreference:
+        themePreference === "light" ||
+        themePreference === "dark" ||
+        themePreference === "system"
+          ? themePreference
+          : "system",
+      version: typeof row.version === "number" ? row.version : undefined,
       createdAt: requiredString(row, "created_at"),
       updatedAt: requiredString(row, "updated_at"),
     };
