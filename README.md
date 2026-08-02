@@ -207,21 +207,22 @@ and years when the range crosses a year; same-period duplicates also include
 their service type/name. Marks and totals use the same attendance rules as the
 service screen.
 
-The export reads IndexedDB first. Durable per-account, per-organization
-date-coverage markers record which requested periods have been fully
-downloaded. When coverage is missing and the device is online, the export loads
-only the uncovered segment or segments and their attendance/visitor rows, plus
-the church's member directory, then safely merges the records without replacing
-pending local writes. Each segment is marked only after its request and merge
-succeeds. Offline exports are blocked when any requested date lacks coverage,
-so the application never silently produces a partial workbook. Archived
-services remain eligible. Only the Monthly/Custom mode preference is stored in
-browser preferences; attendance remains in the existing IndexedDB stores.
-When exporting online, the selected period receives one targeted freshness
-check even when coverage already exists. This removes stale non-pending service
-copies and ensures columns come only from current service UUIDs; it never
-generates columns from calendar dates. Offline exports continue using the last
-verified cached period.
+Attendance spreadsheet exports require an internet connection and use one
+authoritative, organization-scoped Supabase snapshot for the exact selected
+month or date range. The export loads only actual, non-deleted service records
+in that range, followed by their attendance and visitor rows and the historical
+member names needed to label them. Archived services remain eligible. Deleted
+services and their orphaned attendance or visitor rows are excluded. Every
+cloud request must succeed before a workbook is generated; cached IndexedDB
+coverage is never mixed into the export snapshot.
+
+If a queued local member, service, attendance, or visitor change can affect the
+selected range, export pauses and asks the user to let synchronization finish
+first. This protects newer offline work without changing the application's
+normal local-first attendance workflow. Service columns are derived strictly
+from distinct service UUIDs—not calendar dates—so dates without services never
+appear and same-day AM/PM services remain separate. Only the Monthly/Custom
+mode preference is stored as an export preference on the device.
 
 User invitations and role management now live at **Settings > Users**. Invites,
 role changes, access changes, password reset, and global sign-out remain

@@ -1,20 +1,20 @@
 "use client";
 
-import {
-  attendanceId,
-  type AttendanceRecord,
-  type ChurchService,
-  type Person,
-  type ServiceVisitor,
-  type UserContext,
+import type {
+  AttendanceRecord,
+  ChurchService,
+  Person,
+  ServiceVisitor,
+  SyncQueueItem,
+  UserContext,
 } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
-import { announceDataChanged } from "@/lib/storage/data-events";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { fromCloudRecord } from "@/lib/sync/serialization";
 
 const PAGE_SIZE = 500;
 const SERVICE_ID_BATCH_SIZE = 100;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const COLUMNS = {
   services:
@@ -27,7 +27,7 @@ const COLUMNS = {
     "id,organization_id,service_id,first_name,last_name,display_name,saved_as_member,member_person_id,notes,deleted_at,version,created_by,updated_by,created_at,updated_at",
 } as const;
 
-export interface MonthlyCloudSnapshot {
+export interface AttendanceExportCloudSnapshot {
   services: Record<string, unknown>[];
   people: Record<string, unknown>[];
   attendance: Record<string, unknown>[];
@@ -39,8 +39,8 @@ export interface MonthlyAttendanceSource {
     organizationId: string,
     startDate: string,
     endDateExclusive: string,
-    options?: { includePeople?: boolean },
-  ): Promise<MonthlyCloudSnapshot>;
+    options?: { completedOnly?: boolean },
+  ): Promise<AttendanceExportCloudSnapshot>;
 }
 
 export interface MonthlyAttendanceDataset {
@@ -57,6 +57,13 @@ export interface MonthlyAttendanceDataset {
   visitors: ServiceVisitor[];
 }
 
+interface ExportRange {
+  key: string;
+  startDate: string;
+  endDate: string;
+  endDateExclusive: string;
+}
+
 interface PageResult {
   data: unknown[] | null;
   error: { message: string; code?: string } | null;
@@ -65,18 +72,6 @@ interface PageResult {
 interface PageQuery {
   range(from: number, to: number): PromiseLike<PageResult>;
 }
-
-function monthKey(year: number, month: number) {
-  if (!Number.isInteger(year) || year < 2000 || year > 2200) {
-    throw new Error("Choose a valid export year.");
-  }
-  if (!Number.isInteger(month) || month < 1 || month > 12) {
-    throw new Error("Choose a valid export month.");
-  }
-  return `${year}-${String(month).padStart(2, "0")}`;
-}
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function addUtcDays(date: string, days: number) {
   const [year, month, day] = date.split("-").map(Number);
@@ -113,18 +108,22 @@ export function attendanceDateRange(startDate: string, endDate: string) {
   };
 }
 
-function monthBounds(year: number, month: number) {
-  const key = monthKey(year, month);
+function monthBounds(year: number, month: number): ExportRange {
+  if (!Number.isInteger(year) || year < 2000 || year > 2200) {
+    throw new Error("Choose a valid export year.");
+  }
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    throw new Error("Choose a valid export month.");
+  }
+  const key = `${year}-${String(month).padStart(2, "0")}`;
   const nextYear = month === 12 ? year + 1 : year;
   const nextMonth = month === 12 ? 1 : month + 1;
+  const endDateExclusive = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
   return {
     key,
     startDate: `${key}-01`,
-    endDate: addUtcDays(
-      `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`,
-      -1,
-    ),
-    endDateExclusive: `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`,
+    endDate: addUtcDays(endDateExclusive, -1),
+    endDateExclusive,
   };
 }
 
@@ -165,44 +164,39 @@ export function createSupabaseMonthlyAttendanceSource(): MonthlyAttendanceSource
       options = {},
     ) {
       const client = getSupabaseClient();
-      const services = await fetchAllPages(() =>
-        client
+      const services = await fetchAllPages(() => {
+        let query = client
           .from("services")
           .select(COLUMNS.services)
           .eq("organization_id", organizationId)
           .gte("service_date", startDate)
           .lt("service_date", endDateExclusive)
+          .is("deleted_at", null);
+        if (options.completedOnly) {
+          query = query.eq("status", "completed");
+        }
+        return query
           .order("service_date", { ascending: true })
-          .order("id", { ascending: true }),
-      );
+          .order("service_time", { ascending: true, nullsFirst: false })
+          .order("id", { ascending: true });
+      });
       const serviceIds = services.map((service) => String(service.id));
-      const peoplePromise = options.includePeople === false
-        ? Promise.resolve([])
-        : fetchAllPages(() =>
-            client
-              .from("people")
-              .select(COLUMNS.people)
-              .eq("organization_id", organizationId)
-              .eq("person_type", "member")
-              .order("id", { ascending: true }),
-          );
       if (serviceIds.length === 0) {
         return {
           services,
-          people: await peoplePromise,
+          people: [],
           attendance: [],
           visitors: [],
         };
       }
-      const [people, attendance, visitors] = await Promise.all([
-        peoplePromise,
+      const [attendance, visitors] = await Promise.all([
         fetchForServiceBatches(serviceIds, (ids) =>
           client
             .from("service_attendance")
             .select(COLUMNS.service_attendance)
             .eq("organization_id", organizationId)
             .in("service_id", ids)
-            .order("updated_at", { ascending: true })
+            .order("service_id", { ascending: true })
             .order("id", { ascending: true }),
         ),
         fetchForServiceBatches(serviceIds, (ids) =>
@@ -211,292 +205,51 @@ export function createSupabaseMonthlyAttendanceSource(): MonthlyAttendanceSource
             .select(COLUMNS.service_visitors)
             .eq("organization_id", organizationId)
             .in("service_id", ids)
-            .order("updated_at", { ascending: true })
+            .is("deleted_at", null)
+            .order("service_id", { ascending: true })
             .order("id", { ascending: true }),
         ),
       ]);
+      const attendedPersonIds = [
+        ...new Set(
+          attendance
+            .filter((row) => row.present === true)
+            .map((row) => String(row.person_id)),
+        ),
+      ];
+      const [activePeople, historicalPeople] = await Promise.all([
+        fetchAllPages(() =>
+          client
+            .from("people")
+            .select(COLUMNS.people)
+            .eq("organization_id", organizationId)
+            .eq("person_type", "member")
+            .eq("is_active", true)
+            .is("deleted_at", null)
+            .is("merged_into_id", null)
+            .order("id", { ascending: true }),
+        ),
+        fetchForServiceBatches(attendedPersonIds, (ids) =>
+          client
+            .from("people")
+            .select(COLUMNS.people)
+            .eq("organization_id", organizationId)
+            .eq("person_type", "member")
+            .in("id", ids)
+            .order("id", { ascending: true }),
+        ),
+      ]);
+      const people = [
+        ...new Map(
+          [...activePeople, ...historicalPeople].map((person) => [
+            String(person.id),
+            person,
+          ]),
+        ).values(),
+      ];
       return { services, people, attendance, visitors };
     },
   };
-}
-
-function coverageId(user: UserContext, key: string) {
-  return `${user.userId}:${user.organizationId}:${key}`;
-}
-
-interface CoverageBounds {
-  key: string;
-  startDate: string;
-  endDate: string;
-  endDateExclusive: string;
-}
-
-function storedCoverageBounds(coverage: {
-  monthKey: string;
-  startDate?: string;
-  endDateExclusive?: string;
-}) {
-  if (coverage.startDate && coverage.endDateExclusive) {
-    return {
-      startDate: coverage.startDate,
-      endDateExclusive: coverage.endDateExclusive,
-    };
-  }
-  const match = /^(\d{4})-(\d{2})$/.exec(coverage.monthKey);
-  if (!match) return null;
-  const bounds = monthBounds(Number(match[1]), Number(match[2]));
-  return {
-    startDate: bounds.startDate,
-    endDateExclusive: bounds.endDateExclusive,
-  };
-}
-
-async function missingCoverageRanges(user: UserContext, bounds: CoverageBounds) {
-  const database = await getDatabase();
-  const coverage = await database.getAllFromIndex(
-    "monthlyExportCoverage",
-    "organizationId",
-    user.organizationId,
-  );
-  const intervals = coverage
-    .filter((entry) => entry.userId === user.userId)
-    .map(storedCoverageBounds)
-    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
-    .filter(
-      (entry) =>
-        entry.endDateExclusive > bounds.startDate &&
-        entry.startDate < bounds.endDateExclusive,
-    )
-    .sort((left, right) => left.startDate.localeCompare(right.startDate));
-  const missing: Array<{ startDate: string; endDateExclusive: string }> = [];
-  let cursor = bounds.startDate;
-  for (const interval of intervals) {
-    if (interval.endDateExclusive <= cursor) continue;
-    if (interval.startDate > cursor) {
-      missing.push({
-        startDate: cursor,
-        endDateExclusive:
-          interval.startDate < bounds.endDateExclusive
-            ? interval.startDate
-            : bounds.endDateExclusive,
-      });
-    }
-    if (interval.endDateExclusive > cursor) {
-      cursor = interval.endDateExclusive;
-    }
-    if (cursor >= bounds.endDateExclusive) break;
-  }
-  if (cursor < bounds.endDateExclusive) {
-    missing.push({ startDate: cursor, endDateExclusive: bounds.endDateExclusive });
-  }
-  return missing.filter((range) => range.startDate < range.endDateExclusive);
-}
-
-async function hasAttendanceCoverage(user: UserContext) {
-  const database = await getDatabase();
-  const coverage = await database.getAllFromIndex(
-    "monthlyExportCoverage",
-    "organizationId",
-    user.organizationId,
-  );
-  return coverage.some((entry) => entry.userId === user.userId);
-}
-
-async function mergeMonthlySnapshot(
-  user: UserContext,
-  snapshot: MonthlyCloudSnapshot,
-  range: { startDate: string; endDateExclusive: string },
-) {
-  const database = await getDatabase();
-  const queue = await database.getAllFromIndex(
-    "syncQueue",
-    "organizationId",
-    user.organizationId,
-  );
-  const pending = new Set(
-    queue.map((item) => `${item.table}:${item.recordId}`),
-  );
-  const remoteServiceIds = new Set(
-    snapshot.services.map((row) => String(row.id)),
-  );
-  const cachedServices = await database.getAllFromIndex(
-    "services",
-    "organizationId",
-    user.organizationId,
-  );
-  for (const service of cachedServices) {
-    if (
-      service.serviceDate >= range.startDate &&
-      service.serviceDate < range.endDateExclusive &&
-      !remoteServiceIds.has(service.id) &&
-      !pending.has(`services:${service.id}`)
-    ) {
-      await database.delete("services", service.id);
-    }
-  }
-
-  for (const row of snapshot.services) {
-    const service = fromCloudRecord("services", row) as ChurchService;
-    if (service.organizationId !== user.organizationId) {
-      throw new Error("Organization isolation check failed.");
-    }
-    if (!pending.has(`services:${service.id}`)) {
-      await database.put("services", service);
-    }
-  }
-  for (const row of snapshot.people) {
-    const person = fromCloudRecord("people", row) as Person;
-    if (person.organizationId !== user.organizationId) {
-      throw new Error("Organization isolation check failed.");
-    }
-    if (!pending.has(`people:${person.id}`)) {
-      await database.put("people", person);
-    }
-  }
-  for (const row of snapshot.attendance) {
-    const record = fromCloudRecord(
-      "service_attendance",
-      row,
-    ) as AttendanceRecord;
-    if (record.organizationId !== user.organizationId) {
-      throw new Error("Organization isolation check failed.");
-    }
-    const id = attendanceId(record.serviceId, record.personId);
-    if (!pending.has(`service_attendance:${id}`)) {
-      await database.put("attendance", { ...record, id });
-    }
-  }
-  for (const row of snapshot.visitors) {
-    const visitor = fromCloudRecord(
-      "service_visitors",
-      row,
-    ) as ServiceVisitor;
-    if (visitor.organizationId !== user.organizationId) {
-      throw new Error("Organization isolation check failed.");
-    }
-    if (!pending.has(`service_visitors:${visitor.id}`)) {
-      await database.put("visitors", visitor);
-    }
-  }
-}
-
-async function isAttendanceRangeCacheComplete(
-  user: UserContext,
-  bounds: CoverageBounds,
-) {
-  return (await missingCoverageRanges(user, bounds)).length === 0;
-}
-
-export async function isMonthlyAttendanceCacheComplete(
-  user: UserContext,
-  year: number,
-  month: number,
-) {
-  return isAttendanceRangeCacheComplete(user, monthBounds(year, month));
-}
-
-export async function isCustomAttendanceRangeCacheComplete(
-  user: UserContext,
-  startDate: string,
-  endDate: string,
-) {
-  return isAttendanceRangeCacheComplete(
-    user,
-    attendanceDateRange(startDate, endDate),
-  );
-}
-
-async function ensureAttendanceCoverage(
-  user: UserContext,
-  bounds: CoverageBounds,
-  label: string,
-  options: {
-    online?: boolean;
-    source?: MonthlyAttendanceSource;
-  } = {},
-) {
-  const missing = await missingCoverageRanges(user, bounds);
-  const online =
-    options.online ??
-    (typeof navigator !== "undefined" && navigator.onLine === true);
-  if (missing.length === 0 && !online) return;
-  if (!online) {
-    throw new Error(
-      `${label} has not been fully saved on this device. Connect to the internet once, then try the export again.`,
-    );
-  }
-
-  const database = await getDatabase();
-  const source = options.source ?? createSupabaseMonthlyAttendanceSource();
-  const includePeople = !(await hasAttendanceCoverage(user));
-  const ranges =
-    missing.length > 0
-      ? missing
-      : [
-          {
-            startDate: bounds.startDate,
-            endDateExclusive: bounds.endDateExclusive,
-          },
-        ];
-  try {
-    for (const [index, range] of ranges.entries()) {
-      const snapshot = await source.fetchRange(
-        user.organizationId,
-        range.startDate,
-        range.endDateExclusive,
-        { includePeople: includePeople && index === 0 },
-      );
-      await mergeMonthlySnapshot(user, snapshot, range);
-      const rangeEnd = addUtcDays(range.endDateExclusive, -1);
-      const rangeKey = `range:${range.startDate}:${rangeEnd}`;
-      await database.put("monthlyExportCoverage", {
-        id: coverageId(user, rangeKey),
-        userId: user.userId,
-        organizationId: user.organizationId,
-        monthKey: rangeKey,
-        startDate: range.startDate,
-        endDateExclusive: range.endDateExclusive,
-        verifiedAt: new Date().toISOString(),
-      });
-    }
-    announceDataChanged();
-  } catch (caught) {
-    throw new Error(
-      `The selected ${label.toLocaleLowerCase()} could not be fully loaded, so no workbook was created. ${
-        caught instanceof Error ? caught.message : "Try again while online."
-      }`,
-    );
-  }
-}
-
-export async function ensureMonthlyAttendanceCache(
-  user: UserContext,
-  year: number,
-  month: number,
-  options: {
-    online?: boolean;
-    source?: MonthlyAttendanceSource;
-  } = {},
-) {
-  const bounds = monthBounds(year, month);
-  await ensureAttendanceCoverage(user, bounds, "month", options);
-}
-
-export async function ensureCustomAttendanceRangeCache(
-  user: UserContext,
-  startDate: string,
-  endDate: string,
-  options: {
-    online?: boolean;
-    source?: MonthlyAttendanceSource;
-  } = {},
-) {
-  await ensureAttendanceCoverage(
-    user,
-    attendanceDateRange(startDate, endDate),
-    "date range",
-    options,
-  );
 }
 
 function comparePeople(
@@ -511,27 +264,35 @@ function comparePeople(
   );
 }
 
-async function loadAttendanceDataset(
+function recordOrganizationId(record: { organizationId: string }, user: UserContext) {
+  if (record.organizationId !== user.organizationId) {
+    throw new Error("Cloud export data failed its organization isolation check.");
+  }
+}
+
+function buildDatasetFromCloud(
   user: UserContext,
-  bounds: CoverageBounds,
+  range: ExportRange,
   completedOnly: boolean,
+  snapshot: AttendanceExportCloudSnapshot,
   dateRange?: MonthlyAttendanceDataset["dateRange"],
-): Promise<MonthlyAttendanceDataset> {
-  const database = await getDatabase();
-  const [services, people, attendance, visitors] = await Promise.all([
-    database.getAllFromIndex("services", "organizationId", user.organizationId),
-    database.getAllFromIndex("people", "organizationId", user.organizationId),
-    database.getAllFromIndex("attendance", "organizationId", user.organizationId),
-    database.getAllFromIndex("visitors", "organizationId", user.organizationId),
-  ]);
-  const selectedServices = services
-    .filter(
-      (service) =>
+): MonthlyAttendanceDataset {
+  const serviceIdsSeen = new Set<string>();
+  const services = snapshot.services
+    .map((row) => fromCloudRecord("services", row) as ChurchService)
+    .filter((service) => {
+      recordOrganizationId(service, user);
+      if (serviceIdsSeen.has(service.id)) {
+        throw new Error("Cloud export data contained a duplicate service record.");
+      }
+      serviceIdsSeen.add(service.id);
+      return (
         !service.deletedAt &&
-        service.serviceDate >= bounds.startDate &&
-        service.serviceDate < bounds.endDateExclusive &&
-        (!completedOnly || service.status === "completed"),
-    )
+        service.serviceDate >= range.startDate &&
+        service.serviceDate < range.endDateExclusive &&
+        (!completedOnly || service.status === "completed")
+      );
+    })
     .sort(
       (left, right) =>
         left.serviceDate.localeCompare(right.serviceDate) ||
@@ -541,73 +302,207 @@ async function loadAttendanceDataset(
         left.updatedAt.localeCompare(right.updatedAt) ||
         left.id.localeCompare(right.id),
     );
-  if (selectedServices.length === 0) {
+  if (services.length === 0) {
     throw new Error(
       completedOnly
         ? `No completed services were found for the selected ${dateRange ? "date range" : "month"}.`
         : `No services were found for the selected ${dateRange ? "date range" : "month"}.`,
     );
   }
-  const serviceIds = new Set(selectedServices.map((service) => service.id));
-  const selectedAttendance = attendance.filter((record) =>
-    serviceIds.has(record.serviceId),
-  );
+
+  const serviceIds = new Set(services.map((service) => service.id));
+  const attendance = snapshot.attendance
+    .map((row) => fromCloudRecord("service_attendance", row) as AttendanceRecord)
+    .filter((record) => {
+      recordOrganizationId(record, user);
+      return serviceIds.has(record.serviceId);
+    });
+  const visitors = snapshot.visitors
+    .map((row) => fromCloudRecord("service_visitors", row) as ServiceVisitor)
+    .filter((visitor) => {
+      recordOrganizationId(visitor, user);
+      return (
+        serviceIds.has(visitor.serviceId) &&
+        !visitor.deletedAt &&
+        !visitor.savedAsMember
+      );
+    })
+    .sort(comparePeople);
+  const people = snapshot.people
+    .map((row) => fromCloudRecord("people", row) as Person)
+    .filter((person) => {
+      recordOrganizationId(person, user);
+      return person.personType === "member";
+    });
+  const peopleById = new Map(people.map((person) => [person.id, person]));
   const attendedMemberIds = new Set(
-    selectedAttendance
-      .filter((record) => record.present)
-      .map((record) => record.personId),
+    attendance.filter((record) => record.present).map((record) => record.personId),
   );
+  for (const personId of attendedMemberIds) {
+    if (!peopleById.has(personId)) {
+      throw new Error(
+        "Cloud attendance data is incomplete because an attendee name could not be loaded.",
+      );
+    }
+  }
   const members = people
     .filter(
       (person) =>
-        person.personType === "member" &&
-        ((person.isActive && !person.deletedAt && !person.mergedIntoId) ||
-          attendedMemberIds.has(person.id)),
-    )
-    .sort(comparePeople);
-  const selectedVisitors = visitors
-    .filter(
-      (visitor) =>
-        serviceIds.has(visitor.serviceId) &&
-        !visitor.deletedAt &&
-        !visitor.savedAsMember,
+        (person.isActive && !person.deletedAt && !person.mergedIntoId) ||
+        attendedMemberIds.has(person.id),
     )
     .sort(comparePeople);
 
   return {
-    monthKey: bounds.key,
-    year: Number(bounds.startDate.slice(0, 4)),
-    month: Number(bounds.startDate.slice(5, 7)),
+    monthKey: range.key,
+    year: Number(range.startDate.slice(0, 4)),
+    month: Number(range.startDate.slice(5, 7)),
     dateRange,
-    services: selectedServices,
+    services,
     members,
-    attendance: selectedAttendance,
-    visitors: selectedVisitors,
+    attendance,
+    visitors,
   };
 }
 
-export async function loadMonthlyAttendanceDataset(
+function serviceDateFromMutation(item: SyncQueueItem) {
+  const current = item.payload.service_date;
+  if (typeof current === "string") return current;
+  const base = item.basePayload?.service_date;
+  return typeof base === "string" ? base : undefined;
+}
+
+function dateInRange(date: string | undefined, range: ExportRange) {
+  return Boolean(
+    date && date >= range.startDate && date < range.endDateExclusive,
+  );
+}
+
+export async function findRelevantPendingExportChanges(
+  user: UserContext,
+  startDate: string,
+  endDate: string,
+) {
+  const range = attendanceDateRange(startDate, endDate);
+  const database = await getDatabase();
+  const [queue, services] = await Promise.all([
+    database.getAllFromIndex("syncQueue", "organizationId", user.organizationId),
+    database.getAllFromIndex("services", "organizationId", user.organizationId),
+  ]);
+  const serviceDates = new Map(
+    services.map((service) => [service.id, service.serviceDate]),
+  );
+  for (const item of queue) {
+    if (item.table === "services") {
+      const queuedDate = serviceDateFromMutation(item);
+      if (queuedDate) serviceDates.set(item.recordId, queuedDate);
+    }
+  }
+  return queue.filter((item) => {
+    if (item.table === "people") return true;
+    if (item.table === "services") {
+      return (
+        dateInRange(serviceDateFromMutation(item), range) ||
+        dateInRange(
+          typeof item.basePayload?.service_date === "string"
+            ? item.basePayload.service_date
+            : undefined,
+          range,
+        )
+      );
+    }
+    if (
+      item.table === "service_attendance" ||
+      item.table === "service_visitors"
+    ) {
+      const serviceId = item.payload.service_id;
+      if (typeof serviceId !== "string") return true;
+      const serviceDate = serviceDates.get(serviceId);
+      return serviceDate ? dateInRange(serviceDate, range) : true;
+    }
+    return false;
+  });
+}
+
+async function loadCloudAttendanceDataset(
+  user: UserContext,
+  range: ExportRange,
+  completedOnly: boolean,
+  options: {
+    online?: boolean;
+    source?: MonthlyAttendanceSource;
+    dateRange?: MonthlyAttendanceDataset["dateRange"];
+  } = {},
+) {
+  const online =
+    options.online ??
+    (typeof navigator !== "undefined" && navigator.onLine === true);
+  if (!online) {
+    throw new Error("An internet connection is required to export attendance.");
+  }
+  const pending = await findRelevantPendingExportChanges(
+    user,
+    range.startDate,
+    range.endDate,
+  );
+  if (pending.length > 0) {
+    throw new Error(
+      `${pending.length} unsynced ${pending.length === 1 ? "change affects" : "changes affect"} this export. Sync all pending changes before exporting attendance, then try again.`,
+    );
+  }
+  try {
+    const snapshot = await (
+      options.source ?? createSupabaseMonthlyAttendanceSource()
+    ).fetchRange(user.organizationId, range.startDate, range.endDateExclusive, {
+      completedOnly,
+    });
+    return buildDatasetFromCloud(
+      user,
+      range,
+      completedOnly,
+      snapshot,
+      options.dateRange,
+    );
+  } catch (caught) {
+    const message = caught instanceof Error ? caught.message : "Cloud request failed.";
+    if (
+      message.startsWith("No services") ||
+      message.startsWith("No completed services") ||
+      message.startsWith("Cloud attendance data is incomplete")
+    ) {
+      throw caught;
+    }
+    throw new Error(
+      `Attendance could not be exported because the cloud data could not be loaded completely. ${message}`,
+    );
+  }
+}
+
+export async function loadCloudMonthlyAttendanceDataset(
   user: UserContext,
   year: number,
   month: number,
   completedOnly: boolean,
+  options: { online?: boolean; source?: MonthlyAttendanceSource } = {},
 ) {
-  return loadAttendanceDataset(
+  return loadCloudAttendanceDataset(
     user,
     monthBounds(year, month),
     completedOnly,
+    options,
   );
 }
 
-export async function loadCustomAttendanceRangeDataset(
+export async function loadCloudCustomAttendanceRangeDataset(
   user: UserContext,
   startDate: string,
   endDate: string,
   completedOnly: boolean,
+  options: { online?: boolean; source?: MonthlyAttendanceSource } = {},
 ) {
-  const bounds = attendanceDateRange(startDate, endDate);
-  return loadAttendanceDataset(user, bounds, completedOnly, {
-    startDate: bounds.startDate,
-    endDate: bounds.endDate,
+  const range = attendanceDateRange(startDate, endDate);
+  return loadCloudAttendanceDataset(user, range, completedOnly, {
+    ...options,
+    dateRange: { startDate, endDate },
   });
 }

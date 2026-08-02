@@ -10,12 +10,9 @@ import type {
 } from "@/lib/domain";
 import {
   attendanceDateRange,
-  ensureCustomAttendanceRangeCache,
-  ensureMonthlyAttendanceCache,
-  isCustomAttendanceRangeCacheComplete,
-  isMonthlyAttendanceCacheComplete,
-  loadCustomAttendanceRangeDataset,
-  loadMonthlyAttendanceDataset,
+  findRelevantPendingExportChanges,
+  loadCloudCustomAttendanceRangeDataset,
+  loadCloudMonthlyAttendanceDataset,
   type MonthlyAttendanceDataset,
   type MonthlyAttendanceSource,
 } from "@/lib/exports/monthly-attendance-data";
@@ -31,6 +28,7 @@ import {
 } from "@/lib/exports/monthly-attendance-workbook";
 import { clearLocalDatabase, getDatabase } from "@/lib/storage/database";
 import { toCloudRecord } from "@/lib/sync/serialization";
+import { enqueueChange } from "@/lib/sync/queue";
 
 const organizationId = "20000000-0000-4000-8000-000000000120";
 const user: UserContext = {
@@ -169,6 +167,47 @@ function dataset(
     attendance: [attendance("attendance-one", "service-one", "member-one")],
     visitors: [],
     ...overrides,
+  };
+}
+
+function cloudSnapshot(input: {
+  services?: ChurchService[];
+  people?: Person[];
+  attendance?: AttendanceRecord[];
+  visitors?: ServiceVisitor[];
+}) {
+  return {
+    services: (input.services ?? []).map(toCloudRecord),
+    people: (input.people ?? []).map(toCloudRecord),
+    attendance: (input.attendance ?? []).map(toCloudRecord),
+    visitors: (input.visitors ?? []).map(toCloudRecord),
+  };
+}
+
+function cloudSource(
+  snapshot: ReturnType<typeof cloudSnapshot>,
+  calls?: Array<{
+    organizationId: string;
+    startDate: string;
+    endDateExclusive: string;
+    completedOnly?: boolean;
+  }>,
+): MonthlyAttendanceSource {
+  return {
+    async fetchRange(
+      requestedOrganizationId,
+      startDate,
+      endDateExclusive,
+      options,
+    ) {
+      calls?.push({
+        organizationId: requestedOrganizationId,
+        startDate,
+        endDateExclusive,
+        completedOnly: options?.completedOnly,
+      });
+      return snapshot;
+    },
   };
 }
 
@@ -410,86 +449,54 @@ describe("monthly attendance workbook", () => {
   });
 });
 
-describe("monthly cache completeness and historical data", () => {
-  it("blocks an uncached offline month instead of exporting incomplete data", async () => {
-    await expect(
-      ensureMonthlyAttendanceCache(user, 2026, 8, { online: false }),
-    ).rejects.toThrow("not been fully saved");
-    expect(await isMonthlyAttendanceCacheComplete(user, 2026, 8)).toBe(false);
-  });
-
-  it("fetches only the selected month and then permits offline reuse", async () => {
-    const calls: string[][] = [];
-    const source: MonthlyAttendanceSource = {
-      async fetchRange(_organizationId, startDate, endDate) {
-        calls.push([startDate, endDate]);
-        return { services: [], people: [], attendance: [], visitors: [] };
-      },
-    };
-
-    await ensureMonthlyAttendanceCache(user, 2026, 8, {
-      online: true,
-      source,
-    });
-    await ensureMonthlyAttendanceCache(user, 2026, 8, { online: false });
-
-    expect(calls).toEqual([["2026-08-01", "2026-09-01"]]);
-    expect(await isMonthlyAttendanceCacheComplete(user, 2026, 8)).toBe(true);
-  });
-
-  it("refreshes a complete online month and removes stale phantom service columns", async () => {
-    const phantom = service("phantom-august-one", "2026-08-01", "10:30");
-    const morning = service("real-august-two-am", "2026-08-02", "10:30", {
-      serviceType: "Sunday Morning",
-    });
-    const evening = service("real-august-two-pm", "2026-08-02", "18:30", {
-      serviceType: "Sunday Evening",
-    });
-    const currentMember = member("refresh-member", "Robin", "Field");
-    let invocation = 0;
+describe("cloud-backed attendance export data", () => {
+  it("blocks export offline without contacting the cloud source", async () => {
+    let calls = 0;
     const source: MonthlyAttendanceSource = {
       async fetchRange() {
-        invocation += 1;
-        if (invocation === 1) {
-          return {
-            services: [toCloudRecord(phantom)],
-            people: [toCloudRecord(currentMember)],
-            attendance: [],
-            visitors: [],
-          };
-        }
-        return {
-          services: [toCloudRecord(evening), toCloudRecord(morning)],
-          people: [],
-          attendance: [
-            toCloudRecord(
-              attendance("refresh-am", morning.id, currentMember.id, true),
-            ),
-          ],
-          visitors: [],
-        };
+        calls += 1;
+        return cloudSnapshot({});
       },
     };
+    await expect(
+      loadCloudMonthlyAttendanceDataset(user, 2026, 8, true, {
+        online: false,
+        source,
+      }),
+    ).rejects.toThrow("An internet connection is required to export attendance.");
+    expect(calls).toBe(0);
+  });
 
-    await ensureMonthlyAttendanceCache(user, 2026, 8, {
+  it("loads the exact cloud month and maps same-day attendance by service UUID", async () => {
+    const calls: Array<{
+      organizationId: string;
+      startDate: string;
+      endDateExclusive: string;
+      completedOnly?: boolean;
+    }> = [];
+    const morning = service("real-august-two-am", "2026-08-02", "10:30");
+    const evening = service("real-august-two-pm", "2026-08-02", "18:30");
+    const attendee = member("cloud-member", "Robin", "Field");
+    const loaded = await loadCloudMonthlyAttendanceDataset(user, 2026, 8, true, {
       online: true,
-      source,
-    });
-    expect(
-      (await loadMonthlyAttendanceDataset(user, 2026, 8, true)).services.map(
-        (entry) => entry.id,
+      source: cloudSource(
+        cloudSnapshot({
+          services: [evening, morning],
+          people: [attendee],
+          attendance: [attendance("am-attendance", morning.id, attendee.id)],
+        }),
+        calls,
       ),
-    ).toEqual([phantom.id]);
-
-    await ensureMonthlyAttendanceCache(user, 2026, 8, {
-      online: true,
-      source,
     });
-    const refreshed = await loadMonthlyAttendanceDataset(user, 2026, 8, true);
-    const output = workbookXml(refreshed);
+    const output = workbookXml(loaded);
 
-    expect(invocation).toBe(2);
-    expect(refreshed.services.map((entry) => entry.id)).toEqual([
+    expect(calls).toEqual([{
+      organizationId,
+      startDate: "2026-08-01",
+      endDateExclusive: "2026-09-01",
+      completedOnly: true,
+    }]);
+    expect(loaded.services.map((entry) => entry.id)).toEqual([
       morning.id,
       evening.id,
     ]);
@@ -500,66 +507,84 @@ describe("monthly cache completeness and historical data", () => {
     expect(cellText(output.sheet, "C3")).toBe("");
   });
 
-  it("does not mark a failed partial month as complete", async () => {
+  it("warns when an unsynced change affects the selected range", async () => {
+    const localService = service("pending-service", "2026-08-09");
+    const database = await getDatabase();
+    await database.put("services", localService);
+    await enqueueChange({
+      organizationId,
+      table: "service_attendance",
+      recordId: `${localService.id}:pending-member`,
+      payload: toCloudRecord(
+        attendance("pending-attendance", localService.id, "pending-member"),
+      ),
+    });
+
+    expect(
+      await findRelevantPendingExportChanges(user, "2026-08-01", "2026-08-31"),
+    ).toHaveLength(1);
+    await expect(
+      loadCloudMonthlyAttendanceDataset(user, 2026, 8, true, {
+        online: true,
+        source: cloudSource(cloudSnapshot({})),
+      }),
+    ).rejects.toThrow("Sync all pending changes before exporting attendance");
+  });
+
+  it("prevents export when a cloud request fails", async () => {
     const source: MonthlyAttendanceSource = {
       async fetchRange() {
         throw new Error("Temporary server failure");
       },
     };
-
     await expect(
-      ensureMonthlyAttendanceCache(user, 2026, 8, {
+      loadCloudMonthlyAttendanceDataset(user, 2026, 8, true, {
         online: true,
         source,
       }),
-    ).rejects.toThrow("no workbook was created");
-    expect(await isMonthlyAttendanceCacheComplete(user, 2026, 8)).toBe(false);
+    ).rejects.toThrow("cloud data could not be loaded completely");
   });
 
-  it("sorts members by last name and retains inactive historical attendees", async () => {
-    const database = await getDatabase();
-    const archived = service("archived", "2026-08-03", "19:00", {
+  it("excludes deleted services and dependent rows but retains archived services", async () => {
+    const active = service("active-service", "2026-08-02");
+    const archived = service("archived-service", "2026-08-09", "18:30", {
       isArchived: true,
     });
-    const inactive = member("inactive", "Taylor", "Adams", {
-      isActive: false,
-      inactiveAt: "2026-08-20T00:00:00.000Z",
+    const deleted = service("deleted-service", "2026-08-16", "10:30", {
+      deletedAt: "2026-08-17T00:00:00.000Z",
     });
-    await Promise.all([
-      database.put("services", archived),
-      database.put("people", member("active", "Casey", "Brown")),
-      database.put("people", inactive),
-      database.put(
-        "attendance",
-        attendance("history", archived.id, inactive.id, true),
-      ),
+    const activeMember = member("active-member", "Avery", "Stone");
+    const deletedOnlyMember = member("deleted-only", "Jordan", "Vale", {
+      isActive: false,
+    });
+    const loaded = await loadCloudMonthlyAttendanceDataset(user, 2026, 8, true, {
+      online: true,
+      source: cloudSource(cloudSnapshot({
+        services: [deleted, archived, active],
+        people: [activeMember, deletedOnlyMember],
+        attendance: [
+          attendance("active-present", active.id, activeMember.id),
+          attendance("deleted-present", deleted.id, deletedOnlyMember.id),
+        ],
+        visitors: [
+          visitor("active-visitor", active.id, "Morgan"),
+          visitor("deleted-visitor", deleted.id, "Casey"),
+        ],
+      })),
+    });
+
+    expect(loaded.services.map((entry) => entry.id)).toEqual([
+      active.id,
+      archived.id,
     ]);
-
-    const loaded = await loadMonthlyAttendanceDataset(user, 2026, 8, true);
-
-    expect(loaded.services[0].isArchived).toBe(true);
-    expect(loaded.members.map((person) => person.id)).toEqual([
-      "inactive",
-      "active",
-    ]);
-  });
-
-  it("filters open services only when completed-only is selected", async () => {
-    const database = await getDatabase();
-    await Promise.all([
-      database.put("services", service("complete", "2026-08-02")),
-      database.put(
-        "services",
-        service("draft", "2026-08-09", "10:30", { status: "draft" }),
-      ),
-    ]);
-
     expect(
-      (await loadMonthlyAttendanceDataset(user, 2026, 8, true)).services,
-    ).toHaveLength(1);
-    expect(
-      (await loadMonthlyAttendanceDataset(user, 2026, 8, false)).services,
-    ).toHaveLength(2);
+      loaded.services.find((entry) => entry.id === archived.id)?.isArchived,
+    ).toBe(true);
+    expect(loaded.attendance.map((entry) => entry.id)).toEqual(["active-present"]);
+    expect(loaded.visitors.map((entry) => entry.id)).toEqual(["active-visitor"]);
+    expect(loaded.members.map((entry) => entry.id)).not.toContain(
+      deletedOnlyMember.id,
+    );
   });
 });
 
@@ -662,25 +687,36 @@ describe("custom attendance date range export", () => {
     expect(cellText(output.sheet, "D2")).toBe("9\nPM");
   });
 
-  it("loads inclusive boundaries across multiple months and includes archives", async () => {
-    const database = await getDatabase();
-    await Promise.all([
-      database.put("services", service("before", "2026-07-11")),
-      database.put("services", service("start", "2026-07-12")),
-      database.put("services", service("middle", "2026-08-02")),
-      database.put(
-        "services",
-        service("end", "2026-09-05", "19:00", { isArchived: true }),
-      ),
-      database.put("services", service("after", "2026-09-06")),
-    ]);
-
-    const loaded = await loadCustomAttendanceRangeDataset(
+  it("loads an exact inclusive cloud range and includes archived services", async () => {
+    const calls: Array<{
+      organizationId: string;
+      startDate: string;
+      endDateExclusive: string;
+      completedOnly?: boolean;
+    }> = [];
+    const start = service("start", "2026-07-12");
+    const middle = service("middle", "2026-08-02");
+    const end = service("end", "2026-09-05", "19:00", { isArchived: true });
+    const loaded = await loadCloudCustomAttendanceRangeDataset(
       user,
       "2026-07-12",
       "2026-09-05",
       true,
+      {
+        online: true,
+        source: cloudSource(
+          cloudSnapshot({ services: [start, middle, end] }),
+          calls,
+        ),
+      },
     );
+
+    expect(calls[0]).toEqual({
+      organizationId,
+      startDate: "2026-07-12",
+      endDateExclusive: "2026-09-06",
+      completedOnly: true,
+    });
     expect(loaded.services.map((entry) => entry.id)).toEqual([
       "start",
       "middle",
@@ -689,72 +725,17 @@ describe("custom attendance date range export", () => {
     expect(loaded.services.at(-1)?.isArchived).toBe(true);
   });
 
-  it("targets only uncovered portions of a multi-month range", async () => {
-    const calls: string[][] = [];
-    const source: MonthlyAttendanceSource = {
-      async fetchRange(_organizationId, startDate, endDateExclusive) {
-        calls.push([startDate, endDateExclusive]);
-        return { services: [], people: [], attendance: [], visitors: [] };
-      },
-    };
-    await ensureMonthlyAttendanceCache(user, 2026, 8, {
-      online: true,
-      source,
-    });
-    await ensureCustomAttendanceRangeCache(
-      user,
-      "2026-07-12",
-      "2026-09-05",
-      { online: true, source },
-    );
-
-    expect(calls).toEqual([
-      ["2026-08-01", "2026-09-01"],
-      ["2026-07-12", "2026-08-01"],
-      ["2026-09-01", "2026-09-06"],
-    ]);
-    expect(
-      await isCustomAttendanceRangeCacheComplete(
-        user,
-        "2026-07-12",
-        "2026-09-05",
-      ),
-    ).toBe(true);
-  });
-
-  it("blocks incomplete offline ranges and failed targeted downloads", async () => {
-    await expect(
-      ensureCustomAttendanceRangeCache(user, "2026-07-12", "2026-09-05", {
-        online: false,
-      }),
-    ).rejects.toThrow("not been fully saved");
-    const source: MonthlyAttendanceSource = {
-      async fetchRange() {
-        throw new Error("Temporary server failure");
-      },
-    };
-    await expect(
-      ensureCustomAttendanceRangeCache(user, "2026-07-12", "2026-09-05", {
-        online: true,
-        source,
-      }),
-    ).rejects.toThrow("no workbook was created");
-    expect(
-      await isCustomAttendanceRangeCacheComplete(
-        user,
-        "2026-07-12",
-        "2026-09-05",
-      ),
-    ).toBe(false);
-  });
-
   it("shows no-services errors, large-range warnings, and range filenames", async () => {
     await expect(
-      loadCustomAttendanceRangeDataset(
+      loadCloudCustomAttendanceRangeDataset(
         user,
         "2026-08-03",
         "2026-08-23",
         false,
+        {
+          online: true,
+          source: cloudSource(cloudSnapshot({})),
+        },
       ),
     ).rejects.toThrow("No services were found for the selected date range");
     expect(needsLargeAttendanceRangeWarning(31)).toBe(false);

@@ -5,10 +5,8 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useToast } from "@/components/feedback/ToastProvider";
 import {
   attendanceDateRange,
-  ensureCustomAttendanceRangeCache,
-  ensureMonthlyAttendanceCache,
-  loadCustomAttendanceRangeDataset,
-  loadMonthlyAttendanceDataset,
+  loadCloudCustomAttendanceRangeDataset,
+  loadCloudMonthlyAttendanceDataset,
 } from "@/lib/exports/monthly-attendance-data";
 import {
   buildMonthlyAttendanceWorkbook,
@@ -109,23 +107,15 @@ export function MonthlyAttendanceExport() {
     try {
       const dataset =
         exportMode === "monthly"
-          ? await (async () => {
-              await ensureMonthlyAttendanceCache(user, year, month);
-              return loadMonthlyAttendanceDataset(
-                user,
-                year,
-                month,
-                completedOnly,
-              );
-            })()
+          ? await loadCloudMonthlyAttendanceDataset(
+              user,
+              year,
+              month,
+              completedOnly,
+            )
           : await (async () => {
               attendanceDateRange(startDate, endDate);
-              await ensureCustomAttendanceRangeCache(
-                user,
-                startDate,
-                endDate,
-              );
-              return loadCustomAttendanceRangeDataset(
+              return loadCloudCustomAttendanceRangeDataset(
                 user,
                 startDate,
                 endDate,
@@ -222,8 +212,8 @@ export function MonthlyAttendanceExport() {
             <p className="eyebrow">Excel workbook</p>
             <h2 id="monthly-export-title">Export Attendance</h2>
             <p className="muted">
-              Choose a month or an inclusive custom date range. Incomplete
-              dates are verified online before the workbook is created.
+              Choose a month or an inclusive custom date range. Exporting
+              requires an internet connection and fully synchronized changes.
             </p>
             <label>
               Export type
