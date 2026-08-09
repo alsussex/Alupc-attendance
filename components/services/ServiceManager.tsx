@@ -63,6 +63,7 @@ import {
 import {
   attendanceCounts,
   attendancePresentCounts,
+  attendanceVisitorBreakdown,
   type AttendanceFilter,
   visibleServiceMembers,
   visibleServiceVisitors,
@@ -574,6 +575,18 @@ export function ServiceManager() {
     [active?.status, visitorSearch, visitors],
   );
   const childProgram = childProgramForService(active?.serviceType);
+  const childProgramCount = childProgram
+    ? active?.sundaySchoolKidsCount
+    : 0;
+  const visitorBreakdown = useMemo(
+    () =>
+      attendanceVisitorBreakdown(
+        visitors,
+        active?.unnamedVisitorCount,
+        childProgramCount,
+      ),
+    [active?.unnamedVisitorCount, childProgramCount, visitors],
+  );
 
   function selectAttendanceTab(tab: AttendanceTab, focus = false) {
     if (tab === attendanceTab) return;
@@ -994,7 +1007,25 @@ export function ServiceManager() {
               }}
             >
               <strong>{settings.visitorLabel}s</strong>
-              <span>{presentCounts.visitors}</span>
+              <span className="attendance-tab-total">
+                {visitorBreakdown.total} total
+              </span>
+              <span
+                className="attendance-tab-breakdown"
+                aria-label={`${visitorBreakdown.named} named visitors, ${visitorBreakdown.unnamed} unnamed visitors${
+                  childProgram
+                    ? `, ${visitorBreakdown.children} ${childProgram.label}`
+                    : ""
+                }`}
+              >
+                <span aria-hidden="true">{visitorBreakdown.named} named</span>
+                <span aria-hidden="true">{visitorBreakdown.unnamed} unnamed</span>
+                {childProgram && (
+                  <span aria-hidden="true">
+                    {visitorBreakdown.children} {childProgram.label}
+                  </span>
+                )}
+              </span>
             </button>
             {isAdmin(user) && (
               <button
@@ -1277,12 +1308,13 @@ export function ServiceManager() {
                 </section>
               )}
               <div className="visitor-tab-summary">
-                <strong>{presentCounts.visitors} visitors</strong>
-                {childProgram && (
-                  <span>
-                    {childProgram.label}: {active.sundaySchoolKidsCount ?? 0}
-                  </span>
-                )}
+                <strong>{visitorBreakdown.total} people in this section</strong>
+                <span>
+                  {visitorBreakdown.named} named · {visitorBreakdown.unnamed} unnamed
+                  {childProgram
+                    ? ` · ${visitorBreakdown.children} ${childProgram.label}`
+                    : ""}
+                </span>
               </div>
               <div className="visitor-card-grid">
                 {filteredVisitors.map((visitor) => (

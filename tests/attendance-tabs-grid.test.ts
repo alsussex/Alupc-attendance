@@ -10,6 +10,7 @@ import {
 } from "@/lib/repositories/attendance-repository";
 import {
   attendancePresentCounts,
+  attendanceVisitorBreakdown,
   filterAttendanceMembers,
 } from "@/lib/services/attendance-view";
 import {
@@ -70,6 +71,33 @@ describe("attendance people tabs", () => {
     expect(source).toContain("focus({ preventScroll: true })");
     expect(source).not.toContain("window.requestAnimationFrame");
     expect(source).toContain('openService(current, { resetView: false })');
+  });
+
+  it("shows the combined visitor-workspace total and each contributing count", () => {
+    const visitor = {
+      id: "40000000-0000-4000-8000-000000000141",
+      organizationId,
+      serviceId: "30000000-0000-4000-8000-000000000141",
+      firstName: "Jordan",
+      lastName: "",
+      displayName: "Jordan",
+      savedAsMember: false,
+      createdAt: "2026-08-09T12:00:00.000Z",
+      updatedAt: "2026-08-09T12:00:00.000Z",
+      createdBy: user.userId,
+      updatedBy: user.userId,
+    };
+
+    expect(attendanceVisitorBreakdown([visitor], 2, 3)).toEqual({
+      named: 1,
+      unnamed: 2,
+      children: 3,
+      total: 6,
+    });
+    expect(source).toContain("visitorBreakdown.total} total");
+    expect(source).toContain("visitorBreakdown.named} named");
+    expect(source).toContain("visitorBreakdown.unnamed} unnamed");
+    expect(source).toContain("visitorBreakdown.children} {childProgram.label}");
   });
 
   it("keeps visitor-only and member-only controls in their corresponding panels", () => {

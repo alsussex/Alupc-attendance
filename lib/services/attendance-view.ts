@@ -1,5 +1,10 @@
 import type { Person, ServiceVisitor } from "@/lib/domain";
-import { countVisitors } from "@/lib/services/attendance-summary";
+import {
+  countNamedVisitors,
+  countVisitors,
+  normalizeSundaySchoolKidsCount,
+  normalizeUnnamedVisitorCount,
+} from "@/lib/services/attendance-summary";
 
 export type AttendanceFilter = "all" | "present" | "absent";
 
@@ -65,6 +70,22 @@ export function attendancePresentCounts(
       Math.max(0, Math.trunc(sundaySchoolKidsCount)),
     members: presentMemberIds.size,
     visitors: visitorCount,
+  };
+}
+
+export function attendanceVisitorBreakdown(
+  visitors: ServiceVisitor[],
+  unnamedVisitorCount = 0,
+  sundaySchoolKidsCount = 0,
+) {
+  const named = countNamedVisitors(visitors);
+  const unnamed = normalizeUnnamedVisitorCount(unnamedVisitorCount);
+  const children = normalizeSundaySchoolKidsCount(sundaySchoolKidsCount);
+  return {
+    named,
+    unnamed,
+    children,
+    total: named + unnamed + children,
   };
 }
 

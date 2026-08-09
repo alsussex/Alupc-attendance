@@ -369,6 +369,28 @@
   box-shadow: 0 -4px 14px rgb(var(--shadow-rgb) / 5%);
 }
 
+.attendance-tabs .attendance-tab-total { font-weight: 800; }
+
+.attendance-tabs .attendance-tab-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .12rem .45rem;
+  max-width: 100%;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.attendance-tabs .attendance-tab-breakdown > span {
+  font-size: .62rem;
+  white-space: normal;
+}
+
+.attendance-tabs [role="tab"].active .attendance-tab-breakdown {
+  color: currentColor;
+  opacity: .82;
+}
+
 .attendance-tab-toolbar,
 .attendance-controls {
   gap: var(--product-action-gap);
