@@ -9,10 +9,11 @@ function source(path: string) {
 describe("open application page structure", () => {
   it("composes the dashboard without card grids or nested dashboard surfaces", () => {
     const dashboard = source("components/dashboard/Dashboard.tsx");
-    expect(dashboard).toContain('className="dashboard-action-list"');
-    expect(dashboard).toContain('className="dashboard-stat-strip"');
-    expect(dashboard).toContain('className="dashboard-content-flow"');
-    expect(dashboard).toContain('className="dashboard-service-row-list"');
+    expect(dashboard).toContain('className="dashboard-home-layout"');
+    expect(dashboard).toContain('className="dashboard-current-service"');
+    expect(dashboard).toContain('className="dashboard-recent-services"');
+    expect(dashboard).not.toContain("dashboard-action-list");
+    expect(dashboard).not.toContain("dashboard-stat-strip");
     expect(dashboard).not.toContain("dashboard-action-card");
     expect(dashboard).not.toContain("dashboard-metric-card");
     expect(dashboard).not.toContain("dashboard-surface");

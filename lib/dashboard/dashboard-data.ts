@@ -12,6 +12,8 @@ import { getDatabase } from "@/lib/storage/database";
 export interface DashboardService {
   id: string;
   title: string;
+  serviceType?: string;
+  customName?: string;
   serviceDate: string;
   serviceTime?: string;
   status: ChurchService["status"];
@@ -59,6 +61,8 @@ function summarizeService(
   return {
     id: service.id,
     title: serviceTitle(service),
+    serviceType: service.serviceType,
+    customName: service.customName,
     serviceDate: service.serviceDate,
     serviceTime: service.serviceTime,
     status: service.status,

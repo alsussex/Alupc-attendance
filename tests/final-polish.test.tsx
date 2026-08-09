@@ -130,7 +130,7 @@ describe("final application polish", () => {
   it("uses an open structural system instead of nested page cards", () => {
     const styles = readFileSync(resolve("app/globals.css"), "utf8");
     expect(styles).toContain("Open-layout structural system");
-    expect(styles).toContain(".dashboard-action-list {");
+    expect(styles).toContain(".dashboard-home-layout {");
     expect(styles).toContain(".settings-section {");
     expect(styles).toContain(".people-directory-workspace,");
     expect(styles).toContain(".users-directory,");
