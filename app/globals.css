@@ -44,11 +44,11 @@
   --field-border: #cfd4db;
   --placeholder: #969ca5;
   --on-brand: #ffffff;
-  --sidebar-on: #ffffff;
-  --sidebar-bg: #14171c;
-  --sidebar-text: #d8dce3;
-  --sidebar-muted: #9299a5;
-  --sidebar-control: #242830;
+  --sidebar-on: #17191d;
+  --sidebar-bg: #f6f8fc;
+  --sidebar-text: #343943;
+  --sidebar-muted: #6b7280;
+  --sidebar-control: #ffffff;
   --surface-rgb: 255 255 255;
   --on-brand-rgb: 255 255 255;
   --shadow-rgb: 23 25 29;
@@ -3388,6 +3388,65 @@ a.dashboard-recent-row:hover {
 }
 
 .sidebar .button.subtle:hover { border-color: rgb(var(--brand-rgb) / 40%); background: rgb(var(--brand-rgb) / 13%); }
+
+:root:not([data-theme="dark"]) .sidebar {
+  border-color: var(--line);
+  background:
+    radial-gradient(circle at 18% 2%, rgb(var(--brand-rgb) / 8%), transparent 17rem),
+    linear-gradient(180deg, var(--surface) 0%, var(--sidebar-bg) 58%, var(--canvas) 100%);
+  box-shadow: 14px 0 42px rgb(var(--shadow-rgb) / 6%);
+}
+
+:root:not([data-theme="dark"]) .nav-link:hover {
+  border-color: var(--line);
+  background: var(--surface-muted);
+}
+
+:root:not([data-theme="dark"]) .nav-link.active {
+  border-color: rgb(var(--brand-rgb) / 18%);
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+  box-shadow: inset 0 1px 0 rgb(var(--surface-rgb) / 70%), 0 9px 24px rgb(var(--brand-rgb) / 8%);
+}
+
+:root:not([data-theme="dark"]) .sidebar-toggle,
+:root:not([data-theme="dark"]) .theme-switcher-compact > button,
+:root:not([data-theme="dark"]) .sidebar .sync-indicator,
+:root:not([data-theme="dark"]) .sidebar .theme-switcher > div,
+:root:not([data-theme="dark"]) .sidebar .button.subtle {
+  border-color: var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+:root:not([data-theme="dark"]) .sidebar .theme-switcher legend,
+:root:not([data-theme="dark"]) .sidebar .theme-switcher label,
+:root:not([data-theme="dark"]) .sidebar .account-email,
+:root:not([data-theme="dark"]) .sidebar .sync-indicator {
+  color: var(--muted);
+}
+
+:root:not([data-theme="dark"]) .sidebar .theme-switcher label:has(input:checked) {
+  background: var(--brand-soft);
+  color: var(--brand-strong);
+}
+
+:root:not([data-theme="dark"]) .mobile-nav-panel {
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+:root:not([data-theme="dark"]) .mobile-nav-link { color: var(--ink); }
+:root:not([data-theme="dark"]) .mobile-nav-link:hover { background: var(--surface-muted); color: var(--ink); }
+:root:not([data-theme="dark"]) .mobile-nav-link > span { border-color: var(--line); }
+:root:not([data-theme="dark"]) .mobile-nav-close,
+:root:not([data-theme="dark"]) .mobile-nav-footer .sync-indicator,
+:root:not([data-theme="dark"]) .mobile-nav-footer .button.subtle {
+  border-color: var(--line);
+  background: var(--surface-subtle);
+  color: var(--ink);
+}
 
 .dashboard-home {
   width: 100%;

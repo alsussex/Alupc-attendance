@@ -244,7 +244,7 @@ export function DashboardView(props: {
       [...snapshot.services]
         .filter((service) => service.id !== featured?.id)
         .sort(newestFirst)
-        .slice(0, 4),
+        .slice(0, 3),
     [featured?.id, snapshot.services],
   );
   const accountName = displayName?.trim();

@@ -215,6 +215,26 @@ describe("dashboard presentation", () => {
     expect(within(region).getAllByText("Completed")).toHaveLength(2);
   });
 
+  it("never shows more than three recent service rows", () => {
+    const olderServices = [1, 2, 3].map((day) => ({
+      ...services[1],
+      id: `older-${day}`,
+      title: `Older Service ${day}`,
+      serviceDate: `2026-07-${String(20 - day).padStart(2, "0")}`,
+      updatedAt: `2026-07-${String(20 - day).padStart(2, "0")}T15:00:00.000Z`,
+    }));
+    render(
+      <DashboardView
+        snapshot={{ ...snapshot, services: [...services, ...olderServices] }}
+        loading={false}
+        isAdministrator
+        currentDate={now}
+      />,
+    );
+    const region = screen.getByRole("complementary", { name: "Recent services" });
+    expect(region.querySelectorAll(".dashboard-recent-row")).toHaveLength(3);
+  });
+
   it("provides a focused create-service state when no service exists", () => {
     render(
       <DashboardView
