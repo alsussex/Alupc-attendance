@@ -25,7 +25,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { isAdmin } from "@/lib/auth/permissions";
 import {
   getSidebarCollapsedPreference,
   setSidebarCollapsedPreference,
@@ -50,9 +49,6 @@ const navigation: NavigationItem[] = [
   { href: "/people", label: "People", icon: UsersRound },
   { href: "/services", label: "Services", icon: CalendarDays },
   { href: "/reports", label: "Reports", icon: FileChartColumn },
-];
-
-const adminNavigation: NavigationItem[] = [
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -137,9 +133,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     const next = !sidebarCollapsed;
     setSidebarCollapsedPreference(next);
   }
-  const visibleNavigation = isAdmin(user)
-    ? [...navigation, ...adminNavigation]
-    : navigation;
+  const visibleNavigation = navigation;
 
   return (
     <div

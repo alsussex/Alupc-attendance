@@ -11,7 +11,8 @@ import {
 import type { ServiceDirectoryItem } from "@/lib/services/service-directory";
 import { useEscapeKey } from "@/lib/ui/keyboard";
 
-const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const sundayWeekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const mondayWeekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function serviceTitle(service: ChurchService) {
   return service.customName || service.serviceType;
@@ -30,19 +31,22 @@ export function ServicesCalendar({
   items,
   currentMonthKey,
   todayKey,
+  weekStart = "sunday",
   onOpenService,
 }: {
   items: ServiceDirectoryItem[];
   currentMonthKey: string;
   todayKey: string;
+  weekStart?: "sunday" | "monday";
   onOpenService: (service: ChurchService) => void | Promise<void>;
 }) {
   const [monthKey, setMonthKey] = useState(currentMonthKey);
   const [selectedDate, setSelectedDate] = useState("");
   const days = useMemo(
-    () => buildServiceCalendar(items, monthKey, todayKey),
-    [items, monthKey, todayKey],
+    () => buildServiceCalendar(items, monthKey, todayKey, weekStart),
+    [items, monthKey, todayKey, weekStart],
   );
+  const weekdayLabels = weekStart === "monday" ? mondayWeekdays : sundayWeekdays;
   const selectedServices = useMemo(
     () =>
       items

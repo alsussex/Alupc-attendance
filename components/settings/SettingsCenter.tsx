@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -13,6 +14,7 @@ import { AuditHistory } from "@/components/audit/AuditHistory";
 import { useToast } from "@/components/feedback/ToastProvider";
 import { useConfirmation } from "@/components/feedback/ConfirmationProvider";
 import { LoadingSkeleton } from "@/components/feedback/LoadingSkeleton";
+import { ThemeSwitcher } from "@/components/theme/ThemeSwitcher";
 import { ArchivedServicesManager } from "@/components/settings/ArchivedServicesManager";
 import { MonthlyAttendanceExport } from "@/components/settings/MonthlyAttendanceExport";
 import {
@@ -37,9 +39,22 @@ import { getDatabase, clearLocalDatabase } from "@/lib/storage/database";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { getStoredSyncStatus } from "@/lib/sync/sync-service";
 import { formatDateTime, formatTime } from "@/lib/format/date-time";
+import { isAdmin } from "@/lib/auth/permissions";
+import {
+  getAttendanceExperiencePreferences,
+  getServerAttendanceExperiencePreferences,
+  saveAttendanceExperiencePreferences,
+  subscribeToAttendanceExperiencePreferences,
+  type AttendanceExperiencePreferences,
+} from "@/lib/settings/attendance-preferences";
+import {
+  humanReadableSyncError,
+  syncDiagnosticDetails,
+} from "@/lib/sync/errors";
 
 type SettingsSection =
   | "overview"
+  | "personal"
   | "general"
   | "services"
   | "attendance"
@@ -50,12 +65,13 @@ type SettingsSection =
   | "sync"
   | "security";
 
-const sections: Array<{
+const sectionDefinitions: Array<{
   id: SettingsSection;
   label: string;
   description: string;
 }> = [
   { id: "overview", label: "Overview", description: "Church and application status" },
+  { id: "personal", label: "Personal", description: "Appearance and attendance experience" },
   { id: "general", label: "General", description: "Name, location, and dates" },
   { id: "services", label: "Services", description: "Types, times, and workflow" },
   { id: "attendance", label: "Attendance", description: "Lists, totals, and completion" },
@@ -67,10 +83,22 @@ const sections: Array<{
   { id: "security", label: "Security", description: "Profile, password, and sessions" },
 ];
 
+const attendanceTakerSectionIds: SettingsSection[] = [
+  "personal",
+  "sync",
+  "security",
+];
+
+const adminSectionIds = sectionDefinitions.map((section) => section.id);
+
+export function settingsSectionIdsForRole(role?: string) {
+  return role === "admin" ? adminSectionIds : attendanceTakerSectionIds;
+}
+
 function initialSection(): SettingsSection {
   if (typeof window === "undefined") return "overview";
   const requested = new URLSearchParams(window.location.search).get("section");
-  return sections.some((section) => section.id === requested)
+  return sectionDefinitions.some((section) => section.id === requested)
     ? (requested as SettingsSection)
     : "overview";
 }
@@ -94,6 +122,7 @@ export function SettingsCenter() {
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [lastSuccessfulSync, setLastSuccessfulSync] = useState<string>();
+  const [storedSyncError, setStoredSyncError] = useState<string>();
   const [syncDiagnostics, setSyncDiagnostics] = useState<SyncQueueItem[]>([]);
   const [displayName, setDisplayName] = useState("");
   const [online, setOnline] = useState(
@@ -105,6 +134,21 @@ export function SettingsCenter() {
       Boolean(navigator.serviceWorker?.controller),
   );
   const pendingCount = synchronization.pendingCount;
+  const admin = isAdmin(user);
+  const visibleSectionIds = settingsSectionIdsForRole(user?.role);
+  const visibleSections = sectionDefinitions.filter((item) =>
+    visibleSectionIds.includes(item.id),
+  );
+  const activeSection = visibleSectionIds.includes(section)
+    ? section
+    : admin
+      ? "overview"
+      : "personal";
+  const attendancePreferences = useSyncExternalStore(
+    subscribeToAttendanceExperiencePreferences,
+    getAttendanceExperiencePreferences,
+    getServerAttendanceExperiencePreferences,
+  );
 
   const refreshDeviceStatus = useCallback(async () => {
     if (!user) return;
@@ -118,7 +162,14 @@ export function SettingsCenter() {
       ),
     ]);
     setLastSuccessfulSync(status?.lastSuccessfulSyncAt);
-    setSyncDiagnostics(queue.filter((item) => item.status === "error"));
+    setStoredSyncError(status?.lastError);
+    setSyncDiagnostics(
+      queue
+        .filter(
+          (item) => item.status === "error" || item.status === "conflict",
+        )
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
+    );
   }, [user]);
 
   const load = useCallback(async () => {
@@ -134,7 +185,7 @@ export function SettingsCenter() {
     setSlug(nextOrganization?.slug ?? "abundant-life-upc");
     setSettings(settingsRecord.settings);
     setSavedSnapshot(JSON.stringify(settingsRecord.settings));
-    setDisplayName(nextProfile?.displayName ?? "");
+    setDisplayName(nextProfile?.displayName ?? user.displayName ?? "");
     await refreshDeviceStatus();
   }, [refreshDeviceStatus, user]);
 
@@ -163,6 +214,18 @@ export function SettingsCenter() {
     };
   }, [load]);
 
+  useEffect(() => {
+    if (synchronization.isSyncing) return;
+    const timer = window.setTimeout(() => void refreshDeviceStatus(), 0);
+    return () => window.clearTimeout(timer);
+  }, [
+    pendingCount,
+    refreshDeviceStatus,
+    synchronization.error,
+    synchronization.isSyncing,
+    synchronization.phase,
+  ]);
+
   const dirty =
     Boolean(settings) &&
     (JSON.stringify(settings) !== savedSnapshot ||
@@ -179,6 +242,7 @@ export function SettingsCenter() {
   }, [dirty]);
 
   async function openSection(next: SettingsSection) {
+    if (!visibleSectionIds.includes(next)) return;
     if (
       dirty &&
       !(await confirmAction({
@@ -243,7 +307,7 @@ export function SettingsCenter() {
         );
       }
       await refreshDeviceStatus();
-      showToast("Settings saved.", { key: `settings-saved:${section}` });
+      showToast("Settings saved.", { key: `settings-saved:${activeSection}` });
     } catch (caught) {
       setFeedback("");
       setError(
@@ -297,21 +361,25 @@ export function SettingsCenter() {
   return (
     <div className="settings-page product-page settings-product-page">
       <div className="page-heading">
-        <p className="eyebrow">Administration</p>
+        <p className="eyebrow">{admin ? "Administration" : "Your preferences"}</p>
         <h1>Settings</h1>
-        <p>Manage how Abundant Life UPC Attendance works for your church.</p>
+        <p>
+          {admin
+            ? "Manage church-wide configuration and your personal experience."
+            : "Adjust this device, review synchronization, and manage your account."}
+        </p>
       </div>
       <div className="settings-layout">
         <aside className="settings-navigation">
           <label className="settings-mobile-selector">
             <span>Settings section</span>
             <select
-              value={section}
+              value={activeSection}
               onChange={(event) =>
                 openSection(event.target.value as SettingsSection)
               }
             >
-              {sections.map((item) => (
+              {visibleSections.map((item) => (
                 <option value={item.id} key={item.id}>
                   {item.label}
                 </option>
@@ -319,12 +387,12 @@ export function SettingsCenter() {
             </select>
           </label>
           <nav aria-label="Settings sections">
-            {sections.map((item) => (
+            {visibleSections.map((item) => (
               <button
-                className={section === item.id ? "active" : ""}
+                className={activeSection === item.id ? "active" : ""}
                 type="button"
                 key={item.id}
-                aria-current={section === item.id ? "page" : undefined}
+                aria-current={activeSection === item.id ? "page" : undefined}
                 onClick={() => openSection(item.id)}
               >
                 <strong>{item.label}</strong>
@@ -345,7 +413,7 @@ export function SettingsCenter() {
             </div>
           )}
 
-          {section === "overview" && (
+          {activeSection === "overview" && admin && (
             <SettingsOverview
               organization={organization}
               userEmail={user?.email ?? ""}
@@ -362,7 +430,13 @@ export function SettingsCenter() {
               openSection={openSection}
             />
           )}
-          {section === "general" && (
+          {activeSection === "personal" && (
+            <PersonalSettingsSection
+              preferences={attendancePreferences}
+              onChange={saveAttendanceExperiencePreferences}
+            />
+          )}
+          {activeSection === "general" && admin && (
             <SettingsSectionCard
               eyebrow="Organization"
               title="General settings"
@@ -451,7 +525,7 @@ export function SettingsCenter() {
               </div>
             </SettingsSectionCard>
           )}
-          {section === "services" && (
+          {activeSection === "services" && admin && (
             <>
               <ServiceSettings
                 settings={settings}
@@ -462,7 +536,7 @@ export function SettingsCenter() {
               <ArchivedServicesManager />
             </>
           )}
-          {section === "attendance" && (
+          {activeSection === "attendance" && admin && (
             <SettingsSectionCard
               eyebrow="Attendance workflow"
               title="Attendance settings"
@@ -496,16 +570,13 @@ export function SettingsCenter() {
                 onChange={setSettings}
                 items={[
                   ["showAttendanceTotals", "Show attendance totals", "Display the running summary while taking attendance."],
-                  ["showPresentCount", "Show present count", "Include the Present count in the summary."],
-                  ["showAbsentCount", "Show absent count", "Include the Absent count in the summary."],
-                  ["showTotalMemberCount", "Show total member count", "Include the active checklist total."],
                   ["warnZeroAttendance", "Warn before zero-attendance completion", "Ask for confirmation before completing an empty service."],
                   ["showInactiveInAttendance", "Show inactive members", "Include inactive members in new attendance checklists."],
                 ]}
               />
             </SettingsSectionCard>
           )}
-          {section === "visitors" && (
+          {activeSection === "visitors" && admin && (
             <SettingsSectionCard
               eyebrow="Service visitors"
               title="Visitor settings"
@@ -527,28 +598,26 @@ export function SettingsCenter() {
                 settings={settings}
                 onChange={setSettings}
                 items={[
-                  ["requireVisitorName", "Require visitor name", "Require first and last name before saving."],
                   ["allowVisitorNotes", "Allow visitor notes", "Show the optional notes field in services."],
                   ["confirmVisitorRemoval", "Confirm visitor removal", "Ask before removing a visitor from a service."],
-                  ["showVisitorsSeparately", "Show visitors separately", "Keep a clearly labelled visitor area."],
                   ["includeVisitorsInTotal", "Include visitors in attendance total", "Count service-only visitors in the running total."],
                 ]}
               />
             </SettingsSectionCard>
           )}
-          {section === "users" && (
+          {activeSection === "users" && admin && (
             <div className="page-stack">
               <PermissionSummary />
               <UserManagement embedded />
             </div>
           )}
-          {section === "audit" && (
+          {activeSection === "audit" && admin && (
             <AuditHistory />
           )}
-          {section === "data" && (
+          {activeSection === "data" && admin && (
             <DataExportSection onExport={(value) => void exportData(value)} />
           )}
-          {section === "sync" && (
+          {activeSection === "sync" && (
             <DeviceSyncSection
               pendingCount={pendingCount}
               lastSuccessfulSync={lastSuccessfulSync}
@@ -557,7 +626,10 @@ export function SettingsCenter() {
               online={online}
               offlineReady={offlineReady}
               diagnostics={syncDiagnostics}
+              latestError={storedSyncError ?? synchronization.error ?? undefined}
+              admin={admin}
               onSync={async () => {
+                setError("");
                 setFeedback("Syncing…");
                 const outcome = await synchronization.syncNow();
                 setFeedback(
@@ -597,8 +669,14 @@ export function SettingsCenter() {
                 setFeedback("Local sync state repaired from the server.");
               }}
               onClear={async () => {
+                if (!online) {
+                  setError(
+                    "Connect to the internet before resetting local data so a fresh church copy can be downloaded safely.",
+                  );
+                  return;
+                }
                 const warning =
-                  "This removes locally stored attendance data from this device. Cloud data will not be deleted.";
+                  "This removes locally stored attendance data and cached church information from this device. Cloud data will not be deleted.";
                 if (
                   !(await confirmAction({
                     title: "Clear local device data?",
@@ -621,17 +699,26 @@ export function SettingsCenter() {
                   return;
                 }
                 await clearLocalDatabase();
-                await signOut();
+                const outcome = await synchronization.syncNow();
+                if (outcome.status !== "synced") {
+                  setError(
+                    "Local data was cleared, but a fresh church copy could not be downloaded. Retry Sync when the connection is available.",
+                  );
+                  return;
+                }
+                await load();
+                setFeedback("Local data reset and a fresh church copy downloaded.");
               }}
             />
           )}
-          {section === "security" && (
+          {activeSection === "security" && (
             <SecuritySection
               email={user?.email ?? ""}
               displayName={displayName}
               role={user?.role ?? "admin"}
               organizationName={organization?.name ?? "Abundant Life UPC"}
               lastSignIn={session?.user.last_sign_in_at}
+              canEditDisplayName={admin}
               onDisplayNameChange={setDisplayName}
               onSaveDisplayName={() => runSecurityAction(async () => {
                 if (!online) {
@@ -680,6 +767,84 @@ export function SettingsCenter() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function PersonalSettingsSection({
+  preferences,
+  onChange,
+}: {
+  preferences: AttendanceExperiencePreferences;
+  onChange: (patch: Partial<AttendanceExperiencePreferences>) => unknown;
+}) {
+  return (
+    <div className="page-stack personal-settings">
+      <section className="settings-section">
+        <div className="settings-card-heading">
+          <p className="eyebrow">Appearance</p>
+          <h2>Theme</h2>
+          <p>Choose how the application looks on this device.</p>
+        </div>
+        <ThemeSwitcher />
+      </section>
+      <section className="settings-section">
+        <div className="settings-card-heading">
+          <p className="eyebrow">Attendance experience</p>
+          <h2>Service workspace</h2>
+          <p>These preferences are saved only in this browser and create no synchronization traffic.</p>
+        </div>
+        <div className="settings-card-body">
+          <label>
+            Default attendance tab
+            <select
+              value={preferences.defaultTab}
+              disabled={preferences.rememberLastTab}
+              onChange={(event) =>
+                onChange({
+                  defaultTab: event.target
+                    .value as AttendanceExperiencePreferences["defaultTab"],
+                })
+              }
+            >
+              <option value="members">Members</option>
+              <option value="visitors">Visitors</option>
+            </select>
+            <small>
+              Used whenever remembering the last tab is turned off.
+            </small>
+          </label>
+          <label className="settings-toggle">
+            <span>
+              <strong>Remember the last attendance tab</strong>
+              <small>Open the next service on the last Members or Visitors tab you used.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={preferences.rememberLastTab}
+              onChange={(event) =>
+                onChange({ rememberLastTab: event.target.checked })
+              }
+            />
+          </label>
+          <label>
+            Attendance display density
+            <select
+              value={preferences.density}
+              onChange={(event) =>
+                onChange({
+                  density: event.target
+                    .value as AttendanceExperiencePreferences["density"],
+                })
+              }
+            >
+              <option value="comfortable">Comfortable</option>
+              <option value="compact">Compact</option>
+            </select>
+            <small>Compact fits more member and visitor controls on screen while keeping touch targets usable.</small>
+          </label>
+        </div>
+      </section>
     </div>
   );
 }
@@ -750,7 +915,7 @@ function SettingsOverview({
       </section>
       <nav className="settings-quick-links" aria-label="Settings quick links">
         {(["general", "services", "users", "sync"] as const).map((id) => {
-          const item = sections.find((section) => section.id === id)!;
+          const item = sectionDefinitions.find((section) => section.id === id)!;
           return (
             <button type="button" key={id} onClick={() => openSection(id)}>
               <strong>{item.label}</strong>
@@ -1015,6 +1180,8 @@ function DeviceSyncSection({
   online,
   offlineReady,
   diagnostics,
+  latestError,
+  admin,
   onSync,
   onRefresh,
   onClear,
@@ -1026,10 +1193,20 @@ function DeviceSyncSection({
   online: boolean;
   offlineReady: boolean;
   diagnostics: SyncQueueItem[];
+  latestError?: string;
+  admin: boolean;
   onSync: () => Promise<void>;
   onRefresh: () => Promise<void>;
   onClear: () => Promise<void>;
 }) {
+  const detail = syncDiagnosticDetails(latestError);
+  const syncLabel = isSyncing
+    ? "Syncing"
+    : !online
+      ? "Offline"
+      : latestError || diagnostics.length > 0 || syncPhase === "error"
+        ? "Needs attention"
+        : "Up to date";
   return (
     <div className="page-stack">
       <section className="settings-section">
@@ -1040,39 +1217,60 @@ function DeviceSyncSection({
         </div>
         <dl className="settings-status-list">
           <div><dt>Connection</dt><dd>{online ? "Online" : "Offline"}</dd></div>
-          <div><dt>Synchronization</dt><dd>{isSyncing ? "Syncing" : syncPhase}</dd></div>
+          <div><dt>Synchronization</dt><dd>{syncLabel}</dd></div>
           <div><dt>Waiting to sync</dt><dd>{pendingCount}</dd></div>
           <div><dt>Last successful sync</dt><dd>{formatDateTime(lastSuccessfulSync, "Not yet")}</dd></div>
           <div><dt>Offline availability</dt><dd>{offlineReady ? "Available offline" : "Available after the app finishes installing"}</dd></div>
           <div><dt>Local storage</dt><dd>Church data saved on this device</dd></div>
           <div><dt>Device</dt><dd>This browser</dd></div>
         </dl>
+        {detail && (
+          <div className="notice error sync-diagnostic" role="alert">
+            <strong>Latest synchronization error</strong>
+            <span>{detail.message}</span>
+            {detail.code && <code>Error code: {detail.code}</code>}
+          </div>
+        )}
         <div className="settings-action-row">
           <button className="button primary" type="button" disabled={isSyncing} onClick={() => void onSync()}>
-            {isSyncing ? "Syncing…" : pendingCount ? "Retry synchronization" : "Sync now"}
+            {isSyncing ? "Syncing…" : "Retry Sync"}
           </button>
-          <button className="button secondary" type="button" disabled={isSyncing || pendingCount > 0 || !online} onClick={() => void onRefresh()}>
-            Repair local sync state
-          </button>
+          {admin && (
+            <button className="button secondary" type="button" disabled={isSyncing || pendingCount > 0 || !online} onClick={() => void onRefresh()}>
+              Repair local sync state
+            </button>
+          )}
         </div>
         {diagnostics.length > 0 && (
           <div className="settings-subsection" aria-label="Synchronization diagnostics">
-            <h3>Admin diagnostics</h3>
+            <h3>{admin ? "Admin diagnostics" : "Changes needing attention"}</h3>
             {diagnostics.map((item) => (
-              <p className="muted" key={item.id}>
-                Upload · {item.table} · {item.recordId} · attempt {item.attempts}
-                {item.lastError ? ` · ${item.lastError}` : ""}
-              </p>
+              <div className="sync-diagnostic-item" key={item.id}>
+                <strong>
+                  {humanReadableSyncError({
+                    item,
+                    message: item.lastError ?? "Synchronization failed",
+                  })}
+                </strong>
+                {admin && (
+                  <span>
+                    Upload · {item.table} · {item.recordId} · attempt {item.attempts}
+                  </span>
+                )}
+                {syncDiagnosticDetails(item.lastError)?.code && (
+                  <code>Error code: {syncDiagnosticDetails(item.lastError)?.code}</code>
+                )}
+              </div>
             ))}
           </div>
         )}
       </section>
       <section className="settings-section danger-zone">
         <p className="eyebrow">This device only</p>
-        <h2>Clear local device data</h2>
+        <h2>Reset local data</h2>
         <p>This removes locally stored attendance data from this device. Cloud data will not be deleted.</p>
         <button className="button danger-text" type="button" onClick={() => void onClear()}>
-          Clear local device data
+          Reset local data
         </button>
       </section>
     </div>
@@ -1085,6 +1283,7 @@ function SecuritySection({
   role,
   organizationName,
   lastSignIn,
+  canEditDisplayName,
   onDisplayNameChange,
   onSaveDisplayName,
   onPasswordReset,
@@ -1096,6 +1295,7 @@ function SecuritySection({
   role: string;
   organizationName: string;
   lastSignIn?: string;
+  canEditDisplayName: boolean;
   onDisplayNameChange: (value: string) => void;
   onSaveDisplayName: () => Promise<void>;
   onPasswordReset: () => Promise<void>;
@@ -1106,26 +1306,29 @@ function SecuritySection({
     <div className="page-stack">
       <section className="settings-section">
         <div className="settings-card-heading">
-          <p className="eyebrow">Administrator account</p>
+          <p className="eyebrow">Your account</p>
           <h2>Security</h2>
           <p>Manage your profile and Supabase-authenticated session without exposing credentials.</p>
         </div>
         <dl className="settings-status-list">
+          <div><dt>Display name</dt><dd>{displayName || "Not set"}</dd></div>
           <div><dt>Email</dt><dd>{email}</dd></div>
           <div><dt>Role</dt><dd>{role === "admin" ? "Admin" : "Attendance Taker"}</dd></div>
           <div><dt>Organization</dt><dd>{organizationName}</dd></div>
           <div><dt>Session</dt><dd>Signed in</dd></div>
           <div><dt>Last sign-in</dt><dd>{formatDateTime(lastSignIn, "Unavailable")}</dd></div>
         </dl>
-        <div className="settings-subsection">
-          <label>
-            Display name
-            <input value={displayName} maxLength={120} onChange={(event) => onDisplayNameChange(event.target.value)} />
-          </label>
-          <button className="button primary" type="button" onClick={() => void onSaveDisplayName()}>
-            Save display name
-          </button>
-        </div>
+        {canEditDisplayName && (
+          <div className="settings-subsection">
+            <label>
+              Display name
+              <input value={displayName} maxLength={120} onChange={(event) => onDisplayNameChange(event.target.value)} />
+            </label>
+            <button className="button primary" type="button" onClick={() => void onSaveDisplayName()}>
+              Save display name
+            </button>
+          </div>
+        )}
         <div className="settings-action-row">
           <button className="button secondary" type="button" onClick={() => void onPasswordReset()}>
             Send password-reset email

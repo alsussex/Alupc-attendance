@@ -90,6 +90,18 @@ describe("services calendar model", () => {
     expect(shiftMonthKey("2026-12", 1)).toBe("2027-01");
   });
 
+  it("uses the configured first day of the week", () => {
+    const sundayFirst = buildServiceCalendar([], "2026-08", "2026-08-09");
+    const mondayFirst = buildServiceCalendar(
+      [],
+      "2026-08",
+      "2026-08-09",
+      "monday",
+    );
+    expect(sundayFirst[0].dateKey).toBe("2026-07-26");
+    expect(mondayFirst[0].dateKey).toBe("2026-07-27");
+  });
+
   it("remembers the preferred view on this device", () => {
     const listener = vi.fn();
     const unsubscribe = subscribeToServicesView(listener);
@@ -121,6 +133,22 @@ describe("services calendar interface", () => {
     ).toBeInTheDocument();
     const emptyDate = screen.getByLabelText("Jul 26, 2026");
     expect(emptyDate.tagName).toBe("DIV");
+  });
+
+  it("renders weekday headings in the configured order", () => {
+    render(
+      <ServicesCalendar
+        items={calendarItems}
+        currentMonthKey="2026-07"
+        todayKey="2026-07-30"
+        weekStart="monday"
+        onOpenService={() => undefined}
+      />,
+    );
+    const headings = screen
+      .getAllByRole("columnheader")
+      .map((heading) => heading.textContent);
+    expect(headings).toEqual(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]);
   });
 
   it("lists every service on a selected date and opens the chosen service", () => {

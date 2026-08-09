@@ -236,11 +236,60 @@ describe("settings navigation and database authorization", () => {
     "utf8",
   );
 
-  it("keeps Settings as the only admin navigation entry and relocates Users", () => {
+  it("shows Settings to both roles while keeping Users inside Admin settings", () => {
     expect(shell).toContain('{ href: "/settings", label: "Settings"');
     expect(shell).not.toContain('{ href: "/users", label: "Users"');
-    expect(settingsPage).toContain("<AdminOnly>");
+    expect(settingsPage).not.toContain("<AdminOnly>");
+    expect(settingsPage).toContain("<SettingsCenter />");
     expect(usersPage).toContain('redirect("/settings?section=users")');
+  });
+
+  it("keeps organization controls Admin-only and removes dead controls", () => {
+    const center = readFileSync(
+      resolve("components/settings/SettingsCenter.tsx"),
+      "utf8",
+    );
+    expect(center).toContain(
+      'const attendanceTakerSectionIds: SettingsSection[] = [',
+    );
+    expect(center).toContain('"personal",\n  "sync",\n  "security"');
+    expect(center).toContain('activeSection === "general" && admin');
+    expect(center).toContain('activeSection === "users" && admin');
+    expect(center).not.toContain('"showPresentCount", "Show present count"');
+    expect(center).not.toContain('"showAbsentCount", "Show absent count"');
+    expect(center).not.toContain('"showTotalMemberCount", "Show total member count"');
+    expect(center).not.toContain('"requireVisitorName", "Require visitor name"');
+    expect(center).not.toContain('"showVisitorsSeparately", "Show visitors separately"');
+  });
+
+  it("connects every retained workflow control to application behavior", () => {
+    const manager = readFileSync(
+      resolve("components/services/ServiceManager.tsx"),
+      "utf8",
+    );
+    const calendar = readFileSync(
+      resolve("components/services/ServicesCalendar.tsx"),
+      "utf8",
+    );
+    expect(manager).toContain("modalSettings.defaultServiceStatus");
+    for (const setting of [
+      "allowAdminReopenCompleted",
+      "confirmComplete",
+      "confirmArchive",
+      "attendanceSort",
+      "showAttendanceTotals",
+      "warnZeroAttendance",
+      "showInactiveInAttendance",
+      "visitorLabel",
+      "allowVisitorNotes",
+      "confirmVisitorRemoval",
+      "includeVisitorsInTotal",
+    ]) {
+      expect(manager, `${setting} should have a real consumer`).toContain(
+        `settings.${setting}`,
+      );
+    }
+    expect(calendar).toContain('weekStart === "monday"');
   });
 
   it("uses organization-scoped read and admin-only write policies", () => {

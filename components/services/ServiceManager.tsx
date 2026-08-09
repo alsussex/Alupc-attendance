@@ -85,6 +85,13 @@ import { getPendingChanges } from "@/lib/sync/queue";
 import { formatDateTime, formatTime } from "@/lib/format/date-time";
 import { useEscapeKey } from "@/lib/ui/keyboard";
 import {
+  getAttendanceExperiencePreferences,
+  getServerAttendanceExperiencePreferences,
+  preferredAttendanceStartingTab,
+  rememberAttendanceTab,
+  subscribeToAttendanceExperiencePreferences,
+} from "@/lib/settings/attendance-preferences";
+import {
   getPreferredServicesView,
   getServerServicesView,
   setPreferredServicesView,
@@ -127,6 +134,11 @@ export function ServiceManager() {
     subscribeToServicesView,
     getPreferredServicesView,
     getServerServicesView,
+  );
+  const attendancePreferences = useSyncExternalStore(
+    subscribeToAttendanceExperiencePreferences,
+    getAttendanceExperiencePreferences,
+    getServerAttendanceExperiencePreferences,
   );
   const [services, setServices] = useState<ChurchService[]>([]);
   const [serviceDirectory, setServiceDirectory] = useState<
@@ -309,7 +321,7 @@ export function ServiceManager() {
         setMemberSearch("");
         setVisitorSearch("");
         setAttendanceFilter("all");
-        setAttendanceTab("members");
+        setAttendanceTab(preferredAttendanceStartingTab());
       }
     },
     [settings.showInactiveInAttendance],
@@ -600,7 +612,18 @@ export function ServiceManager() {
       top: tabScrollPositions.current[tab] ?? currentPosition,
       focus,
     };
+    if (tab === "members" || tab === "visitors") {
+      rememberAttendanceTab(tab);
+    }
     setAttendanceTab(tab);
+  }
+
+  function finishService() {
+    if (settings.confirmComplete) {
+      setFinishConfirmationOpen(true);
+      return;
+    }
+    void setStatus("completed");
   }
 
   async function changeUnnamedVisitorCount(change: number) {
@@ -654,6 +677,7 @@ export function ServiceManager() {
     });
     await setMemberAttendance(user, active.id, member.id, true);
     setAttendanceTab("members");
+    rememberAttendanceTab("members");
     setRecentMemberId(member.id);
     await refreshLists();
     await openService(active, { resetView: false });
@@ -671,6 +695,7 @@ export function ServiceManager() {
     }
     await setMemberAttendance(user, active.id, person.id, true);
     setAttendanceTab("members");
+    rememberAttendanceTab("members");
     setRecentMemberId(person.id);
     await refreshLists();
     await openService(active, { resetView: false });
@@ -752,9 +777,15 @@ export function ServiceManager() {
     return (
       <div
         className={
-          serviceLocked
-            ? "attendance-workspace completed-service-locked product-page services-page"
-            : "attendance-workspace product-page services-page"
+          [
+            "attendance-workspace product-page services-page",
+            serviceLocked ? "completed-service-locked" : "",
+            attendancePreferences.density === "compact"
+              ? "attendance-density-compact"
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" ")
         }
       >
         <div className="service-topline attendance-service-header">
@@ -794,7 +825,7 @@ export function ServiceManager() {
                   className="button primary"
                   type="button"
                   disabled={serviceAction !== null}
-                  onClick={() => setFinishConfirmationOpen(true)}
+                  onClick={finishService}
                 >
                   {serviceAction === "completed" ? "Saving…" : "Finish Service"}
                 </button>
@@ -1477,7 +1508,7 @@ export function ServiceManager() {
                   className="button primary"
                   type="button"
                   disabled={serviceAction !== null}
-                  onClick={() => setFinishConfirmationOpen(true)}
+                  onClick={finishService}
                 >
                   {serviceAction === "completed" ? "Saving…" : "Finish Service"}
                 </button>
@@ -1570,6 +1601,7 @@ export function ServiceManager() {
                 input,
               );
               setAttendanceTab("visitors");
+              rememberAttendanceTab("visitors");
               setRecentVisitorId(visitor.id);
               setVisitorOpen(false);
               await openService(active, { resetView: false });
@@ -1988,6 +2020,7 @@ export function ServiceManager() {
           items={serviceDirectory}
           currentMonthKey={localDate(settings.timezone).slice(0, 7)}
           todayKey={localDate(settings.timezone)}
+          weekStart={settings.weekStart}
           onOpenService={navigateToService}
         />
       )}

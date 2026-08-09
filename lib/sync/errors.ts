@@ -10,6 +10,31 @@ export type SyncErrorCategory =
   | "server"
   | "unknown";
 
+const SENSITIVE_DETAIL_PATTERNS = [
+  /bearer\s+[a-z0-9._~-]+/gi,
+  /(?:access|refresh|auth|api|service[_ -]?role)?token\s*[:=]\s*[^\s,;]+/gi,
+  /(?:password|secret|apikey|api_key|authorization)\s*[:=]\s*[^\s,;]+/gi,
+  /[?&](?:token|access_token|refresh_token|apikey|api_key)=[^&\s]+/gi,
+];
+
+export function syncDiagnosticDetails(message?: string) {
+  if (!message?.trim()) return undefined;
+  let safeMessage = message.replace(/\s+/g, " ").trim();
+  for (const pattern of SENSITIVE_DETAIL_PATTERNS) {
+    safeMessage = safeMessage.replace(pattern, "[redacted]");
+  }
+  const code = safeMessage.match(
+    /\b(?:SYNC_[A-Z_]+|PGRST\d+|[0-9A-Z]{5}|HTTP\s*[45]\d\d)\b/i,
+  )?.[0];
+  return {
+    code,
+    message:
+      safeMessage.length > 400
+        ? `${safeMessage.slice(0, 397)}...`
+        : safeMessage,
+  };
+}
+
 export function syncErrorCategory(message: string, code?: string) {
   const value = `${code ?? ""} ${message}`.toLocaleLowerCase();
   if (

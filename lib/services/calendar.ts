@@ -27,11 +27,15 @@ export function buildServiceCalendar(
   items: ServiceDirectoryItem[],
   monthKey: string,
   todayKey: string,
+  weekStart: "sunday" | "monday" = "sunday",
 ) {
   const { year, month } = parseMonthKey(monthKey);
   const firstDay = new Date(Date.UTC(year, month - 1, 1));
   const calendarStart = new Date(firstDay);
-  calendarStart.setUTCDate(1 - firstDay.getUTCDay());
+  const firstWeekday = firstDay.getUTCDay();
+  const leadingDays =
+    weekStart === "monday" ? (firstWeekday + 6) % 7 : firstWeekday;
+  calendarStart.setUTCDate(1 - leadingDays);
 
   const servicesByDate = new Map<string, ServiceDirectoryItem[]>();
   for (const item of items) {

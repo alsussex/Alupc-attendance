@@ -166,7 +166,7 @@ describe("application navigation", () => {
     expect(screen.queryByRole("dialog", { name: "Navigation menu" })).toBeNull();
   });
 
-  it("keeps Admin navigation permission filtering unchanged", () => {
+  it("shows Settings to Admins and Attendance Takers", () => {
     const { rerender } = render(<AppShell><p>Page</p></AppShell>);
     const mainNavigation = () =>
       within(screen.getByRole("navigation", { name: "Main navigation" }));
@@ -174,7 +174,7 @@ describe("application navigation", () => {
 
     role = "attendance_taker";
     rerender(<AppShell><p>Page</p></AppShell>);
-    expect(mainNavigation().queryByRole("link", { name: "Settings" })).toBeNull();
+    expect(mainNavigation().getByRole("link", { name: "Settings" })).toBeInTheDocument();
     expect(mainNavigation().getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
     expect(mainNavigation().getByRole("link", { name: "People" })).toBeInTheDocument();
     expect(mainNavigation().getByRole("link", { name: "Services" })).toBeInTheDocument();

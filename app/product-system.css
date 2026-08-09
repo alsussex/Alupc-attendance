@@ -419,6 +419,30 @@
   box-shadow: inset 4px 0 var(--success-strong), 0 8px 20px rgb(var(--shadow-rgb) / 6%);
 }
 
+.attendance-density-compact .member-card-grid,
+.attendance-density-compact .visitor-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+  gap: .45rem;
+}
+
+.attendance-density-compact .attendance-person-card,
+.attendance-density-compact .visitor-person-card {
+  min-height: 88px;
+  padding: .65rem .75rem;
+  border-radius: 11px;
+}
+
+.attendance-density-compact .attendance-card-check,
+.attendance-density-compact .visitor-present-check {
+  width: 40px;
+  height: 40px;
+}
+
+.attendance-density-compact .attendance-person-name strong,
+.attendance-density-compact .visitor-name strong {
+  font-size: .92rem;
+}
+
 .attendance-card-check { border-radius: 9px; }
 
 .visitor-person-card {
@@ -667,6 +691,41 @@
 .danger-zone {
   padding-top: 1.25rem;
   border-top: 1px solid var(--danger-border);
+}
+
+.personal-settings .theme-switcher {
+  max-width: 31rem;
+}
+
+.sync-diagnostic {
+  margin-top: 1rem;
+  display: grid;
+  gap: .35rem;
+}
+
+.sync-diagnostic code,
+.sync-diagnostic-item code {
+  width: fit-content;
+  padding: .15rem .4rem;
+  border-radius: 5px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+  font-size: .78rem;
+}
+
+.sync-diagnostic-item {
+  display: grid;
+  gap: .35rem;
+  padding-block: .8rem;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.sync-diagnostic-item:last-child { border-bottom: 0; }
+
+.sync-diagnostic-item span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+  font-size: .8rem;
 }
 
 /* Users and audit retain operational density. */
