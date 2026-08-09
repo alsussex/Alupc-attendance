@@ -63,6 +63,12 @@ describe("attendance people tabs", () => {
     expect(source).toContain("memberSearch");
     expect(source).toContain("visitorSearch");
     expect(source).toContain("tabScrollPositions");
+    expect(source).toContain("pendingTabScrollRestore");
+    expect(source).toContain("useLayoutEffect(() =>");
+    expect(source).toContain("tabScrollServiceId.current !== serviceId");
+    expect(source).toContain("tabScrollPositions.current[tab] ?? currentPosition");
+    expect(source).toContain("focus({ preventScroll: true })");
+    expect(source).not.toContain("window.requestAnimationFrame");
     expect(source).toContain('openService(current, { resetView: false })');
   });
 

@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -181,14 +182,58 @@ export function ServiceManager() {
   const initializedServiceFolders = useRef("");
   const selectedRef = useRef<Set<string>>(new Set());
   const activeRef = useRef<ChurchService | null>(null);
-  const tabScrollPositions = useRef<Record<AttendanceTab, number>>({
-    members: 0,
-    visitors: 0,
-    history: 0,
+  const tabScrollPositions = useRef<Record<AttendanceTab, number | null>>({
+    members: null,
+    visitors: null,
+    history: null,
   });
+  const tabScrollServiceId = useRef<string | null>(null);
+  const pendingTabScrollRestore = useRef<{
+    serviceId: string;
+    tab: AttendanceTab;
+    top: number;
+    focus: boolean;
+  } | null>(null);
   const memberTabRef = useRef<HTMLButtonElement>(null);
   const visitorTabRef = useRef<HTMLButtonElement>(null);
   const historyTabRef = useRef<HTMLButtonElement>(null);
+
+  useLayoutEffect(() => {
+    const serviceId = active?.id ?? null;
+    if (tabScrollServiceId.current !== serviceId) {
+      tabScrollServiceId.current = serviceId;
+      tabScrollPositions.current = {
+        members: null,
+        visitors: null,
+        history: null,
+      };
+      pendingTabScrollRestore.current = null;
+      return;
+    }
+
+    const pending = pendingTabScrollRestore.current;
+    if (
+      !pending ||
+      pending.serviceId !== serviceId ||
+      pending.tab !== attendanceTab
+    ) {
+      return;
+    }
+
+    pendingTabScrollRestore.current = null;
+    window.scrollTo({ top: pending.top });
+    tabScrollPositions.current[attendanceTab] = window.scrollY;
+
+    if (pending.focus) {
+      const tabRef =
+        attendanceTab === "members"
+          ? memberTabRef
+          : attendanceTab === "visitors"
+            ? visitorTabRef
+            : historyTabRef;
+      tabRef.current?.focus({ preventScroll: true });
+    }
+  }, [active?.id, attendanceTab]);
 
   useEscapeKey(
     () => {
@@ -532,20 +577,17 @@ export function ServiceManager() {
 
   function selectAttendanceTab(tab: AttendanceTab, focus = false) {
     if (tab === attendanceTab) return;
-    tabScrollPositions.current[attendanceTab] = window.scrollY;
+    const serviceId = active?.id;
+    if (!serviceId) return;
+    const currentPosition = window.scrollY;
+    tabScrollPositions.current[attendanceTab] = currentPosition;
+    pendingTabScrollRestore.current = {
+      serviceId,
+      tab,
+      top: tabScrollPositions.current[tab] ?? currentPosition,
+      focus,
+    };
     setAttendanceTab(tab);
-    window.requestAnimationFrame(() => {
-      window.scrollTo({ top: tabScrollPositions.current[tab] });
-      if (focus) {
-        (
-          tab === "members"
-            ? memberTabRef
-            : tab === "visitors"
-              ? visitorTabRef
-              : historyTabRef
-        ).current?.focus();
-      }
-    });
   }
 
   async function changeUnnamedVisitorCount(change: number) {
