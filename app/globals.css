@@ -5174,35 +5174,12 @@ textarea { border-radius: var(--radius-sm); }
   }
 }
 
-/* Final cascade layer for the product UI */
+/* Shell sizing remains structural. Product visuals live in product-system.css. */
 .app-layout { --sidebar-width: 248px; }
 .app-layout.sidebar-collapsed { --sidebar-width: 76px; }
 .page-content { width: min(1440px, 100%); }
-.panel { border-radius: 14px; }
-.dashboard-hero {
-  padding-inline: 0;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-.dashboard-action-card { min-height: 112px; border-radius: 12px; }
-.dashboard-metric-card { min-height: 132px; }
-.dashboard-surface { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.dashboard-service-card { min-height: 172px; }
-.settings-card { border: 0; border-radius: 0; background: transparent; box-shadow: none; }
-.settings-overview-hero { border-radius: 0; }
 
 @media (max-width: 560px) {
-  .dashboard-hero { padding: .75rem 0 2.25rem; border-radius: 0; }
-  .dashboard-action-card { min-height: 108px; }
-  .dashboard-metric-card { min-height: 138px; }
-  .dashboard-panel-heading { padding-inline: 0; }
-  .dashboard-month-toggle { padding-inline: 0; }
-  .dashboard-service-card-grid { padding-inline: 0; }
-  .dashboard-service-card { min-height: 170px; }
-
   .service-directory-toolbar {
     width: 100%;
     min-width: 0;

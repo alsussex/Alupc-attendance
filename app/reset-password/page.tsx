@@ -66,7 +66,7 @@ export default function ResetPasswordPage() {
   }
 
   return (
-    <main className="login-page">
+    <main className="login-page product-auth-page">
       <section className="login-card" aria-labelledby="reset-password-title">
         <div className="login-brand">
           <span className="brand-mark large" aria-hidden="true">

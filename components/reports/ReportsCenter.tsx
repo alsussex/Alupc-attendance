@@ -232,7 +232,7 @@ export function ReportsCenter() {
   }
 
   return (
-    <div className="reports-page">
+    <div className="reports-page product-page reports-product-page">
       <header className="page-header reports-page-header"><div><p className="eyebrow">Church office</p><h1>Reports</h1><p>View, print, and export accurate attendance information.</p></div><span className="report-data-source">Attendance views work from the synchronized device copy. Official Excel exports verify current Supabase data.</span></header>
       <div className="reports-layout">
         <aside className="reports-navigation no-print" aria-label="Report categories">

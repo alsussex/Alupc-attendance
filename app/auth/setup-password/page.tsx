@@ -100,7 +100,7 @@ export default function AcceptInvitePage() {
   }
 
   return (
-    <main className="login-page">
+    <main className="login-page product-auth-page">
       <section className="login-card" aria-labelledby="invite-title">
         <div className="login-brand">
           <span className="brand-mark large" aria-hidden="true">AL</span>

@@ -9,6 +9,7 @@ import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistr
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { themeBootstrapScript } from "@/lib/theme/theme";
 import "./globals.css";
+import "./product-system.css";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();

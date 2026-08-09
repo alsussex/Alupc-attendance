@@ -295,7 +295,7 @@ export function SettingsCenter() {
   }
 
   return (
-    <div className="settings-page">
+    <div className="settings-page product-page settings-product-page">
       <div className="page-heading">
         <p className="eyebrow">Administration</p>
         <h1>Settings</h1>

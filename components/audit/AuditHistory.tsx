@@ -264,7 +264,7 @@ export function AuditHistory({
   }
 
   return (
-    <section className={`audit-history ${compact ? "compact" : ""}`}>
+    <section className={`audit-history audit-product-page ${compact ? "compact" : ""}`}>
       {!compact && (
         <>
           <div className="settings-card-heading with-action">

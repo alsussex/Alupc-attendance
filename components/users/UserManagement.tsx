@@ -144,7 +144,7 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack product-subpage users-product-page">
       <div className={embedded ? "settings-embedded-heading" : "page-heading with-action"}>
         <div>
           <p className="eyebrow">Administrator</p>

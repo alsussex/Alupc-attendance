@@ -698,8 +698,8 @@ export function ServiceManager() {
       <div
         className={
           serviceLocked
-            ? "attendance-workspace completed-service-locked"
-            : "attendance-workspace"
+            ? "attendance-workspace completed-service-locked product-page services-page"
+            : "attendance-workspace product-page services-page"
         }
       >
         <div className="service-topline attendance-service-header">
@@ -711,6 +711,7 @@ export function ServiceManager() {
             ← Back
           </button>
           <div className="service-admin-actions">
+            <div className="service-workflow-actions">
             <span className={`status-pill ${active.status}`}>{active.status}</span>
             {active.status === "completed" ? (
               isAdmin(user) &&
@@ -752,8 +753,9 @@ export function ServiceManager() {
             >
               Duplicate Service
             </button>
+            </div>
             {isAdmin(user) && (
-              <>
+              <div className="service-management-actions">
                 <button
                   className="button subtle"
                   type="button"
@@ -812,7 +814,7 @@ export function ServiceManager() {
                 >
                   Remove
                 </button>
-              </>
+              </div>
             )}
           </div>
         </div>
@@ -1590,7 +1592,7 @@ export function ServiceManager() {
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack product-page services-page">
       <div className="page-heading with-action">
         <div>
           <p className="eyebrow">Attendance</p>

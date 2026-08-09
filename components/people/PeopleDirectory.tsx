@@ -435,14 +435,15 @@ export function PeopleDirectory() {
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack product-page people-page">
       <div className="page-heading with-action">
         <div>
           <p className="eyebrow">Directory</p>
           <h1>People</h1>
           <p>Active members appear automatically when you record a service.</p>
         </div>
-        <div className="button-row people-add-actions">
+        <div className="people-page-actions">
+          <div className="button-row people-management-actions">
           {admin && (
             <button
               className={selectionMode ? "button secondary" : "button subtle"}
@@ -469,6 +470,8 @@ export function PeopleDirectory() {
               Merge Members
             </button>
           )}
+          </div>
+          <div className="button-row people-create-actions">
           <button
             className="button secondary"
             type="button"
@@ -486,6 +489,7 @@ export function PeopleDirectory() {
           >
             <span aria-hidden="true">＋</span> Add member
           </button>
+          </div>
         </div>
       </div>
 
@@ -614,7 +618,8 @@ export function PeopleDirectory() {
                   </span>
                 </span>
               </div>
-              <div className="row-actions">
+              <div className="row-actions member-row-actions">
+                <div className="routine-actions">
                 <button
                   className="button subtle"
                   type="button"
@@ -629,8 +634,10 @@ export function PeopleDirectory() {
                 >
                   Edit
                 </button>
+                </div>
                 {admin &&
                   (person.isActive ? (
+                    <div className="destructive-actions">
                     <button
                       className="button danger-text"
                       type="button"
@@ -638,8 +645,9 @@ export function PeopleDirectory() {
                     >
                       Make inactive
                     </button>
+                    </div>
                   ) : (
-                    <>
+                    <div className="lifecycle-actions">
                       <button
                         className="button secondary"
                         type="button"
@@ -654,7 +662,7 @@ export function PeopleDirectory() {
                       >
                         Remove
                       </button>
-                    </>
+                    </div>
                   ))}
               </div>
             </article>

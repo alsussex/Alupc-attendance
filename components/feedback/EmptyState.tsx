@@ -9,7 +9,7 @@ export function EmptyState({
 }: {
   title: string;
   message: string;
-  icon?: string;
+  icon?: ReactNode;
   action?: ReactNode;
   compact?: boolean;
 }) {

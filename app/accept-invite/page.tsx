@@ -11,7 +11,7 @@ export default function LegacyAcceptInvitePage() {
   }, []);
 
   return (
-    <main className="centered-state workspace-loading">
+    <main className="centered-state workspace-loading product-auth-page">
       <LoadingSkeleton label="Opening account setup" rows={3} />
     </main>
   );
