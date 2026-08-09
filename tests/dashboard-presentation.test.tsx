@@ -108,28 +108,35 @@ describe("dashboard presentation", () => {
         snapshot={snapshot}
         loading={false}
         isAdministrator
+        displayName="Robert"
+        role="admin"
         currentDate={now}
       />,
     );
     expect(
       screen.getByRole("heading", {
         level: 1,
-        name: "Abundant Life UPC Attendance",
+        name: "Good evening, Robert",
       }),
     ).toBeVisible();
-    expect(screen.getByText("Good evening")).toBeVisible();
+    expect(screen.getByText("Admin")).toBeVisible();
     expect(
       screen.getByRole("link", { name: "Create new service" }),
     ).toHaveAttribute("href", "/services?new=1");
     expect(screen.getByText("Upcoming")).toBeVisible();
-    expect(screen.getByText(/Starts at 7:00 PM/)).toBeVisible();
+    expect(
+      screen.getByText((_, element) =>
+        element?.classList.contains("dashboard-service-when") ?? false,
+      ),
+    ).toHaveTextContent("7:00 PM");
     expect(screen.getByRole("link", { name: /Take attendance/ })).toHaveAttribute(
       "href",
       "/services?service=service-today",
     );
-    expect(
-      screen.getByText(/Last Wednesday Bible Study: 41 attended/),
-    ).toBeVisible();
+    const comparison = screen.getByLabelText("Attendance totals");
+    expect(comparison).toHaveTextContent("Last Wednesday Bible Study41");
+    expect(comparison).toHaveTextContent("Visitors3");
+    expect(comparison).toHaveTextContent("Children’s Church5");
     expect(screen.queryByText("Quick actions")).not.toBeInTheDocument();
     expect(screen.queryByText("Attendance overview")).not.toBeInTheDocument();
     expect(screen.queryByText("Recent activity")).not.toBeInTheDocument();
@@ -141,6 +148,7 @@ describe("dashboard presentation", () => {
         snapshot={snapshot}
         loading={false}
         isAdministrator={false}
+        role="attendance_taker"
         currentDate={new Date("2026-07-29T20:00:00")}
       />,
     );
@@ -149,9 +157,10 @@ describe("dashboard presentation", () => {
       screen.getByRole("link", { name: /Continue attendance/ }),
     ).toHaveAttribute("href", "/services?service=service-today");
     const totals = screen.getByLabelText("Attendance totals");
-    expect(totals).toHaveTextContent("Total present18");
+    expect(totals).toHaveTextContent("Present18");
     expect(totals).toHaveTextContent("Visitors2");
     expect(totals).toHaveTextContent("Children’s Church3");
+    expect(screen.getByText("Attendance Taker")).toBeVisible();
   });
 
   it("shows a completed summary and quietly surfaces the next service", () => {
@@ -177,10 +186,12 @@ describe("dashboard presentation", () => {
     expect(
       screen.getByRole("link", { name: /View completed service/ }),
     ).toHaveAttribute("href", "/services?service=service-today");
-    expect(screen.getByText("Next:")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Sunday Morning" })).toHaveAttribute(
+    const nextRegion = screen.getByRole("region", { name: "Sunday Morning" });
+    expect(within(nextRegion).getByText("Up next")).toBeVisible();
+    expect(within(nextRegion).getByText(/August 2, 2026/)).toBeVisible();
+    expect(within(nextRegion).getByRole("link", { name: /View schedule/ })).toHaveAttribute(
       "href",
-      "/services?service=next-service",
+      "/services",
     );
   });
 
@@ -248,9 +259,10 @@ describe("dashboard responsive styling", () => {
   const css = readFileSync(resolve("app/globals.css"), "utf8");
 
   it("uses one operational composition instead of statistic-card grids", () => {
+    expect(css).toContain("--product-panel:");
     expect(css).toContain(".dashboard-home-layout {");
     expect(css).toContain(
-      "grid-template-columns: minmax(0, 1fr) minmax(275px, 340px);",
+      "grid-template-columns: minmax(0, 1fr) minmax(310px, 365px);",
     );
     expect(css).toContain(".dashboard-current-service {");
     expect(css).toContain(".dashboard-recent-services {");
@@ -258,10 +270,10 @@ describe("dashboard responsive styling", () => {
 
   it("moves recent services below the main area without horizontal overflow", () => {
     expect(css).toMatch(
-      /@media \(max-width: 980px\)[\s\S]*?\.dashboard-home-layout \{[\s\S]*?grid-template-columns: minmax\(0, 1fr\);/,
+      /@media \(max-width: 1050px\)[\s\S]*?\.dashboard-home-layout \{ grid-template-columns: minmax\(0, 1fr\); \}/,
     );
     expect(css).toMatch(
-      /@media \(max-width: 620px\)[\s\S]*?\.dashboard-recent-list \{ grid-template-columns: minmax\(0, 1fr\); \}/,
+      /@media \(max-width: 680px\)[\s\S]*?\.dashboard-recent-list \{ grid-template-columns: minmax\(0, 1fr\); \}/,
     );
   });
 

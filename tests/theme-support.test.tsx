@@ -130,9 +130,9 @@ describe("application theme support", () => {
     expect(css).toContain(':root[data-theme="dark"]');
     expect(componentStyles).not.toMatch(/#[0-9a-f]{3,8}\b/i);
     expect(componentStyles).not.toMatch(/rgb\(\d/);
-    expect(css).toContain("--canvas: #0b0d10");
-    expect(css).toContain("--surface: #12151a");
-    expect(css).toContain("--sidebar-bg: #090b0e");
+    expect(css).toContain("--canvas: #080d18");
+    expect(css).toContain("--surface: #101827");
+    expect(css).toContain("--sidebar-bg: #070c17");
     expect(css).toContain("--child-bg: #2d2416");
     expect(css).toContain("--child-text: #e9c37e");
   });

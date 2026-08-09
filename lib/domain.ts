@@ -171,6 +171,7 @@ export interface UserContext {
   userId: string;
   organizationId: string;
   email: string;
+  displayName?: string;
   role: UserRole;
 }
 

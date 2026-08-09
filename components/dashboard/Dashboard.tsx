@@ -7,6 +7,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
+  Plus,
 } from "lucide-react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -17,6 +18,7 @@ import {
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
 import { isAdmin } from "@/lib/auth/permissions";
 import { formatTime } from "@/lib/format/date-time";
+import type { UserRole } from "@/lib/domain";
 
 export const emptyDashboardSnapshot: DashboardSnapshot = {
   churchName: "Abundant Life UPC",
@@ -137,12 +139,12 @@ export function findPreviousEquivalentService(
     .sort(newestFirst)[0];
 }
 
-function formatServiceDate(value: string, includeYear = true) {
+function formatServiceDate(value: string, includeWeekday = true) {
   return new Date(`${value}T12:00:00`).toLocaleDateString(undefined, {
-    weekday: "long",
+    weekday: includeWeekday ? "long" : undefined,
     month: "long",
     day: "numeric",
-    year: includeYear ? "numeric" : undefined,
+    year: "numeric",
   });
 }
 
@@ -186,6 +188,8 @@ export function Dashboard() {
       loading={loading}
       error={error}
       isAdministrator={isAdmin(user)}
+      displayName={user?.displayName}
+      role={user?.role}
     />
   );
 }
@@ -195,9 +199,19 @@ export function DashboardView(props: {
   loading: boolean;
   error?: string;
   isAdministrator: boolean;
+  displayName?: string;
+  role?: UserRole;
   currentDate?: Date;
 }) {
-  const { snapshot, loading, error = "", currentDate } = props;
+  const {
+    snapshot,
+    loading,
+    error = "",
+    currentDate,
+    displayName,
+    role,
+    isAdministrator,
+  } = props;
   const now = useMemo(() => currentDate ?? new Date(), [currentDate]);
   const featured = useMemo(
     () => selectFeaturedService(snapshot.services, now),
@@ -211,18 +225,19 @@ export function DashboardView(props: {
         : undefined,
     [featured, snapshot.services],
   );
-  const nextService = useMemo(
+  const upNext = useMemo(
     () =>
-      state === "completed"
+      featured
         ? snapshot.services
             .filter(
               (service) =>
+                service.id !== featured.id &&
                 service.status === "draft" &&
-                serviceMoment(service) > serviceMoment(featured!),
+                serviceMoment(service) > serviceMoment(featured),
             )
             .sort(oldestFirst)[0]
         : undefined,
-    [featured, snapshot.services, state],
+    [featured, snapshot.services],
   );
   const recentServices = useMemo(
     () =>
@@ -232,14 +247,21 @@ export function DashboardView(props: {
         .slice(0, 4),
     [featured?.id, snapshot.services],
   );
+  const accountName = displayName?.trim();
+  const roleLabel =
+    role === "admin" || (!role && isAdministrator)
+      ? "Admin"
+      : "Attendance Taker";
 
   return (
     <main className="dashboard dashboard-home" aria-labelledby="dashboard-title">
       <header className="dashboard-home-heading">
         <div>
-          <p className="dashboard-home-greeting">{greetingFor(now)}</p>
-          <h1 id="dashboard-title">{snapshot.churchName} Attendance</h1>
-          <p>
+          <h1 id="dashboard-title">
+            {greetingFor(now)}{accountName ? `, ${accountName}` : ""}
+          </h1>
+          <p className="dashboard-home-role">{roleLabel}</p>
+          <p className="dashboard-home-date">
             {now.toLocaleDateString(undefined, {
               weekday: "long",
               month: "long",
@@ -248,7 +270,11 @@ export function DashboardView(props: {
             })}
           </p>
         </div>
-        <Link className="button primary dashboard-create-service" href="/services?new=1">
+        <Link
+          className="button primary dashboard-create-service"
+          href="/services?new=1"
+        >
+          <Plus aria-hidden="true" />
           Create new service
         </Link>
       </header>
@@ -271,7 +297,6 @@ export function DashboardView(props: {
               service={featured}
               state={state}
               previous={previous}
-              nextService={nextService}
             />
           ) : (
             <NoService />
@@ -303,6 +328,26 @@ export function DashboardView(props: {
           )}
         </aside>
       </div>
+
+      {!loading && upNext && (
+        <section className="dashboard-up-next" aria-labelledby="up-next-title">
+          <span className="dashboard-up-next-icon" aria-hidden="true">
+            <CalendarDays />
+          </span>
+          <div className="dashboard-up-next-copy">
+            <p>Up next</p>
+            <h2 id="up-next-title">{upNext.title}</h2>
+            <span>
+              {formatServiceDate(upNext.serviceDate)}
+              {upNext.serviceTime ? ` · ${formatTime(upNext.serviceTime)}` : ""}
+            </span>
+          </div>
+          <Link className="button subtle" href="/services">
+            View schedule
+            <ArrowRight aria-hidden="true" />
+          </Link>
+        </section>
+      )}
     </main>
   );
 }
@@ -311,12 +356,10 @@ function CurrentService({
   service,
   state,
   previous,
-  nextService,
 }: {
   service: DashboardService;
   state: FeaturedState;
   previous?: DashboardService;
-  nextService?: DashboardService;
 }) {
   const statusLabel =
     state === "upcoming"
@@ -330,11 +373,18 @@ function CurrentService({
       : state === "in-progress"
         ? "Continue attendance"
         : "View completed service";
+  const contextLabel =
+    state === "upcoming"
+      ? "Next service"
+      : state === "completed"
+        ? "Latest service"
+        : "Current service";
+  const metricService = state === "upcoming" ? previous : service;
 
   return (
     <>
       <div className="dashboard-service-statusline">
-        <span>Current service</span>
+        <span>{contextLabel}</span>
         <span className={`dashboard-service-pill ${state}`}>{statusLabel}</span>
       </div>
 
@@ -348,34 +398,14 @@ function CurrentService({
               <>
                 <span aria-hidden="true">·</span>
                 <Clock3 aria-hidden="true" />
-                {state === "upcoming" ? "Starts at " : ""}
                 {formatTime(service.serviceTime)}
               </>
             )}
           </p>
         </div>
 
-        {(state !== "upcoming" || service.attendanceTotal > 0) && (
-          <dl className="dashboard-service-totals" aria-label="Attendance totals">
-            <div>
-              <dt>Total present</dt>
-              <dd>{service.attendanceTotal}</dd>
-            </div>
-            <div>
-              <dt>Visitors</dt>
-              <dd>{service.visitorCount}</dd>
-            </div>
-            {service.childProgramLabel && (
-              <div>
-                <dt>{service.childProgramLabel}</dt>
-                <dd>{service.sundaySchoolKidsCount ?? 0}</dd>
-              </div>
-            )}
-          </dl>
-        )}
-
         <Link
-          className={`button ${state === "completed" ? "" : "primary"} dashboard-service-action`}
+          className={`button ${state === "completed" ? "subtle" : "primary"} dashboard-service-action`}
           href={`/services?service=${service.id}`}
         >
           {state === "completed" && <CheckCircle2 aria-hidden="true" />}
@@ -383,28 +413,36 @@ function CurrentService({
           <ArrowRight aria-hidden="true" />
         </Link>
 
-        {state === "completed" && nextService && (
-          <p className="dashboard-next-service">
-            Next: <Link href={`/services?service=${nextService.id}`}>{nextService.title}</Link>
-            <span>
-              {shortServiceDate(nextService.serviceDate)}
-              {nextService.serviceTime
-                ? ` · ${formatTime(nextService.serviceTime)}`
-                : ""}
-            </span>
-          </p>
+        {metricService && (
+          <div className="dashboard-context-metrics">
+            <dl className="dashboard-service-totals" aria-label="Attendance totals">
+              <div>
+                <dt>
+                  {state === "upcoming"
+                    ? `Last ${metricService.title}`
+                    : "Present"}
+                </dt>
+                <dd>{metricService.attendanceTotal}</dd>
+              </div>
+              <div>
+                <dt>Visitors</dt>
+                <dd>{metricService.visitorCount}</dd>
+              </div>
+              {metricService.childProgramLabel && (
+                <div>
+                  <dt>{metricService.childProgramLabel}</dt>
+                  <dd>{metricService.sundaySchoolKidsCount ?? 0}</dd>
+                </div>
+              )}
+            </dl>
+            {state === "upcoming" && previous && (
+              <p className="dashboard-context-caption">
+                {previous.title} · {formatServiceDate(previous.serviceDate, false)}
+              </p>
+            )}
+          </div>
         )}
       </div>
-
-      {previous && (
-        <p className="dashboard-previous-service">
-          Last {previous.title}: {previous.attendanceTotal} attended ·{" "}
-          {previous.visitorCount} visitors
-          {previous.childProgramLabel
-            ? ` · ${previous.sundaySchoolKidsCount ?? 0} ${previous.childProgramLabel}`
-            : ""}
-        </p>
-      )}
     </>
   );
 }

@@ -159,6 +159,7 @@ async function readCachedProfile(userId: string, email: string) {
       userId,
       organizationId: profile.organizationId,
       email,
+      displayName: profile.displayName,
       role: profile.role === "admin" ? "admin" : "attendance_taker",
     };
     writeCachedProfile(cached);
@@ -320,6 +321,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userId: authUser.id,
         organizationId: data.organization_id,
         email: authUser.email ?? "",
+        displayName: data.display_name ?? undefined,
         role: data.role === "admin" ? "admin" : "attendance_taker",
       };
       writeCachedProfile(nextUser);
@@ -328,6 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         current.userId === nextUser.userId &&
         current.organizationId === nextUser.organizationId &&
         current.email === nextUser.email &&
+        current.displayName === nextUser.displayName &&
         current.role === nextUser.role
           ? current
           : nextUser,
@@ -624,17 +627,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!profile) return;
       const nextRole =
         profile.role === "admin" ? "admin" : "attendance_taker";
+      const nextDisplayName = profile.displayName;
       setUser((current) => {
         if (
           !current ||
           (current.role === nextRole &&
-            current.organizationId === profile.organizationId)
+            current.organizationId === profile.organizationId &&
+            current.displayName === nextDisplayName)
         ) {
           return current;
         }
         const nextUser = {
           ...current,
           role: nextRole,
+          displayName: nextDisplayName,
           organizationId: profile.organizationId,
         } satisfies UserContext;
         writeCachedProfile(nextUser);
