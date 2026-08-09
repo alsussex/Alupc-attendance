@@ -90,6 +90,7 @@ import {
 } from "@/lib/services/view-preference";
 import { childProgramForService } from "@/lib/services/child-program";
 import { runUndoGroup } from "@/lib/undo/undo-service";
+import { nextServiceDefault } from "@/lib/services/next-service-default";
 
 type AttendanceTab = "members" | "visitors" | "history";
 
@@ -1941,6 +1942,7 @@ export function ServiceModal({
   existing,
   duplicateOf,
   settings,
+  currentDate,
 }: {
   user: UserContext;
   onClose: () => void;
@@ -1948,6 +1950,7 @@ export function ServiceModal({
   existing?: ChurchService;
   duplicateOf?: ChurchService;
   settings: ApplicationSettings;
+  currentDate?: Date;
 }) {
   const [modalSettings] = useState(settings);
   const template = existing ?? duplicateOf;
@@ -1966,16 +1969,25 @@ export function ServiceModal({
           },
         ]
       : enabledTypes;
+  const [suggestedService] = useState(() =>
+    nextServiceDefault(currentDate ?? new Date(), modalSettings.timezone),
+  );
+  const suggestedType = availableTypes.find(
+    (item) => item.id === suggestedService.serviceTypeId,
+  );
   const initialType =
-    template?.serviceType ?? availableTypes[0]?.name ?? SERVICE_TYPES[0];
+    template?.serviceType ??
+    suggestedType?.name ??
+    availableTypes[0]?.name ??
+    SERVICE_TYPES[0];
   const [date, setDate] = useState(
-    existing?.serviceDate ?? (isDuplicate ? "" : localDate(modalSettings.timezone)),
+    existing?.serviceDate ?? (isDuplicate ? "" : suggestedService.serviceDate),
   );
   const [type, setType] = useState<ServiceType>(initialType);
   const [serviceTime, setServiceTime] = useState(
     template?.serviceTime ??
       availableTypes.find((item) => item.name === initialType)?.defaultTime ??
-      "",
+      (initialType === suggestedType?.name ? suggestedService.serviceTime : ""),
   );
   const [customName, setCustomName] = useState(template?.customName ?? "");
   const [notes, setNotes] = useState(template?.notes ?? "");

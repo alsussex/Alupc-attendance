@@ -118,6 +118,9 @@ describe("dashboard presentation", () => {
       }),
     ).toBeVisible();
     expect(screen.getByText("Good evening")).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Create new service" }),
+    ).toHaveAttribute("href", "/services?new=1");
     expect(screen.getByText("Upcoming")).toBeVisible();
     expect(screen.getByText(/Starts at 7:00 PM/)).toBeVisible();
     expect(screen.getByRole("link", { name: /Take attendance/ })).toHaveAttribute(

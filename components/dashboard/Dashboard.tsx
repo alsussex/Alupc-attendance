@@ -236,16 +236,21 @@ export function DashboardView(props: {
   return (
     <main className="dashboard dashboard-home" aria-labelledby="dashboard-title">
       <header className="dashboard-home-heading">
-        <p className="dashboard-home-greeting">{greetingFor(now)}</p>
-        <h1 id="dashboard-title">{snapshot.churchName} Attendance</h1>
-        <p>
-          {now.toLocaleDateString(undefined, {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-            year: "numeric",
-          })}
-        </p>
+        <div>
+          <p className="dashboard-home-greeting">{greetingFor(now)}</p>
+          <h1 id="dashboard-title">{snapshot.churchName} Attendance</h1>
+          <p>
+            {now.toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </p>
+        </div>
+        <Link className="button primary dashboard-create-service" href="/services?new=1">
+          Create new service
+        </Link>
       </header>
 
       {error && (

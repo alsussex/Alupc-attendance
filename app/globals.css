@@ -2966,10 +2966,13 @@ a.dashboard-focus-card:hover { border-color: var(--brand); transform: translateY
 }
 
 .dashboard-home-heading {
-  max-width: 760px;
-  display: grid;
-  gap: .3rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
 }
+
+.dashboard-home-heading > div { max-width: 760px; display: grid; gap: .3rem; }
 
 .dashboard-home-heading h1 {
   margin: 0;
@@ -2978,11 +2981,13 @@ a.dashboard-focus-card:hover { border-color: var(--brand); transform: translateY
   letter-spacing: -.045em;
 }
 
-.dashboard-home-heading > p:last-child {
+.dashboard-home-heading > div > p:last-child {
   margin: .4rem 0 0;
   color: var(--muted);
   font-size: .92rem;
 }
+
+.dashboard-create-service { flex: 0 0 auto; min-height: 46px; }
 
 .dashboard-home-greeting {
   margin: 0;
@@ -3314,6 +3319,8 @@ a.dashboard-recent-row:hover {
 
 @media (max-width: 620px) {
   .dashboard-home { gap: 2rem; }
+  .dashboard-home-heading { align-items: stretch; flex-direction: column; }
+  .dashboard-create-service { width: 100%; justify-content: center; }
   .dashboard-home-heading h1 { font-size: clamp(2rem, 10vw, 2.75rem); }
   .dashboard-current-service {
     min-height: 390px;
