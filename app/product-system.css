@@ -885,8 +885,7 @@
   .destructive-actions,
   .visitor-actions,
   .report-actions,
-  .settings-action-row,
-  .modal-actions {
+  .settings-action-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     width: 100%;
@@ -897,8 +896,7 @@
   .service-admin-actions .button,
   .visitor-actions .button,
   .report-actions .button,
-  .settings-action-row .button,
-  .modal-actions .button { width: 100%; }
+  .settings-action-row .button { width: 100%; }
 
   .member-row-actions { padding-left: 0; }
 
@@ -911,7 +909,22 @@
 
   .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
-  .modal-actions { display: flex; flex-direction: column-reverse; }
+  .modal-actions {
+    display: flex;
+    flex-flow: row wrap;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .modal-actions .button {
+    flex: 1 1 140px;
+    width: auto;
+    min-height: 48px;
+    height: 48px;
+    max-height: 48px;
+    padding-block: 0;
+  }
+
   .modal-actions .button.danger { margin-left: 0; }
 }
 

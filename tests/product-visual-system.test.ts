@@ -73,7 +73,15 @@ describe("authoritative product visual system", () => {
     expect(styles).toContain("--product-action-gap: .75rem");
     expect(styles).toContain("--product-touch-gap: .9rem");
     expect(styles).toMatch(/@media \(max-width: 680px\)[\s\S]*min-height:\s*48px/);
-    expect(styles).toMatch(/@media \(max-width: 430px\)[\s\S]*flex-direction:\s*column/);
+    expect(styles).toMatch(
+      /@media \(max-width: 430px\)[\s\S]*\.modal-actions\s*\{[\s\S]*flex-flow:\s*row wrap/,
+    );
+    expect(styles).toMatch(
+      /\.modal-actions \.button\s*\{[\s\S]*height:\s*48px;[\s\S]*max-height:\s*48px/,
+    );
+    expect(styles).not.toMatch(
+      /\.modal-actions\s*\{[^}]*flex-direction:\s*column(?:-reverse)?/,
+    );
   });
 
   it("provides consistent focus, reduced-motion, dialog, and feedback states", () => {
