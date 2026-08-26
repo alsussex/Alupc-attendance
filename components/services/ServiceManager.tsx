@@ -1921,18 +1921,15 @@ export function ServiceManager() {
                               ? ` · ${formatTime(item.service.serviceTime)}`
                               : ""}
                           </span>
-                          <small>
-                            Updated{" "}
-                            {formatDateTime(item.service.updatedAt)}
-                            {item.lastEditor
-                              ? ` by ${item.lastEditor}`
-                              : ""}
+                          <small className="service-directory-updated">
+                            <span>Updated {formatDateTime(item.service.updatedAt)}</span>
+                            {item.lastEditor && <span>By {item.lastEditor}</span>}
                           </small>
                         </span>
                         <span className="service-directory-counts">
                           <strong>{item.totalPresent}</strong>
                           <span>Total present</span>
-                          <small>
+                          <small className="service-directory-breakdown">
                             {item.membersPresent} members · {item.visitorsPresent} visitors
                             {childProgramSummary(item.service)}
                           </small>

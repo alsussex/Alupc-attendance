@@ -269,6 +269,35 @@
 
 .service-directory-counts { border-left-color: var(--line-soft); }
 
+/* Keep service rows on a shared column grid. Content length must never move
+   the attendance, status, or action columns between rows. */
+.service-directory-row {
+  grid-template-columns: 64px minmax(0, 1fr) 190px 130px 20px;
+}
+
+.service-directory-updated {
+  display: grid;
+  gap: .08rem;
+  line-height: 1.25;
+}
+
+.service-directory-updated span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.service-directory-counts {
+  width: 190px;
+  min-width: 190px;
+}
+
+.service-directory-breakdown {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
 .services-calendar-toolbar {
   padding-bottom: 1rem;
   border-bottom: 1px solid var(--line);
@@ -910,6 +939,23 @@
   .visitor-actions { width: 100%; }
 
   .visitor-actions .button { flex: 1 1 110px; }
+
+  .service-directory-counts {
+    width: auto;
+    min-width: 0;
+  }
+
+  .service-directory-row {
+    grid-template-columns: 54px minmax(0, 1fr);
+  }
+
+  .service-directory-counts {
+    grid-column: 2;
+  }
+
+  .service-directory-state {
+    grid-column: 1 / -1;
+  }
 
   .member-row-actions {
     width: 100%;
