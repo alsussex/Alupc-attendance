@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { themeBootstrapScript } from "@/lib/theme/theme";
 import "./globals.css";
 import "./product-system.css";
+import "./modern-ui.css";
 
 export async function generateMetadata(): Promise<Metadata> {
   const requestHeaders = await headers();
