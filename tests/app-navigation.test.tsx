@@ -80,10 +80,11 @@ describe("application navigation", () => {
       "sidebar-collapsed",
     );
     expect(getSidebarCollapsedPreference()).toBe(true);
-    expect(screen.getByRole("link", { name: "People" })).toHaveAttribute(
-      "title",
-      "People",
-    );
+    expect(
+      within(screen.getByLabelText("Application sidebar")).getByRole("link", {
+        name: "People",
+      }),
+    ).toHaveAttribute("title", "People");
 
     fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
     expect(container.querySelector(".app-layout")).not.toHaveClass(
@@ -123,6 +124,9 @@ describe("application navigation", () => {
     expect(container.querySelector(".lucide-calendar-days")).toBeTruthy();
     expect(container.querySelector(".lucide-file-chart-column")).toBeTruthy();
     expect(container.querySelector(".lucide-settings")).toBeTruthy();
+    expect(
+      screen.getByRole("navigation", { name: "Primary navigation" }),
+    ).toBeInTheDocument();
   });
 
   it("opens and closes the mobile menu using its controls and backdrop", () => {

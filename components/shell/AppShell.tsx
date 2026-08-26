@@ -134,6 +134,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     setSidebarCollapsedPreference(next);
   }
   const visibleNavigation = navigation;
+  const activeNavigation =
+    visibleNavigation.find((item) => pathname.startsWith(item.href)) ??
+    visibleNavigation[0];
+  const accountInitials = (user?.displayName || user?.email || "AL")
+    .split(/[\s@._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
 
   return (
     <div
@@ -142,7 +152,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       }
     >
       <aside className="sidebar" aria-label="Application sidebar">
-        <div className="brand-block">
+        <div className="brand-block app-brand">
           <span className="brand-mark" aria-hidden="true">{shortName.slice(0, 2).toUpperCase()}</span>
           <div className="sidebar-label">
             <strong>{churchName}</strong>
@@ -186,9 +196,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="sidebar-footer">
           <div className="sidebar-label"><SyncIndicator /></div>
           <ThemeSwitcher compact={sidebarCollapsed} />
-          <span className="account-email sidebar-label">
-            {user?.email} · {user?.role === "admin" ? "Admin" : "Attendance Taker"}
-          </span>
+          <div className="sidebar-account sidebar-label">
+            <span className="account-avatar" aria-hidden="true">{accountInitials}</span>
+            <span>
+              <strong>{user?.displayName || user?.email}</strong>
+              <small>{user?.role === "admin" ? "Administrator" : "Attendance Taker"}</small>
+            </span>
+          </div>
           <button
             className="button subtle full"
             type="button"
@@ -214,13 +228,35 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <Menu aria-hidden="true" />
           </button>
-          <div className="mobile-brand">{churchName}</div>
+          <div className="mobile-brand">
+            <strong>{activeNavigation.label}</strong>
+            <span>{churchName}</span>
+          </div>
           <SyncIndicator />
         </header>
-        <main className="page-content">
-          <SyncBanner />
-          {children}
-        </main>
+        <div className="workspace-frame">
+          <main className="page-content">
+            <SyncBanner />
+            {children}
+          </main>
+        </div>
+        <nav className="mobile-bottom-nav" aria-label="Primary navigation">
+          {visibleNavigation.map((item) => {
+            const Icon = item.icon;
+            const active = pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={active ? "mobile-bottom-link active" : "mobile-bottom-link"}
+                aria-current={active ? "page" : undefined}
+              >
+                <Icon aria-hidden="true" />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
       </div>
       {mobileMenuOpen && (
         <div
