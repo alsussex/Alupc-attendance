@@ -18,7 +18,7 @@ import {
 } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
 import { announceDataChanged } from "@/lib/storage/data-events";
-import { isAdmin } from "@/lib/auth/permissions";
+import { canReopenCompletedServices, isAdmin } from "@/lib/auth/permissions";
 import { enqueueChange } from "@/lib/sync/queue";
 import { toCloudRecord } from "@/lib/sync/serialization";
 import { recordAuditEntry } from "@/lib/audit/audit-repository";
@@ -564,17 +564,13 @@ export async function saveService(
   const existing = input.id ? await database.get("services", input.id) : undefined;
   if (existing?.status === "completed") {
     if (input.status === "draft") {
-      if (!isAdmin(user)) {
-        throw new Error("Only an administrator can reopen a completed service.");
+      if (!canReopenCompletedServices(user)) {
+        throw new Error(
+          "Only an administrator can reopen a completed service unless an Admin grants this Attendance Taker permission.",
+        );
       }
-      const organizationSettings = await database.get(
-        "organizationSettings",
-        user.organizationId,
-      );
-      if (
-        organizationSettings &&
-        !organizationSettings.settings.allowAdminReopenCompleted
-      ) {
+      const organizationSettings = await database.get("organizationSettings", user.organizationId);
+      if (isAdmin(user) && organizationSettings && !organizationSettings.settings.allowAdminReopenCompleted) {
         throw new Error(
           "Reopening completed services is not enabled for this church.",
         );

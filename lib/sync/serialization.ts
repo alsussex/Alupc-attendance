@@ -118,6 +118,8 @@ export function fromCloudRecord(
         themePreference === "system"
           ? themePreference
           : "system",
+      canReopenCompletedServices:
+        row.can_reopen_completed_services === true,
       version: typeof row.version === "number" ? row.version : undefined,
       createdAt: requiredString(row, "created_at"),
       updatedAt: requiredString(row, "updated_at"),

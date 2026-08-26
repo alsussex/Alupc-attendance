@@ -49,6 +49,7 @@ export interface Profile {
   role: "admin" | "attendance_taker";
   isActive: boolean;
   themePreference?: ThemePreference;
+  canReopenCompletedServices?: boolean;
   version?: number;
   createdAt: string;
   updatedAt: string;
@@ -173,6 +174,7 @@ export interface UserContext {
   email: string;
   displayName?: string;
   role: UserRole;
+  canReopenCompletedServices?: boolean;
 }
 
 export interface SyncQueueItem {

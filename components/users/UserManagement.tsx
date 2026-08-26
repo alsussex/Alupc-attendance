@@ -24,6 +24,7 @@ interface ManagedUser {
   lastSignInAt?: string | null;
   invitedAt?: string | null;
   createdAt: string;
+  canReopenCompletedServices: boolean;
 }
 
 async function adminRequest(path = "", init?: RequestInit) {
@@ -58,17 +59,19 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
   const [createOpen, setCreateOpen] = useState(false);
   const [historyUser, setHistoryUser] = useState<ManagedUser | null>(null);
   const [deletingUser, setDeletingUser] = useState<ManagedUser | null>(null);
+  const [permissionUser, setPermissionUser] = useState<ManagedUser | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   useEscapeKey(
     () => {
       if (deletingUser) setDeletingUser(null);
+      else if (permissionUser) setPermissionUser(null);
       else if (historyUser) setHistoryUser(null);
       else if (createOpen) setCreateOpen(false);
       else if (inviteOpen) setInviteOpen(false);
     },
-    Boolean(deletingUser || historyUser || createOpen || inviteOpen),
+    Boolean(deletingUser || permissionUser || historyUser || createOpen || inviteOpen),
   );
 
   const refresh = useCallback(async () => {
@@ -266,6 +269,16 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
                     >
                       History
                     </button>
+                    {managedUser.role === "attendance_taker" && (
+                      <button
+                        className="button subtle"
+                        type="button"
+                        disabled={working}
+                        onClick={() => setPermissionUser(managedUser)}
+                      >
+                        Permissions
+                      </button>
+                    )}
                     {pending && (
                       <>
                         <button
@@ -392,6 +405,18 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
         />
       )}
 
+      {permissionUser && (
+        <UserPermissionsModal
+          target={permissionUser}
+          onClose={() => setPermissionUser(null)}
+          onSaved={async () => {
+            setPermissionUser(null);
+            setMessage(`${permissionUser.displayName}'s permissions were updated.`);
+            await refresh();
+          }}
+        />
+      )}
+
       {inviteOpen && (
         <InviteUserModal
           onClose={() => setInviteOpen(false)}
@@ -414,6 +439,75 @@ export function UserManagement({ embedded = false }: { embedded?: boolean }) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function UserPermissionsModal({
+  target,
+  onClose,
+  onSaved,
+}: {
+  target: ManagedUser;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const [enabled, setEnabled] = useState(target.canReopenCompletedServices);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      await adminRequest("", {
+        method: "PATCH",
+        body: JSON.stringify({
+          userId: target.id,
+          action: "permission",
+          canReopenCompletedServices: enabled,
+        }),
+      });
+      await onSaved();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Permissions could not be updated.");
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="user-permissions-title">
+        <div className="modal-heading">
+          <div>
+            <p className="eyebrow">User Permissions</p>
+            <h2 id="user-permissions-title">{target.displayName}</h2>
+          </div>
+          <button className="icon-button" type="button" aria-label="Close permissions" onClick={onClose} disabled={saving}>×</button>
+        </div>
+        <p>Additional access beyond the standard Attendance Taker role.</p>
+        <form className="form-stack" onSubmit={submit}>
+          <label className="settings-toggle">
+            <span>
+              <strong>Reopen completed services</strong>
+              <small>Allow this user to reopen a completed service and make corrections to its attendance.</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(event) => setEnabled(event.target.checked)}
+              disabled={saving}
+            />
+          </label>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="modal-actions">
+            <button className="button subtle" type="button" onClick={onClose} disabled={saving}>Cancel</button>
+            <button className="button primary" type="submit" disabled={saving}>{saving ? "Saving…" : "Save permissions"}</button>
+          </div>
+        </form>
+      </section>
     </div>
   );
 }

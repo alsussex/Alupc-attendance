@@ -5,6 +5,7 @@ import {
   canAddMembers,
   canArchiveRecords,
   canManageUsers,
+  canReopenCompletedServices,
 } from "@/lib/auth/permissions";
 import type { UserContext } from "@/lib/domain";
 import {
@@ -41,6 +42,43 @@ beforeEach(async () => {
 });
 
 describe("role permissions", () => {
+  it("grants reopen access to Admins or the explicit per-user Attendance Taker permission", () => {
+    expect(canReopenCompletedServices({ role: "admin" })).toBe(true);
+    expect(
+      canReopenCompletedServices({
+        role: "attendance_taker",
+        canReopenCompletedServices: false,
+      }),
+    ).toBe(false);
+    expect(
+      canReopenCompletedServices({
+        role: "attendance_taker",
+        canReopenCompletedServices: true,
+      }),
+    ).toBe(true);
+  });
+
+  it("defines the database-backed per-user reopen permission", () => {
+    const migration = readFileSync(
+      resolve("supabase/migrations/202608260001_attendance_taker_reopen_permission.sql"),
+      "utf8",
+    );
+    expect(migration).toContain("can_reopen_completed_services boolean not null default false");
+    expect(migration).toContain("do not have permission to reopen completed services");
+    expect(migration).toContain("profile.organization_id = old.organization_id");
+    const userManagement = readFileSync(
+      resolve("components/users/UserManagement.tsx"),
+      "utf8",
+    );
+    const usersRoute = readFileSync(resolve("app/api/admin/users/route.ts"), "utf8");
+    expect(userManagement).toContain("User Permissions");
+    expect(userManagement).toContain("Reopen completed services");
+    expect(userManagement).toContain(
+      "Allow this user to reopen a completed service and make corrections to its attendance.",
+    );
+    expect(usersRoute).toContain('action === "permission"');
+    expect(usersRoute).toContain("can_reopen_completed_services");
+  });
   it("allows attendance takers to add and edit members", async () => {
     const member = await saveMember(attendanceTaker, {
       firstName: "Avery",

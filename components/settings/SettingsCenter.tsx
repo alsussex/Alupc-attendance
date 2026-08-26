@@ -1119,7 +1119,7 @@ function PermissionSummary() {
         </div>
         <div>
           <h3>Attendance Taker</h3>
-          <p>View and edit member basics, create services, record attendance, and manage service visitors. No Settings, user management, or permanent deletion.</p>
+          <p>View and edit member basics, create services, record attendance, manage service visitors, and reopen completed services only when an Admin grants that additional permission. No organization settings, user management, or permanent deletion.</p>
         </div>
       </div>
     </section>

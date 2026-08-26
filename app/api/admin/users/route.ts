@@ -94,7 +94,7 @@ export async function GET(request: Request) {
       await Promise.all([
         admin
           .from("profiles")
-          .select("id, display_name, role, is_active, created_at, updated_at")
+          .select("id, display_name, role, is_active, can_reopen_completed_services, created_at, updated_at")
           .eq("organization_id", organizationId)
           .order("created_at", { ascending: true }),
         admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
@@ -113,6 +113,7 @@ export async function GET(request: Request) {
           email: authUser?.email ?? "Email unavailable",
           role: profile.role,
           isActive: profile.is_active,
+          canReopenCompletedServices: profile.can_reopen_completed_services === true,
           invitationStatus: authUser
             ? invitationStatus(authUser)
             : "unknown",
@@ -202,6 +203,7 @@ export async function PATCH(request: Request) {
       userId?: unknown;
       action?: unknown;
       role?: unknown;
+      canReopenCompletedServices?: unknown;
     };
     const targetId = typeof body.userId === "string" ? body.userId : "";
     const action = typeof body.action === "string" ? body.action : "";
@@ -232,7 +234,17 @@ export async function PATCH(request: Request) {
       throw new Error("The administrator profile was not found.");
     }
 
-    if (action === "role") {
+    if (action === "permission") {
+      if (target.role !== "attendance_taker") {
+        throw new Error("This permission is only available for Attendance Takers.");
+      }
+      const { error } = await admin
+        .from("profiles")
+        .update({ can_reopen_completed_services: body.canReopenCompletedServices === true })
+        .eq("id", targetId)
+        .eq("organization_id", organizationId);
+      if (error) throw new Error(error.message);
+    } else if (action === "role") {
       if (!validUserRole(body.role)) throw new Error("A valid role is required.");
       const { error } = await admin
         .from("profiles")
@@ -298,7 +310,9 @@ export async function PATCH(request: Request) {
       organizationId,
       userId,
       targetId,
-      action === "role"
+      action === "permission"
+        ? "permission_changed"
+        : action === "role"
         ? "role_changed"
         : action === "disable"
           ? "disabled"
@@ -309,6 +323,10 @@ export async function PATCH(request: Request) {
         targetName: target.display_name || "Authorized user",
         fromRole: target.role,
         toRole: action === "role" ? body.role : target.role,
+        reopenCompletedServices:
+          action === "permission"
+            ? body.canReopenCompletedServices === true
+            : undefined,
         fromActive: target.is_active,
         toActive:
           action === "disable"

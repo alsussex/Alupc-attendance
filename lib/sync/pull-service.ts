@@ -25,7 +25,7 @@ const PULL_COLUMNS: Record<PullTable, string> = {
   organizations:
     "id,name,slug,created_by,created_at,updated_at,version",
   profiles:
-    "id,organization_id,display_name,role,is_active,theme_preference,version,created_at,updated_at",
+    "id,organization_id,display_name,role,is_active,theme_preference,can_reopen_completed_services,version,created_at,updated_at",
   organization_settings:
     "id,organization_id,settings,version,created_by,updated_by,created_at,updated_at",
   people:

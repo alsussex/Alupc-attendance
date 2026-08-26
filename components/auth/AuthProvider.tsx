@@ -161,6 +161,7 @@ async function readCachedProfile(userId: string, email: string) {
       email,
       displayName: profile.displayName,
       role: profile.role === "admin" ? "admin" : "attendance_taker",
+      canReopenCompletedServices: profile.canReopenCompletedServices === true,
     };
     writeCachedProfile(cached);
     return cached;
@@ -257,7 +258,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const supabase = getSupabaseClient();
       const { data, error: profileError } = await supabase
         .from("profiles")
-        .select("organization_id, display_name, role, is_active, theme_preference, version, created_at, updated_at")
+        .select("organization_id, display_name, role, is_active, theme_preference, can_reopen_completed_services, version, created_at, updated_at")
         .eq("id", authUser.id)
         .single();
 
@@ -323,6 +324,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: authUser.email ?? "",
         displayName: data.display_name ?? undefined,
         role: data.role === "admin" ? "admin" : "attendance_taker",
+        canReopenCompletedServices:
+          data.can_reopen_completed_services === true,
       };
       writeCachedProfile(nextUser);
       setUser((current) =>
@@ -331,6 +334,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         current.organizationId === nextUser.organizationId &&
         current.email === nextUser.email &&
         current.displayName === nextUser.displayName &&
+        current.canReopenCompletedServices === nextUser.canReopenCompletedServices &&
         current.role === nextUser.role
           ? current
           : nextUser,
@@ -354,6 +358,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               data.theme_preference === "dark"
                 ? data.theme_preference
                 : "system",
+            canReopenCompletedServices:
+              data.can_reopen_completed_services === true,
             version:
               typeof data.version === "number" ? data.version : undefined,
             createdAt: data.created_at,

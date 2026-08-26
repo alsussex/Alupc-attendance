@@ -131,6 +131,28 @@ describe("completed service data lock", () => {
     ).toMatchObject({ status: "completed" });
   });
 
+  it("allows only an explicitly permitted Attendance Taker to reopen", async () => {
+    const service = await saveService(admin, {
+      serviceDate: "2026-07-31",
+      serviceType: "Special Service",
+      status: "completed",
+    });
+    const permitted = { ...attendanceTaker, canReopenCompletedServices: true };
+    const reopened = await saveService(permitted, { ...service, status: "draft" });
+    expect(reopened.status).toBe("draft");
+    const secondService = await saveService(admin, {
+      serviceDate: "2026-08-01",
+      serviceType: "Special Service",
+      status: "completed",
+    });
+    await expect(
+      saveService({ ...attendanceTaker, canReopenCompletedServices: false }, {
+        ...secondService,
+        status: "draft",
+      }),
+    ).rejects.toThrow("Attendance Taker permission");
+  });
+
   it("honors the organization setting that disables Admin reopening", async () => {
     const { completed } = await completedServiceFixture();
     await (await getDatabase()).put("organizationSettings", {

@@ -17,3 +17,9 @@ export function canArchiveRecords(role: UserRole) {
 export function canAddMembers(role: UserRole) {
   return role === "admin" || role === "attendance_taker";
 }
+
+export function canReopenCompletedServices(
+  user: Pick<UserContext, "role" | "canReopenCompletedServices"> | null | undefined,
+) {
+  return user?.role === "admin" || user?.canReopenCompletedServices === true;
+}

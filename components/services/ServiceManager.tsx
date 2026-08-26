@@ -53,7 +53,7 @@ import {
   restoreMember,
 } from "@/lib/repositories/attendance-repository";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
-import { isAdmin } from "@/lib/auth/permissions";
+import { canReopenCompletedServices, isAdmin } from "@/lib/auth/permissions";
 import { serviceSaveFeedback } from "@/lib/services/save-feedback";
 import { getOrganizationSettings } from "@/lib/repositories/settings-repository";
 import {
@@ -489,7 +489,8 @@ export function ServiceManager() {
   async function setStatus(status: "draft" | "completed") {
     if (!user || !active || serviceAction) return;
     if (status === "draft" && active.status === "completed") {
-      if (!isAdmin(user) || !settings.allowAdminReopenCompleted) return;
+      if (!canReopenCompletedServices(user)) return;
+      if (isAdmin(user) && !settings.allowAdminReopenCompleted) return;
       if (
         !(await confirmAction({
           title: "Reopen this service?",
@@ -800,8 +801,8 @@ export function ServiceManager() {
             <div className="service-workflow-actions">
             <span className={`status-pill ${active.status}`}>{active.status}</span>
             {active.status === "completed" ? (
-              isAdmin(user) &&
-              settings.allowAdminReopenCompleted && (
+              canReopenCompletedServices(user) &&
+              (!isAdmin(user) || settings.allowAdminReopenCompleted) && (
                 <button
                   className="button secondary"
                   type="button"
@@ -926,7 +927,7 @@ export function ServiceManager() {
             <span className="status-pill completed">Completed</span>
             <span>
               This service is locked.
-              {isAdmin(user) && settings.allowAdminReopenCompleted
+              {canReopenCompletedServices(user) && (!isAdmin(user) || settings.allowAdminReopenCompleted)
                 ? " Reopen Service to make changes."
                 : " An administrator can reopen it if changes are needed."}
             </span>
@@ -1483,8 +1484,8 @@ export function ServiceManager() {
           <span>{presentCounts.total} present</span>
           <div>
             {active.status === "completed" ? (
-              isAdmin(user) &&
-              settings.allowAdminReopenCompleted && (
+              canReopenCompletedServices(user) &&
+              (!isAdmin(user) || settings.allowAdminReopenCompleted) && (
                 <button
                   className="button secondary"
                   type="button"
