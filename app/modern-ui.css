@@ -209,3 +209,143 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* Structural desktop/tablet reset. These selectors are intentionally scoped
+   to the new shell so legacy page-era rules cannot recreate the old layout. */
+@media (min-width: 901px) {
+  .app-shell-2026 { --sidebar-width: 286px; padding: 12px 12px 12px 0; }
+  .app-shell-2026.sidebar-collapsed { --sidebar-width: 92px; }
+  .app-shell-2026 .app-rail {
+    inset: 12px auto 12px 12px;
+    height: calc(100dvh - 24px);
+    width: calc(var(--sidebar-width) - 12px);
+    padding: 1.1rem .85rem;
+    border: 1px solid var(--ui-line);
+    border-radius: 24px;
+    background:
+      radial-gradient(circle at 15% 0%, rgb(59 111 232 / 12%), transparent 18rem),
+      var(--ui-surface);
+    box-shadow: var(--ui-shadow-md);
+  }
+  .app-shell-2026 .workspace-column {
+    margin-left: var(--sidebar-width);
+    min-width: 0;
+    overflow: clip;
+  }
+  .desktop-workspace-header {
+    height: 74px;
+    margin: 12px 12px 0;
+    padding: 0 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border: 1px solid var(--ui-line-soft);
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--ui-surface) 92%, transparent);
+    box-shadow: var(--ui-shadow-sm);
+    backdrop-filter: blur(18px);
+  }
+  .desktop-workspace-header > div:first-child { min-width: 0; display: grid; gap: .08rem; }
+  .desktop-workspace-header span { color: var(--ui-muted); font-size: .7rem; }
+  .desktop-workspace-header strong { font-size: 1rem; }
+  .desktop-workspace-actions { display: flex; align-items: center; gap: .75rem; }
+  .desktop-account-avatar { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 12px; background: var(--ui-accent); color: white !important; font-size: .72rem !important; font-weight: 800; }
+  .app-shell-2026 .workspace-frame { min-height: calc(100dvh - 98px); margin: 12px; border: 1px solid var(--ui-line-soft); border-radius: 24px; background: var(--ui-bg-raised); overflow: clip; }
+  .app-shell-2026 .page-content { padding: clamp(1.75rem, 3.5vw, 3.5rem); }
+}
+
+@media (max-width: 900px) {
+  .desktop-workspace-header { display: none; }
+}
+
+/* Major workspaces now use distinct compositions instead of the same panel
+   treatment repeated on every route. */
+.dashboard-home .dashboard-current-service {
+  background:
+    linear-gradient(135deg, rgb(59 111 232 / 16%), transparent 45%),
+    linear-gradient(160deg, var(--ui-surface), var(--ui-surface-2));
+}
+.dashboard-home .dashboard-recent-services { align-self: stretch; }
+.dashboard-home .dashboard-up-next { padding-inline: 1.2rem; }
+
+.services-page .service-directory-toolbar {
+  padding: .75rem;
+  border: 1px solid var(--ui-line);
+  border-radius: 16px;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+}
+.services-page .service-year-folder {
+  margin-bottom: .75rem;
+  border: 1px solid var(--ui-line);
+  border-radius: 16px;
+  background: var(--ui-surface);
+  overflow: hidden;
+}
+.services-page .service-year-folder > summary { padding: 1rem 1.15rem; background: var(--ui-surface-2); }
+.services-page .service-month-folder > summary { padding-block: .85rem; }
+.services-page .service-directory-row { padding-inline: .8rem; }
+
+.people-page .people-directory-workspace {
+  padding: .5rem 1rem 0;
+  border: 1px solid var(--ui-line);
+  border-radius: 18px;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+}
+.people-page .panel-toolbar { padding: .8rem 0 1rem; }
+.people-page .person-row { padding-inline: .4rem; }
+
+.attendance-page .attendance-service-header,
+.service-workspace .attendance-service-header {
+  padding: 1.1rem 1.2rem;
+  border: 1px solid var(--ui-line);
+  border-radius: 18px;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+}
+.attendance-page .attendance-people-workspace,
+.service-workspace .attendance-people-workspace {
+  padding: 0 1rem 1rem;
+  border: 1px solid var(--ui-line);
+  border-radius: 18px;
+  background: var(--ui-surface);
+}
+
+.reports-product-page .reports-navigation {
+  padding: .65rem;
+  position: sticky;
+  top: 1rem;
+}
+.reports-product-page .reports-content { min-width: 0; }
+.reports-product-page .report-section { padding: 1.25rem; border: 1px solid var(--ui-line); border-radius: 18px; background: var(--ui-surface); box-shadow: var(--ui-shadow-sm); }
+
+.settings-product-page .settings-navigation nav {
+  padding: .6rem;
+  border: 1px solid var(--ui-line);
+  border-radius: 16px;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-sm);
+}
+.settings-product-page .settings-navigation nav button { padding-inline: .8rem; }
+.settings-product-page .settings-content { max-width: none; }
+.settings-product-page .settings-section { padding: 1.25rem; border: 1px solid var(--ui-line); border-radius: 18px; background: var(--ui-surface); box-shadow: var(--ui-shadow-sm); }
+
+.users-product-page .users-directory { border: 1px solid var(--ui-line); border-radius: 18px; background: var(--ui-surface); overflow: hidden; box-shadow: var(--ui-shadow-sm); }
+.users-product-page .users-table-header, .users-product-page .user-row { padding-inline: 1rem; }
+.audit-product-page .audit-timeline { padding: .5rem 1rem; border: 1px solid var(--ui-line); border-radius: 18px; background: var(--ui-surface); box-shadow: var(--ui-shadow-sm); }
+
+@media (max-width: 900px) {
+  .services-page .service-directory-toolbar,
+  .people-page .people-directory-workspace,
+  .attendance-page .attendance-people-workspace,
+  .service-workspace .attendance-people-workspace,
+  .settings-product-page .settings-section,
+  .users-product-page .users-directory,
+  .audit-product-page .audit-timeline {
+    border-radius: 14px;
+    box-shadow: none;
+  }
+  .settings-product-page .settings-section { padding: 1rem; }
+}

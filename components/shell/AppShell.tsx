@@ -148,10 +148,12 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div
       className={
-        sidebarCollapsed ? "app-layout sidebar-collapsed" : "app-layout"
+        sidebarCollapsed
+          ? "app-layout app-shell-2026 sidebar-collapsed"
+          : "app-layout app-shell-2026"
       }
     >
-      <aside className="sidebar" aria-label="Application sidebar">
+      <aside className="sidebar app-rail" aria-label="Application sidebar">
         <div className="brand-block app-brand">
           <span className="brand-mark" aria-hidden="true">{shortName.slice(0, 2).toUpperCase()}</span>
           <div className="sidebar-label">
@@ -215,7 +217,20 @@ export function AppShell({ children }: { children: ReactNode }) {
           </button>
         </div>
       </aside>
-      <div className="content-column">
+      <div className="content-column workspace-column">
+        <header className="desktop-workspace-header">
+          <div>
+            <span>{churchName}</span>
+            <strong>{activeNavigation.label}</strong>
+          </div>
+          <div className="desktop-workspace-actions">
+            <SyncIndicator />
+            <ThemeSwitcher compact />
+            <span className="desktop-account-avatar" aria-hidden="true">
+              {accountInitials}
+            </span>
+          </div>
+        </header>
         <header className="topbar">
           <button
             ref={mobileMenuButtonRef}
