@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "church-attendance-shell-";
-const CACHE = `${CACHE_PREFIX}v6`;
+const CACHE = `${CACHE_PREFIX}v7`;
 const SHELL = [
   "/",
   "/login",
@@ -45,6 +45,9 @@ self.addEventListener("message", (event) => {
   if (event.data?.type === "CHECK_FOR_UPDATE") {
     void self.registration.update();
   }
+  if (event.data?.type === "SKIP_WAITING") {
+    void self.skipWaiting();
+  }
 });
 
 async function cacheResponse(request, response) {
@@ -84,8 +87,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  if (["script", "style"].includes(event.request.destination)) {
+    event.respondWith(networkFirst(event.request));
+    return;
+  }
+
   if (
-    ["script", "style", "font", "image"].includes(event.request.destination) ||
+    ["font", "image"].includes(event.request.destination) ||
     url.pathname === "/manifest.webmanifest"
   ) {
     event.respondWith(cacheFirst(event.request));

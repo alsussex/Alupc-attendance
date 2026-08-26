@@ -4,6 +4,10 @@ import { describe, expect, it } from "vitest";
 
 const environmentExample = readFileSync(resolve(".env.example"), "utf8");
 const serviceWorker = readFileSync(resolve("public/sw.js"), "utf8");
+const serviceWorkerRegistration = readFileSync(
+  resolve("components/pwa/ServiceWorkerRegistration.tsx"),
+  "utf8",
+);
 const rootLayout = readFileSync(resolve("app/layout.tsx"), "utf8");
 const developmentSeed = readFileSync(
   resolve("lib/seed/development-seed.ts"),
@@ -52,6 +56,16 @@ describe("production deployment safeguards", () => {
   it("expires old application-shell caches without deleting IndexedDB", () => {
     expect(serviceWorker).toContain("key.startsWith(CACHE_PREFIX)");
     expect(serviceWorker).not.toContain("indexedDB.deleteDatabase");
+  });
+
+  it("activates fresh UI assets and reloads an installed PWA once", () => {
+    expect(serviceWorker).toContain('`${CACHE_PREFIX}v7`');
+    expect(serviceWorker).toContain('["script", "style"]');
+    expect(serviceWorker).toContain("networkFirst(event.request)");
+    expect(serviceWorker).toContain('event.data?.type === "SKIP_WAITING"');
+    expect(serviceWorkerRegistration).toContain('"controllerchange"');
+    expect(serviceWorkerRegistration).toContain("window.location.reload()");
+    expect(serviceWorkerRegistration).toContain('type: "SKIP_WAITING"');
   });
 
   it("provides ALUPC install branding and standard plus maskable icons", async () => {
