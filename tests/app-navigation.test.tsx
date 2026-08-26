@@ -68,29 +68,31 @@ describe("application navigation", () => {
     document.body.style.overflow = "";
   });
 
-  it("expands and collapses the desktop sidebar and saves the preference", () => {
+  it("opens and closes the desktop workspace drawer and saves the preference", () => {
     const { container } = render(<AppShell><p>Page</p></AppShell>);
-
-    expect(container.querySelector(".app-layout")).not.toHaveClass(
-      "sidebar-collapsed",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
 
     expect(container.querySelector(".app-layout")).toHaveClass(
       "sidebar-collapsed",
     );
-    expect(getSidebarCollapsedPreference()).toBe(true);
-    expect(
-      within(screen.getByLabelText("Application sidebar")).getByRole("link", {
-        name: "People",
-      }),
-    ).toHaveAttribute("title", "People");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open workspace navigation" }),
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
     expect(container.querySelector(".app-layout")).not.toHaveClass(
       "sidebar-collapsed",
     );
     expect(getSidebarCollapsedPreference()).toBe(false);
+    expect(
+      within(screen.getByLabelText("Application sidebar")).getByRole("link", {
+        name: "People",
+      }),
+    ).not.toHaveAttribute("title");
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    expect(container.querySelector(".app-layout")).toHaveClass(
+      "sidebar-collapsed",
+    );
+    expect(getSidebarCollapsedPreference()).toBe(true);
   });
 
   it("restores a saved collapsed preference with labels and tooltips intact", async () => {

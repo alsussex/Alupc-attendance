@@ -190,6 +190,65 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
   .settings-content { max-width: none; }
 }
 
+/* V2 workspace architecture: horizontal desktop navigation with an optional
+   account/settings drawer. This deliberately replaces the former permanent
+   left-sidebar dashboard composition. */
+@media (min-width: 901px) {
+  .app-shell-2026,
+  .app-shell-2026.sidebar-collapsed { --sidebar-width: 0px; padding: 0; }
+  .app-shell-2026 .workspace-column,
+  .app-shell-2026.sidebar-collapsed .workspace-column { margin-left: 0; }
+  .app-shell-2026 .app-rail {
+    inset: 12px auto 12px 12px;
+    z-index: 80;
+    width: min(320px, calc(100vw - 24px));
+    height: calc(100dvh - 24px);
+    transform: translateX(0);
+    transition: transform .22s ease, opacity .22s ease;
+  }
+  .app-shell-2026.sidebar-collapsed .app-rail {
+    display: flex;
+    transform: translateX(calc(-100% - 24px));
+    opacity: 0;
+    pointer-events: none;
+  }
+  .app-shell-2026 .desktop-workspace-header {
+    height: 72px;
+    position: sticky;
+    top: 12px;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: minmax(220px, .8fr) auto minmax(220px, .8fr);
+  }
+  .desktop-header-brand { min-width: 0; display: flex !important; align-items: center; gap: .65rem !important; }
+  .desktop-header-brand > span:last-child { min-width: 0; display: grid; gap: .05rem; }
+  .desktop-header-brand strong, .desktop-header-brand small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .desktop-header-brand strong { font-size: .82rem; }
+  .desktop-header-brand small { color: var(--ui-muted); font-size: .64rem; }
+  .desktop-header-brand .brand-mark { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 10px; font-size: .66rem; }
+  .desktop-rail-toggle { width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border: 1px solid var(--ui-line); border-radius: 11px; background: var(--ui-surface-2); color: var(--ui-ink); cursor: pointer; }
+  .desktop-rail-toggle svg { width: 19px; height: 19px; }
+  .desktop-top-navigation { display: flex; align-items: center; gap: .2rem; padding: .25rem; border: 1px solid var(--ui-line-soft); border-radius: 13px; background: var(--ui-surface-2); }
+  .desktop-top-navigation a { min-height: 38px; padding: 0 .85rem; display: flex; align-items: center; border-radius: 9px; color: var(--ui-muted); text-decoration: none; font-size: .75rem; font-weight: 740; }
+  .desktop-top-navigation a:hover { color: var(--ui-ink); }
+  .desktop-top-navigation a.active { background: var(--ui-surface); color: var(--ui-accent); box-shadow: var(--ui-shadow-sm); }
+  .desktop-workspace-actions { justify-content: flex-end; }
+  .app-shell-2026 .workspace-frame { min-height: calc(100dvh - 108px); margin-top: 22px; }
+
+  .dashboard-home .dashboard-home-layout { grid-template-columns: 1fr; }
+  .dashboard-home .dashboard-current-service { min-height: 0; }
+  .dashboard-home .dashboard-recent-services { padding: 1rem 1.25rem; }
+  .dashboard-home .dashboard-recent-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dashboard-home .dashboard-recent-list > * { padding: 1rem; border-bottom: 0; border-right: 1px solid var(--ui-line-soft); }
+  .dashboard-home .dashboard-recent-list > *:last-child { border-right: 0; }
+}
+
+@media (min-width: 901px) and (max-width: 1120px) {
+  .app-shell-2026 .desktop-workspace-header { grid-template-columns: minmax(180px, .7fr) auto minmax(150px, .7fr); }
+  .desktop-top-navigation a { padding-inline: .55rem; }
+  .desktop-workspace-actions .theme-switcher { display: none; }
+}
+
 @media (max-width: 560px) {
   .page-content { padding: 1rem .85rem 1.5rem; }
   .page-heading h1, .reports-page-header h1 { font-size: 1.85rem; }
@@ -348,4 +407,39 @@ input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-
     box-shadow: none;
   }
   .settings-product-page .settings-section { padding: 1rem; }
+}
+
+/* Final desktop architecture: top navigation is authoritative. */
+@media (min-width: 901px) {
+  .app-shell-2026,
+  .app-shell-2026.sidebar-collapsed { --sidebar-width: 0px; padding: 0; }
+  .app-shell-2026 .workspace-column,
+  .app-shell-2026.sidebar-collapsed .workspace-column { margin-left: 0; }
+  .app-shell-2026 .app-rail {
+    inset: 12px auto 12px 12px;
+    z-index: 80;
+    width: min(320px, calc(100vw - 24px));
+    height: calc(100dvh - 24px);
+    transform: translateX(0);
+  }
+  .app-shell-2026.sidebar-collapsed .app-rail {
+    display: flex;
+    transform: translateX(calc(-100% - 24px));
+    opacity: 0;
+    pointer-events: none;
+  }
+  .app-shell-2026 .desktop-workspace-header {
+    height: 72px;
+    position: sticky;
+    top: 12px;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: minmax(220px, .8fr) auto minmax(220px, .8fr);
+  }
+  .app-shell-2026 .workspace-frame { min-height: calc(100dvh - 108px); margin-top: 22px; }
+  .dashboard-home .dashboard-home-layout { grid-template-columns: 1fr; }
+  .dashboard-home .dashboard-current-service { min-height: 0; }
+  .dashboard-home .dashboard-recent-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .dashboard-home .dashboard-recent-list > * { padding: 1rem; border-bottom: 0; border-right: 1px solid var(--ui-line-soft); }
+  .dashboard-home .dashboard-recent-list > *:last-child { border-right: 0; }
 }

@@ -1,13 +1,13 @@
 export const SIDEBAR_PREFERENCE_KEY =
-  "church-attendance:sidebar-collapsed";
+  "church-attendance:workspace-drawer-collapsed-v2";
 const SIDEBAR_PREFERENCE_EVENT = "church-attendance:sidebar-preference";
-let inMemoryPreference = false;
+let inMemoryPreference = true;
 
 export function getSidebarCollapsedPreference() {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined") return true;
   try {
     const stored = window.localStorage.getItem(SIDEBAR_PREFERENCE_KEY);
-    inMemoryPreference = stored === "true";
+    inMemoryPreference = stored === null ? true : stored === "true";
     return inMemoryPreference;
   } catch {
     return inMemoryPreference;

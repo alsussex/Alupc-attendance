@@ -219,10 +219,38 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
       <div className="content-column workspace-column">
         <header className="desktop-workspace-header">
-          <div>
-            <span>{churchName}</span>
-            <strong>{activeNavigation.label}</strong>
+          <div className="desktop-header-brand">
+            <button
+              className="desktop-rail-toggle"
+              type="button"
+              onClick={toggleSidebar}
+              aria-label={sidebarCollapsed ? "Open workspace navigation" : "Close workspace navigation"}
+            >
+              <Menu aria-hidden="true" />
+            </button>
+            <span className="brand-mark" aria-hidden="true">
+              {shortName.slice(0, 2).toUpperCase()}
+            </span>
+            <span>
+              <strong>{churchName}</strong>
+              <small>{activeNavigation.label}</small>
+            </span>
           </div>
+          <nav className="desktop-top-navigation" aria-label="Workspace navigation">
+            {visibleNavigation.map((item) => {
+              const active = pathname.startsWith(item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={active ? "active" : ""}
+                  aria-current={active ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
           <div className="desktop-workspace-actions">
             <SyncIndicator />
             <ThemeSwitcher compact />
