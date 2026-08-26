@@ -1059,11 +1059,11 @@
    organization status stays grouped while section links read as a simple
    navigation list instead of a stack of oversized panels. */
 .settings-overview-hero {
-  padding: clamp(1rem, 3vw, 1.35rem);
-  border: 1px solid var(--product-border);
-  border-radius: var(--product-radius-surface);
-  background: var(--product-panel-soft);
-  box-shadow: var(--shadow-subtle);
+  padding: clamp(1rem, 3vw, 1.35rem) !important;
+  border: 1px solid var(--product-border) !important;
+  border-radius: var(--product-radius-surface) !important;
+  background: var(--product-panel-soft) !important;
+  box-shadow: var(--shadow-subtle) !important;
 }
 
 .settings-overview-hero h2 {
@@ -1082,11 +1082,11 @@
 }
 
 .settings-quick-links {
-  margin-top: .35rem;
+  margin-top: .35rem !important;
   overflow: hidden;
-  border: 1px solid var(--product-border);
-  border-radius: var(--product-radius-surface);
-  background: var(--product-panel-soft);
+  border: 1px solid var(--product-border) !important;
+  border-radius: var(--product-radius-surface) !important;
+  background: var(--product-panel-soft) !important;
 }
 
 .settings-quick-links button {
