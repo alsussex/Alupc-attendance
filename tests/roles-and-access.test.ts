@@ -79,6 +79,20 @@ describe("role permissions", () => {
     expect(usersRoute).toContain('action === "permission"');
     expect(usersRoute).toContain("can_reopen_completed_services");
   });
+
+  it("allows only permitted Attendance Takers to append reopen audit history", () => {
+    const migration = readFileSync(
+      resolve("supabase/migrations/202608260002_fix_attendance_taker_reopen_audit.sql"),
+      "utf8",
+    );
+    expect(migration).toContain(
+      "action in ('created', 'edited', 'completed', 'reopened')",
+    );
+    expect(migration).toContain(
+      "not coalesce(actor.can_reopen_completed_services, false)",
+    );
+    expect(migration).toContain("errcode = '42501'");
+  });
   it("allows attendance takers to add and edit members", async () => {
     const member = await saveMember(attendanceTaker, {
       firstName: "Avery",
