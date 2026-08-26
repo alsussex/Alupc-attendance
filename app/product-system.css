@@ -1055,6 +1055,67 @@
   .modal-actions .button.danger { margin-left: 0; }
 }
 
+/* Settings overview: compact, touch-friendly mobile composition.  The
+   organization status stays grouped while section links read as a simple
+   navigation list instead of a stack of oversized panels. */
+.settings-overview-hero {
+  padding: clamp(1rem, 3vw, 1.35rem);
+  border: 1px solid var(--product-border);
+  border-radius: var(--product-radius-surface);
+  background: var(--product-panel-soft);
+  box-shadow: var(--shadow-subtle);
+}
+
+.settings-overview-hero h2 {
+  margin-top: .15rem;
+  font-size: clamp(1.45rem, 4vw, 2.1rem);
+}
+
+.settings-status-row {
+  margin-top: 1rem;
+  gap: .45rem;
+}
+
+.settings-status-row span {
+  padding: .32rem .58rem;
+  font-size: .68rem;
+}
+
+.settings-quick-links {
+  margin-top: .35rem;
+  overflow: hidden;
+  border: 1px solid var(--product-border);
+  border-radius: var(--product-radius-surface);
+  background: var(--product-panel-soft);
+}
+
+.settings-quick-links button {
+  min-height: 64px;
+  padding: .75rem 1rem;
+  position: relative;
+}
+
+.settings-quick-links button::after {
+  content: "›";
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+@media (max-width: 560px) {
+  .settings-overview-hero { padding: 1rem; }
+  .settings-quick-links button {
+    min-height: 62px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: .75rem;
+  }
+  .settings-quick-links button span { grid-column: 1; }
+  .settings-quick-links button::after { grid-column: 2; grid-row: 1 / span 2; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .product-page *,
   .product-page *::before,
