@@ -24,7 +24,7 @@ const COLUMNS = {
   service_attendance:
     "id,organization_id,service_id,person_id,present,version,created_by,updated_by,created_at,updated_at",
   service_visitors:
-    "id,organization_id,service_id,first_name,last_name,display_name,saved_as_member,member_person_id,notes,deleted_at,version,created_by,updated_by,created_at,updated_at",
+    "id,organization_id,service_id,visitor_person_id,first_name,last_name,display_name,saved_as_member,member_person_id,notes,deleted_at,version,created_by,updated_by,created_at,updated_at",
 } as const;
 
 export interface AttendanceExportCloudSnapshot {

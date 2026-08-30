@@ -202,6 +202,7 @@ export async function buildOrganizationExport(
     [
       "ID",
       "Service ID",
+      "Returning visitor ID",
       "First name",
       "Last name",
       "Notes",
@@ -220,6 +221,7 @@ export async function buildOrganizationExport(
         return [
           visitor.id,
           visitor.serviceId,
+          visitor.visitorPersonId,
           visitor.firstName,
           visitor.lastName,
           visitor.notes,

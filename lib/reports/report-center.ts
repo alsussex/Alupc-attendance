@@ -202,13 +202,6 @@ export function memberAttendanceReport(
   };
 }
 
-function normalizedVisitorName(visitor: ServiceVisitor) {
-  return `${visitor.firstName} ${visitor.lastName}`
-    .trim()
-    .replace(/\s+/g, " ")
-    .toLocaleLowerCase();
-}
-
 export function visitorReportRows(
   dataset: ReportsDataset,
   startDate?: string,
@@ -225,7 +218,9 @@ export function visitorReportRows(
     if (visitor.deletedAt || visitor.savedAsMember) continue;
     const service = serviceById.get(visitor.serviceId);
     if (!service) continue;
-    const key = visitor.memberPersonId || normalizedVisitorName(visitor);
+    const key = visitor.visitorPersonId
+      ? `visitor:${visitor.visitorPersonId}`
+      : `visit:${visitor.id}`;
     const name = visitor.displayName.trim() || visitor.firstName.trim();
     const existing = groups.get(key);
     if (!existing) {

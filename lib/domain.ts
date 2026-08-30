@@ -97,6 +97,7 @@ export interface AttendanceRecord extends AuditedRecord {
 
 export interface ServiceVisitor extends AuditedRecord {
   serviceId: string;
+  visitorPersonId?: string;
   firstName: string;
   lastName: string;
   displayName: string;

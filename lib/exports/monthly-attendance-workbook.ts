@@ -162,6 +162,52 @@ function displayName(person: Pick<Person | ServiceVisitor, "firstName" | "lastNa
     : person.firstName;
 }
 
+export interface AttendanceWorkbookVisitor {
+  id: string;
+  firstName: string;
+  lastName: string;
+  serviceIds: Set<string>;
+}
+
+/**
+ * A permanent visitor identity produces one workbook row with a checkmark for
+ * every linked service. Legacy/unlinked visit rows deliberately remain
+ * separate so two people are never merged merely because their names match.
+ */
+export function attendanceWorkbookVisitors(
+  visitors: ServiceVisitor[],
+): AttendanceWorkbookVisitor[] {
+  const rows = new Map<string, AttendanceWorkbookVisitor>();
+  for (const visitor of visitors) {
+    if (visitor.deletedAt || visitor.savedAsMember) continue;
+    const key = visitor.visitorPersonId
+      ? `visitor:${visitor.visitorPersonId}`
+      : `visit:${visitor.id}`;
+    const existing = rows.get(key);
+    if (existing) {
+      existing.serviceIds.add(visitor.serviceId);
+      continue;
+    }
+    rows.set(key, {
+      id: visitor.visitorPersonId ?? visitor.id,
+      firstName: visitor.firstName,
+      lastName: visitor.lastName,
+      serviceIds: new Set([visitor.serviceId]),
+    });
+  }
+  return [...rows.values()].sort((left, right) => {
+    const collator = new Intl.Collator(undefined, { sensitivity: "base" });
+    return (
+      collator.compare(
+        left.lastName || left.firstName,
+        right.lastName || right.firstName,
+      ) ||
+      collator.compare(left.firstName, right.firstName) ||
+      left.id.localeCompare(right.id)
+    );
+  });
+}
+
 function servicePeriod(service: ChurchService) {
   if (service.serviceTime) {
     return Number(service.serviceTime.slice(0, 2)) < 12 ? "AM" : "PM";
@@ -358,12 +404,13 @@ function contentTypesXml() {
 export function monthlyWorkbookLayout(
   dataset: MonthlyAttendanceDataset,
 ): MonthlyWorkbookLayout {
+  const visitorRows = attendanceWorkbookVisitors(dataset.visitors);
   const memberStartRow = 3;
   const memberEndRow = memberStartRow + dataset.members.length - 1;
   const separatorRow = memberEndRow + 1;
   const visitorHeaderRow = separatorRow + 1;
   const visitorStartRow = visitorHeaderRow + 1;
-  const visitorEndRow = visitorStartRow + dataset.visitors.length - 1;
+  const visitorEndRow = visitorStartRow + visitorRows.length - 1;
   const unnamedVisitorsRow = visitorEndRow + 1;
   const sundaySchoolKidsRow = unnamedVisitorsRow + 1;
   const totalAttendanceRow = sundaySchoolKidsRow + 1;
@@ -404,6 +451,7 @@ export function buildMonthlyAttendanceWorkbook(
   }
   const serviceColumns = attendanceServiceColumns(dataset);
   const services = serviceColumns.map((column) => column.service);
+  const visitorRows = attendanceWorkbookVisitors(dataset.visitors);
   const layout = monthlyWorkbookLayout(dataset);
   const columnCount = services.length + 1;
   const blankRow = (style: number) =>
@@ -463,13 +511,13 @@ export function buildMonthlyAttendanceWorkbook(
       22,
     ),
   );
-  for (const [visitorIndex, visitor] of dataset.visitors.entries()) {
+  for (const [visitorIndex, visitor] of visitorRows.entries()) {
     rows.push(
       rowXml(layout.visitorStartRow + visitorIndex, [
         { style: 3, value: displayName(visitor) },
         ...services.map((service) => ({
           style: 4,
-          value: visitor.serviceId === service.id ? CHECKMARK : undefined,
+          value: visitor.serviceIds.has(service.id) ? CHECKMARK : undefined,
         })),
       ]),
     );

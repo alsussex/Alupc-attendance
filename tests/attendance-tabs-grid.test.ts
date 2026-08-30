@@ -146,6 +146,17 @@ describe("responsive attendance cards", () => {
     expect(source).toContain("aria-label={`Remove ${visitor.displayName}`}");
   });
 
+  it("matches a typed returning visitor without replacing the name fields with a picker", () => {
+    expect(source).toContain("findReturningVisitorMatches(");
+    expect(source).toContain("Returning visitor found");
+    expect(source).toContain("previous visit");
+    expect(source).toContain("Add returning visit");
+    expect(source).toContain("This is someone else");
+    expect(source).toContain("More than one returning visitor has this name.");
+    expect(source).toContain("The app will never merge people by name alone.");
+    expect(source).toContain("returningVisitorPersonId: selectedMatch?.visitorPersonId");
+  });
+
   it("filters a 250-member grid without duplicates or blank placeholders", () => {
     const members: Person[] = Array.from({ length: 250 }, (_, index) => ({
       id: `member-${index}`,

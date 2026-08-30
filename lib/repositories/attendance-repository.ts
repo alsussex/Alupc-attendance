@@ -61,10 +61,175 @@ function serviceCloudRecord(service: ChurchService) {
 function visitorCloudRecord(visitor: ServiceVisitor) {
   return {
     ...toCloudRecord(visitor),
+    visitor_person_id: visitor.visitorPersonId ?? null,
     member_person_id: visitor.memberPersonId ?? null,
     notes: visitor.notes ?? null,
     deleted_at: visitor.deletedAt ?? null,
   };
+}
+
+export interface ReturningVisitorMatch {
+  key: string;
+  visitorPersonId?: string;
+  displayName: string;
+  visitCount: number;
+  lastVisitDate?: string;
+  legacyVisitorIds: string[];
+}
+
+export async function findReturningVisitorMatches(
+  organizationId: string,
+  displayName: string,
+): Promise<ReturningVisitorMatch[]> {
+  const normalized = normalizeName(displayName);
+  if (!normalized) return [];
+  const database = await getDatabase();
+  const [people, visits, services] = await Promise.all([
+    database.getAllFromIndex("people", "organizationId", organizationId),
+    database.getAllFromIndex("visitors", "organizationId", organizationId),
+    database.getAllFromIndex("services", "organizationId", organizationId),
+  ]);
+  const serviceDates = new Map(
+    services
+      .filter((service) => !service.deletedAt)
+      .map((service) => [service.id, service.serviceDate]),
+  );
+  const usableVisits = visits.filter(
+    (visit) =>
+      visit.organizationId === organizationId &&
+      !visit.deletedAt &&
+      !visit.savedAsMember &&
+      serviceDates.has(visit.serviceId),
+  );
+  const convertedIds = new Set(
+    visits
+      .filter((visit) => visit.savedAsMember && visit.visitorPersonId)
+      .map((visit) => visit.visitorPersonId!),
+  );
+  const profiles = people.filter(
+    (person) =>
+      person.organizationId === organizationId &&
+      person.personType === "visitor" &&
+      person.isActive &&
+      !person.deletedAt &&
+      !person.mergedIntoId &&
+      !convertedIds.has(person.id) &&
+      normalizeName(person.displayName) === normalized,
+  );
+  const legacy = usableVisits.filter(
+    (visit) =>
+      !visit.visitorPersonId && normalizeName(visit.displayName) === normalized,
+  );
+  const match = (
+    person: Person | undefined,
+    matchingVisits: ServiceVisitor[],
+    legacyVisitorIds: string[],
+  ): ReturningVisitorMatch => {
+    const dates = matchingVisits
+      .map((visit) => serviceDates.get(visit.serviceId))
+      .filter((date): date is string => Boolean(date))
+      .sort();
+    return {
+      key: person ? `visitor:${person.id}` : `legacy:${normalized}`,
+      visitorPersonId: person?.id,
+      displayName:
+        person?.displayName ??
+        matchingVisits[0]?.displayName ??
+        displayName.trim(),
+      visitCount: matchingVisits.length,
+      lastVisitDate: dates.at(-1),
+      legacyVisitorIds,
+    };
+  };
+  if (profiles.length === 1) {
+    const profile = profiles[0];
+    const linked = usableVisits.filter(
+      (visit) => visit.visitorPersonId === profile.id,
+    );
+    return [
+      match(
+        profile,
+        [...linked, ...legacy],
+        legacy.map((visit) => visit.id),
+      ),
+    ];
+  }
+  const results = profiles.map((profile) =>
+    match(
+      profile,
+      usableVisits.filter((visit) => visit.visitorPersonId === profile.id),
+      [],
+    ),
+  );
+  if (legacy.length > 0) {
+    results.push(match(undefined, legacy, legacy.map((visit) => visit.id)));
+  }
+  return results;
+}
+
+async function createVisitorProfile(
+  user: UserContext,
+  firstName: string,
+  lastName: string,
+) {
+  const timestamp = nowIso();
+  const profile: Person = {
+    id: createId(),
+    organizationId: user.organizationId,
+    firstName,
+    lastName,
+    displayName: makeDisplayName(firstName, lastName),
+    personType: "visitor",
+    isActive: true,
+    duplicateNameAllowed: true,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    createdBy: user.userId,
+    updatedBy: user.userId,
+  };
+  const database = await getDatabase();
+  await database.put("people", profile);
+  await enqueueChange({
+    organizationId: user.organizationId,
+    table: "people",
+    recordId: profile.id,
+    payload: toCloudRecord(profile),
+  });
+  return profile;
+}
+
+async function linkLegacyVisitorHistory(
+  user: UserContext,
+  visitorPersonId: string,
+  visitorIds: string[],
+) {
+  const database = await getDatabase();
+  for (const id of [...new Set(visitorIds)]) {
+    const existing = await database.get("visitors", id);
+    if (
+      !existing ||
+      existing.organizationId !== user.organizationId ||
+      existing.deletedAt ||
+      existing.savedAsMember ||
+      existing.visitorPersonId
+    ) {
+      continue;
+    }
+    const updated: ServiceVisitor = {
+      ...existing,
+      visitorPersonId,
+      updatedAt: nowIso(),
+      updatedBy: user.userId,
+    };
+    await database.put("visitors", updated);
+    await enqueueChange({
+      organizationId: user.organizationId,
+      table: "service_visitors",
+      recordId: updated.id,
+      payload: visitorCloudRecord(updated),
+      basePayload: visitorCloudRecord(existing),
+    });
+  }
 }
 
 async function requireEditableService(
@@ -1243,6 +1408,8 @@ export async function addServiceVisitor(
     saveAsMember: boolean;
     notes?: string;
     fallbackName?: string;
+    returningVisitorPersonId?: string;
+    legacyVisitorIds?: string[];
   },
 ) {
   const database = await getDatabase();
@@ -1254,10 +1421,36 @@ export async function addServiceVisitor(
     throw new Error("A visitor first name is required.");
   }
   let member: Person | undefined;
+  let visitorProfile: Person | undefined;
   if (input.saveAsMember) {
     member = await saveMember(user, { firstName, lastName });
     await runWithoutUndoCapture(() =>
       setMemberAttendance(user, serviceId, member!.id, true),
+    );
+  } else if (input.returningVisitorPersonId) {
+    const existingProfile = await database.get(
+      "people",
+      input.returningVisitorPersonId,
+    );
+    if (
+      !existingProfile ||
+      existingProfile.organizationId !== user.organizationId ||
+      existingProfile.personType !== "visitor" ||
+      !existingProfile.isActive ||
+      existingProfile.deletedAt ||
+      existingProfile.mergedIntoId
+    ) {
+      throw new Error("The returning visitor profile is no longer available.");
+    }
+    visitorProfile = existingProfile;
+  } else {
+    visitorProfile = await createVisitorProfile(user, firstName, lastName);
+  }
+  if (visitorProfile && input.legacyVisitorIds?.length) {
+    await linkLegacyVisitorHistory(
+      user,
+      visitorProfile.id,
+      input.legacyVisitorIds,
     );
   }
 
@@ -1265,6 +1458,7 @@ export async function addServiceVisitor(
     id: createId(),
     organizationId: user.organizationId,
     serviceId,
+    visitorPersonId: visitorProfile?.id,
     firstName,
     lastName,
     displayName: makeDisplayName(firstName, lastName),
@@ -1289,6 +1483,7 @@ export async function addServiceVisitor(
     action: "added",
     details: {
       serviceId,
+      visitorPersonId: visitor.visitorPersonId,
       name: visitor.displayName,
       notes: visitor.notes,
       ...undoAuditDetails(),

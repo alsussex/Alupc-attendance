@@ -139,6 +139,7 @@ function visitor(
   serviceId: string,
   firstName: string,
   lastName = "",
+  overrides: Partial<ServiceVisitor> = {},
 ): ServiceVisitor {
   return {
     id,
@@ -152,6 +153,7 @@ function visitor(
     updatedBy: user.userId,
     createdAt,
     updatedAt: createdAt,
+    ...overrides,
   };
 }
 
@@ -406,6 +408,32 @@ describe("monthly attendance workbook", () => {
     expect(cellText(output.sheet, `A${layout.visitorStartRow + 2}`)).toBe(
       "Smith, Alex",
     );
+  });
+
+  it("places repeat visits for one stable visitor identity on a single row", () => {
+    const data = dataset({
+      services: [
+        service("service-one", "2026-08-02"),
+        service("service-two", "2026-08-09"),
+      ],
+      visitors: [
+        visitor("visit-one", "service-one", "Becca", "Liza", {
+          visitorPersonId: "returning-becca",
+        }),
+        visitor("visit-two", "service-two", "Becca", "Liza", {
+          visitorPersonId: "returning-becca",
+        }),
+      ],
+    });
+    const layout = monthlyWorkbookLayout(data);
+    const output = workbookXml(data);
+
+    expect(layout.visitorEndRow).toBe(layout.visitorStartRow);
+    expect(cellText(output.sheet, `A${layout.visitorStartRow}`)).toBe(
+      "Liza, Becca",
+    );
+    expect(cellText(output.sheet, `B${layout.visitorStartRow}`)).toBe("✓");
+    expect(cellText(output.sheet, `C${layout.visitorStartRow}`)).toBe("✓");
   });
 
   it("includes the separator, visitor counts, kids, and formula-backed total", () => {

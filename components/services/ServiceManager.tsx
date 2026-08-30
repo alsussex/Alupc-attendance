@@ -37,6 +37,7 @@ import {
   duplicateService,
   editServiceVisitor,
   findExactMemberMatches,
+  findReturningVisitorMatches,
   findMatchingServiceSetup,
   getLastAttendanceDates,
   getOrganizationService,
@@ -51,6 +52,7 @@ import {
   setServiceArchived,
   setMemberAttendance,
   restoreMember,
+  type ReturningVisitorMatch,
 } from "@/lib/repositories/attendance-repository";
 import { subscribeToDataChanges } from "@/lib/storage/data-events";
 import { canReopenCompletedServices, isAdmin } from "@/lib/auth/permissions";
@@ -1593,6 +1595,7 @@ export function ServiceManager() {
         {visitorOpen && !serviceLocked && (
           <VisitorModal
             settings={settings}
+            organizationId={active.organizationId}
             onClose={() => setVisitorOpen(false)}
             onSave={async (input) => {
               if (!user) return;
@@ -1617,6 +1620,7 @@ export function ServiceManager() {
         {editingVisitor && !serviceLocked && (
           <VisitorModal
             settings={settings}
+            organizationId={active.organizationId}
             existing={editingVisitor}
             onClose={() => setEditingVisitor(null)}
             onSave={async (input) => {
@@ -2755,6 +2759,7 @@ function VisitorModal({
   onSave,
   existing,
   settings,
+  organizationId,
 }: {
   onClose: () => void;
   onSave: (input: {
@@ -2763,9 +2768,12 @@ function VisitorModal({
     saveAsMember: boolean;
     notes?: string;
     fallbackName?: string;
-  }) => void;
+    returningVisitorPersonId?: string;
+    legacyVisitorIds?: string[];
+  }) => Promise<void>;
   existing?: ServiceVisitor;
   settings: ApplicationSettings;
+  organizationId: string;
 }) {
   const [firstName, setFirstName] = useState(existing?.firstName ?? "");
   const [lastName, setLastName] = useState(existing?.lastName ?? "");
@@ -2773,15 +2781,61 @@ function VisitorModal({
     existing?.savedAsMember ?? false,
   );
   const [notes, setNotes] = useState(existing?.notes ?? "");
-  function submit(event: FormEvent) {
+  const [matches, setMatches] = useState<ReturningVisitorMatch[]>([]);
+  const [selectedMatchKey, setSelectedMatchKey] = useState("");
+  const [differentPerson, setDifferentPerson] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    const timeout = window.setTimeout(() => {
+      if (existing || saveAsMember || !firstName.trim()) {
+        setMatches([]);
+        setSelectedMatchKey("");
+        return;
+      }
+      void findReturningVisitorMatches(
+        organizationId,
+        `${firstName} ${lastName}`,
+      ).then((nextMatches) => {
+        if (cancelled) return;
+        setMatches(nextMatches);
+        setSelectedMatchKey(nextMatches.length === 1 ? nextMatches[0].key : "");
+        setDifferentPerson(false);
+      });
+    }, existing || saveAsMember || !firstName.trim() ? 0 : 150);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [existing, firstName, lastName, organizationId, saveAsMember]);
+
+  async function submit(event: FormEvent) {
     event.preventDefault();
-    onSave({
-      firstName,
-      lastName,
-      saveAsMember,
-      notes,
-      fallbackName: settings.visitorLabel,
-    });
+    if (saving) return;
+    if (matches.length > 1 && !differentPerson && !selectedMatchKey) {
+      setError("Choose the matching returning visitor or indicate that this is someone else.");
+      return;
+    }
+    const selectedMatch = differentPerson
+      ? undefined
+      : matches.find((match) => match.key === selectedMatchKey);
+    setSaving(true);
+    setError("");
+    try {
+      await onSave({
+        firstName,
+        lastName,
+        saveAsMember,
+        notes,
+        fallbackName: settings.visitorLabel,
+        returningVisitorPersonId: selectedMatch?.visitorPersonId,
+        legacyVisitorIds: selectedMatch?.legacyVisitorIds,
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The visitor could not be added.");
+      setSaving(false);
+    }
   }
   return (
     <div className="modal-backdrop">
@@ -2792,6 +2846,87 @@ function VisitorModal({
             <label>First name<input autoFocus value={firstName} onChange={(event) => setFirstName(event.target.value)} required /></label>
             <label>Last name <span className="optional">(optional)</span><input value={lastName} onChange={(event) => setLastName(event.target.value)} /></label>
           </div>
+          {!existing && !saveAsMember && matches.length === 1 && !differentPerson && (
+            <div className="notice success duplicate-member-warning" role="status">
+              <strong>Returning visitor found</strong>
+              <span>
+                {matches[0].displayName} · {matches[0].visitCount}{" "}
+                {matches[0].visitCount === 1 ? "previous visit" : "previous visits"}
+                {matches[0].lastVisitDate
+                  ? ` · Last attended ${formatChurchDate(matches[0].lastVisitDate, settings)}`
+                  : ""}
+              </span>
+              <div>
+                <button
+                  className="button subtle"
+                  type="button"
+                  disabled={saving}
+                  onClick={() => {
+                    setDifferentPerson(true);
+                    setSelectedMatchKey("");
+                  }}
+                >
+                  This is someone else
+                </button>
+              </div>
+            </div>
+          )}
+          {!existing && !saveAsMember && matches.length > 1 && !differentPerson && (
+            <div className="notice warning duplicate-member-warning" role="alert">
+              <strong>More than one returning visitor has this name.</strong>
+              <span>Choose the correct person. The app will never merge people by name alone.</span>
+              <div className="member-match-list">
+                {matches.map((match) => (
+                  <article key={match.key}>
+                    <div>
+                      <strong>{match.displayName}</strong>
+                      <span>
+                        {match.visitCount} {match.visitCount === 1 ? "previous visit" : "previous visits"}
+                        {match.lastVisitDate
+                          ? ` · Last attended ${formatChurchDate(match.lastVisitDate, settings)}`
+                          : ""}
+                      </span>
+                    </div>
+                    <button
+                      className={`button ${selectedMatchKey === match.key ? "primary" : "secondary"}`}
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setSelectedMatchKey(match.key)}
+                    >
+                      {selectedMatchKey === match.key ? "Selected" : "Use this visitor"}
+                    </button>
+                  </article>
+                ))}
+              </div>
+              <button
+                className="button subtle"
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  setDifferentPerson(true);
+                  setSelectedMatchKey("");
+                }}
+              >
+                This is someone else
+              </button>
+            </div>
+          )}
+          {!existing && differentPerson && matches.length > 0 && (
+            <div className="notice info" role="status">
+              <span>A separate visitor profile will be created for this person.</span>
+              <button
+                className="button subtle"
+                type="button"
+                disabled={saving}
+                onClick={() => {
+                  setDifferentPerson(false);
+                  setSelectedMatchKey(matches.length === 1 ? matches[0].key : "");
+                }}
+              >
+                Use returning visitor instead
+              </button>
+            </div>
+          )}
           {settings.allowVisitorNotes && (
             <label>
               Notes <span className="optional">(optional)</span>
@@ -2815,7 +2950,8 @@ function VisitorModal({
               service entry does not change the permanent member record.
             </p>
           )}
-          <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose}>Cancel</button><button className="button primary">{existing ? "Save visitor" : "Add visitor"}</button></div>
+          {error && <p className="form-error" role="alert">{error}</p>}
+          <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose} disabled={saving}>Cancel</button><button className="button primary" disabled={saving}>{saving ? "Saving…" : existing ? "Save visitor" : !differentPerson && matches.length === 1 ? "Add returning visit" : "Add visitor"}</button></div>
         </form>
       </section>
     </div>

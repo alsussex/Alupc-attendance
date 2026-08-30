@@ -5,6 +5,7 @@ import type { UserContext } from "@/lib/domain";
 import {
   addServiceVisitor,
   editServiceVisitor,
+  findReturningVisitorMatches,
   findDuplicateMember,
   getServiceAttendance,
   listActiveMembers,
@@ -128,6 +129,105 @@ describe("attendance-taking view", () => {
       members: 0,
       visitors: 1,
     });
+  });
+
+  it("reuses a typed returning visitor identity across services", async () => {
+    const firstService = await saveService(attendanceTaker, {
+      serviceDate: "2026-08-02",
+      serviceType: "Sunday Morning",
+      status: "draft",
+    });
+    const first = await addServiceVisitor(attendanceTaker, firstService.id, {
+      firstName: "Becca",
+      lastName: "Liza",
+      saveAsMember: false,
+    });
+    expect(first.visitor.visitorPersonId).toBeTruthy();
+
+    const matches = await findReturningVisitorMatches(
+      organizationId,
+      "  becca   LIZA ",
+    );
+    expect(matches).toEqual([
+      expect.objectContaining({
+        visitorPersonId: first.visitor.visitorPersonId,
+        displayName: "Becca Liza",
+        visitCount: 1,
+        lastVisitDate: "2026-08-02",
+      }),
+    ]);
+
+    const secondService = await saveService(attendanceTaker, {
+      serviceDate: "2026-08-09",
+      serviceType: "Sunday Morning",
+      status: "draft",
+    });
+    const second = await addServiceVisitor(attendanceTaker, secondService.id, {
+      firstName: "Becca",
+      lastName: "Liza",
+      saveAsMember: false,
+      returningVisitorPersonId: matches[0].visitorPersonId,
+    });
+    expect(second.visitor.id).not.toBe(first.visitor.id);
+    expect(second.visitor.visitorPersonId).toBe(
+      first.visitor.visitorPersonId,
+    );
+    const visitorProfiles = await (await getDatabase()).getAllFromIndex(
+      "people",
+      "organizationId",
+      organizationId,
+    );
+    expect(visitorProfiles).toEqual([
+      expect.objectContaining({
+        id: first.visitor.visitorPersonId,
+        personType: "visitor",
+      }),
+    ]);
+  });
+
+  it("requires explicit confirmation before linking legacy same-name visits", async () => {
+    const database = await getDatabase();
+    const oldService = await saveService(attendanceTaker, {
+      serviceDate: "2026-07-26",
+      serviceType: "Sunday Morning",
+      status: "draft",
+    });
+    await database.put("visitors", {
+      id: "legacy-becca",
+      organizationId,
+      serviceId: oldService.id,
+      firstName: "Becca",
+      lastName: "Liza",
+      displayName: "Becca Liza",
+      savedAsMember: false,
+      createdBy: attendanceTaker.userId,
+      updatedBy: attendanceTaker.userId,
+      createdAt: "2026-07-26T12:00:00.000Z",
+      updatedAt: "2026-07-26T12:00:00.000Z",
+    });
+    const [match] = await findReturningVisitorMatches(
+      organizationId,
+      "Becca Liza",
+    );
+    expect(match).toMatchObject({
+      visitorPersonId: undefined,
+      legacyVisitorIds: ["legacy-becca"],
+      visitCount: 1,
+    });
+
+    const nextService = await saveService(attendanceTaker, {
+      serviceDate: "2026-08-02",
+      serviceType: "Sunday Morning",
+      status: "draft",
+    });
+    const added = await addServiceVisitor(attendanceTaker, nextService.id, {
+      firstName: "Becca",
+      lastName: "Liza",
+      saveAsMember: false,
+      legacyVisitorIds: match.legacyVisitorIds,
+    });
+    expect((await database.get("visitors", "legacy-becca"))?.visitorPersonId)
+      .toBe(added.visitor.visitorPersonId);
   });
 
   it("searches visitors and keeps them out of the absent filter", async () => {
@@ -339,5 +439,26 @@ describe("visitor lifecycle migration security", () => {
     expect(base).toContain(
       "using (organization_id = public.current_organization_id())",
     );
+  });
+});
+
+describe("returning visitor identity migration", () => {
+  it("links visits to an organization-scoped visitor profile without name-based backfill", () => {
+    const migration = readFileSync(
+      resolve(
+        "supabase/migrations/202608300001_returning_visitor_profiles.sql",
+      ),
+      "utf8",
+    );
+    expect(migration).toContain(
+      "add column if not exists visitor_person_id uuid",
+    );
+    expect(migration).toContain(
+      "foreign key (organization_id, visitor_person_id)",
+    );
+    expect(migration).toContain("person.person_type = 'visitor'");
+    expect(migration).toContain("public.current_organization_id()");
+    expect(migration).not.toMatch(/update\s+public\.service_visitors/i);
+    expect(migration).not.toMatch(/disable\s+row\s+level\s+security/i);
   });
 });

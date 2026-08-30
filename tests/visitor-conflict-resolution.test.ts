@@ -326,7 +326,8 @@ describe("visitor conflict queue and manual resolution", () => {
     const businessRows = [...rows.keys()].filter(
       (key) => !key.startsWith("audit_log:"),
     );
-    expect(businessRows).toHaveLength(2); // one service and one visitor
+    expect(businessRows).toHaveLength(3); // service, visitor identity, and visit
+    expect(rows.has(`people:${visitor.visitorPersonId}`)).toBe(true);
     expect(rows.has(`service_visitors:${visitor.id}`)).toBe(true);
     expect(await getPendingChanges(organizationId)).toHaveLength(0);
   });

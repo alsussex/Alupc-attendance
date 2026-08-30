@@ -39,6 +39,7 @@ export interface SnapshotPerson {
 
 export interface SnapshotVisitor {
   id: string;
+  visitorPersonId?: string;
   firstName: string;
   lastName: string;
   displayName: string;
@@ -255,6 +256,7 @@ export function buildMonthlySnapshotPayload(
       )
       .map((visitor) => ({
         id: visitor.id,
+        visitorPersonId: visitor.visitorPersonId,
         firstName: visitor.firstName,
         lastName: visitor.lastName,
         displayName: visitor.displayName,
@@ -376,6 +378,7 @@ export function snapshotToAttendanceDataset(
   );
   const visitors: ServiceVisitor[] = snapshot.payload.visitors.map((visitor) => ({
     id: visitor.id,
+    visitorPersonId: visitor.visitorPersonId,
     organizationId: snapshot.organizationId,
     serviceId: visitor.serviceId,
     firstName: visitor.firstName,

@@ -229,6 +229,7 @@ export function fromCloudRecord(
   return {
     ...audited,
     serviceId: requiredString(row, "service_id"),
+    visitorPersonId: optionalString(row, "visitor_person_id"),
     firstName: requiredString(row, "first_name"),
     lastName: stringOrEmpty(row, "last_name"),
     displayName: requiredString(row, "display_name"),

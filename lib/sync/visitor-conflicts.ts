@@ -15,6 +15,7 @@ import { fromCloudRecord } from "@/lib/sync/serialization";
 
 const VISITOR_FIELDS = [
   "service_id",
+  "visitor_person_id",
   "first_name",
   "last_name",
   "display_name",

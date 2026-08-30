@@ -94,12 +94,18 @@ function present(id: string, serviceId: string, personId: string): AttendanceRec
   };
 }
 
-function visitor(id: string, serviceId: string, name: string): ServiceVisitor {
+function visitor(
+  id: string,
+  serviceId: string,
+  name: string,
+  visitorPersonId?: string,
+): ServiceVisitor {
   const [firstName, ...last] = name.split(" ");
   return {
     id,
     organizationId: "org-1",
     serviceId,
+    visitorPersonId,
     firstName,
     lastName: last.join(" "),
     displayName: name,
@@ -136,8 +142,8 @@ function dataset(): ReportsDataset {
     present("a3", "wed", "member-2"),
   ];
   const visitors = [
-    visitor("v1", "sun-am", "Jordan Guest"),
-    visitor("v2", "sun-pm", "Jordan Guest"),
+    visitor("v1", "sun-am", "Jordan Guest", "returning-jordan"),
+    visitor("v2", "sun-pm", "Jordan Guest", "returning-jordan"),
   ];
   return { people, services, attendance, visitors };
 }
@@ -188,6 +194,18 @@ describe("professional reports calculations", () => {
       averageThisYear: 3,
       averageAllTime: 3,
     });
+  });
+
+  it("does not combine unlinked people merely because their names match", () => {
+    const data = dataset();
+    data.visitors = [
+      visitor("unlinked-1", "sun-am", "Taylor Guest"),
+      visitor("unlinked-2", "sun-pm", "Taylor Guest"),
+    ];
+    expect(visitorReportRows(data)).toEqual([
+      expect.objectContaining({ name: "Taylor Guest", visits: 1 }),
+      expect.objectContaining({ name: "Taylor Guest", visits: 1 }),
+    ]);
   });
 
   it("creates a spreadsheet-safe CSV export", () => {
