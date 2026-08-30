@@ -169,7 +169,10 @@ export function fromCloudRecord(
     return {
       ...audited,
       firstName: requiredString(row, "first_name"),
-      lastName: requiredString(row, "last_name"),
+      // The database intentionally permits an empty last name for single-name
+      // members and visitor identities. Empty is valid; only a non-string
+      // legacy value should be normalized away.
+      lastName: stringOrEmpty(row, "last_name"),
       displayName: requiredString(row, "display_name"),
       personType,
       isActive: requiredBoolean(row, "is_active"),

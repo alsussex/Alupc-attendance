@@ -22,7 +22,7 @@ import {
   type PullSource,
 } from "@/lib/sync/pull-service";
 import { getPendingChanges } from "@/lib/sync/queue";
-import { toCloudRecord } from "@/lib/sync/serialization";
+import { fromCloudRecord, toCloudRecord } from "@/lib/sync/serialization";
 import { synchronizeOrganization } from "@/lib/sync/sync-service";
 import {
   uploadPendingChanges,
@@ -531,4 +531,25 @@ describe("cloud serialization", () => {
       updated_at: later,
     });
   });
+
+  it.each(["member", "visitor"] as const)(
+    "accepts a first-name-only %s downloaded from the cloud",
+    (personType) => {
+      expect(
+        fromCloudRecord("people", {
+          id: `first-name-only-${personType}`,
+          organization_id: organizationId,
+          first_name: "Jackie",
+          last_name: "",
+          display_name: "Jackie",
+          person_type: personType,
+          is_active: true,
+          created_by: user.userId,
+          updated_by: user.userId,
+          created_at: earlier,
+          updated_at: later,
+        }),
+      ).toMatchObject({ firstName: "Jackie", lastName: "", personType });
+    },
+  );
 });
