@@ -199,6 +199,15 @@ describe("password recovery and account setup", () => {
         configuredUrl: PRODUCTION_APP_ORIGIN,
       }),
     ).toBe(PRODUCTION_APP_ORIGIN);
+    expect(
+      resolveApplicationOrigin({
+        production: true,
+        configuredUrl:
+          "https://alupc-attendance-alsussexs-projects.vercel.app",
+        requestUrl:
+          "https://alupc-attendance-alsussexs-projects.vercel.app/api/admin/users",
+      }),
+    ).toBe(PRODUCTION_APP_ORIGIN);
   });
 
   it("restricts invitation confirmation redirects to setup-password", () => {

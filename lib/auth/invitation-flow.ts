@@ -28,6 +28,14 @@ export function resolveApplicationOrigin({
   production: boolean;
 }) {
   const configured = validOrigin(configuredUrl);
+  // Authentication emails must never inherit a protected Vercel project alias
+  // from a stale production environment variable. The canonical public origin
+  // is intentionally fixed for this deployment.
+  if (production) {
+    return configured === PRODUCTION_APP_ORIGIN
+      ? configured
+      : PRODUCTION_APP_ORIGIN;
+  }
   if (configured) return configured;
   if (!production) {
     const requestOrigin = validOrigin(requestUrl);
