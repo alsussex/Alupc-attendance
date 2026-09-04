@@ -1,4 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReportsCenter } from "@/components/reports/ReportsCenter";
 import type {
@@ -313,5 +315,39 @@ describe("ReportsCenter", () => {
         "statistics",
       ),
     ).toThrow("Administrator");
+  });
+});
+
+describe("report table viewport", () => {
+  const reportSource = readFileSync(
+    resolve("components/reports/AttendanceExportReport.tsx"),
+    "utf8",
+  );
+  const snapshotSource = readFileSync(
+    resolve("components/reports/MonthlySnapshotsReport.tsx"),
+    "utf8",
+  );
+  const styles = readFileSync(resolve("app/product-system.css"), "utf8");
+
+  it("uses the shared spreadsheet viewport for monthly, range, and snapshot attendance", () => {
+    expect(reportSource).toContain(
+      'className="report-table-scroll attendance-sheet-scroll"',
+    );
+    expect(snapshotSource).toContain(
+      'className="report-table-scroll attendance-sheet-scroll"',
+    );
+    expect(reportSource).toContain('className="attendance-sheet-table"');
+    expect(snapshotSource).toContain('className="attendance-sheet-table"');
+  });
+
+  it("contains every report table and freezes attendance labels while columns scroll", () => {
+    expect(styles).toContain("overscroll-behavior-inline: contain");
+    expect(styles).toContain(".report-data-table {\n  width: max-content;");
+    expect(styles).toContain(
+      ".attendance-report-preview .attendance-sheet-table tr > :first-child",
+    );
+    expect(styles).toContain("position: sticky");
+    expect(styles).toContain(".attendance-export-report > .report-primary-actions");
+    expect(styles).toContain("justify-content: flex-start");
   });
 });

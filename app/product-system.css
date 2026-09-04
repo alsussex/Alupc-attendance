@@ -639,9 +639,92 @@
 .report-metrics dd { font-size: clamp(1.5rem, 2.5vw, 2.1rem); }
 
 .report-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-inline: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
   border: 1px solid var(--line);
   border-radius: var(--product-radius-control);
   background: var(--surface);
+}
+
+.reports-content,
+.reports-content > *,
+.report-section,
+.report-section > *,
+.attendance-report-preview {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Report tables stay inside a spreadsheet-style viewport. Short tables fill
+   the available space; wide tables scroll without widening the whole page. */
+.report-data-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.report-data-table th,
+.report-data-table td {
+  max-width: 280px;
+  overflow-wrap: anywhere;
+}
+
+.attendance-export-report > .report-primary-actions {
+  justify-content: flex-start;
+}
+
+.attendance-report-preview {
+  --attendance-name-column-width: 220px;
+  --attendance-service-column-width: 96px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.attendance-report-preview h3 {
+  max-width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.attendance-report-preview .attendance-sheet-table {
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+.attendance-sheet-name-column {
+  width: var(--attendance-name-column-width);
+}
+
+.attendance-sheet-service-column {
+  width: var(--attendance-service-column-width);
+}
+
+.attendance-report-preview .attendance-sheet-table tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: var(--attendance-name-column-width);
+  min-width: var(--attendance-name-column-width);
+  max-width: var(--attendance-name-column-width);
+  border-right: 1px solid var(--line-soft);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+.attendance-report-preview .attendance-sheet-table thead tr > :first-child {
+  z-index: 3;
+  background: var(--surface-subtle);
+}
+
+.attendance-report-preview .attendance-sheet-table .report-section-row > :first-child,
+.attendance-report-preview .attendance-sheet-table .report-summary-row > :first-child {
+  background: var(--surface-muted);
 }
 
 .report-data-table thead,
@@ -890,6 +973,11 @@
 @media (max-width: 680px) {
   :root { --product-action-gap: .9rem; }
 
+  .attendance-report-preview {
+    --attendance-name-column-width: 180px;
+    --attendance-service-column-width: 88px;
+  }
+
   .product-page { gap: 1.3rem; }
 
   .product-page .page-heading,
@@ -1134,4 +1222,17 @@
 @media print {
   .reports-product-page .report-table-scroll { border: 0; border-radius: 0; }
   .reports-product-page .report-metrics { background: transparent; }
+  .reports-product-page .report-data-table,
+  .reports-product-page .attendance-sheet-table {
+    width: 100%;
+    min-width: 100%;
+    table-layout: auto;
+  }
+  .attendance-report-preview .attendance-sheet-table tr > :first-child {
+    position: static;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    border-right: 0;
+  }
 }

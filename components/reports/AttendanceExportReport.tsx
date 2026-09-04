@@ -186,7 +186,7 @@ export function AttendanceExportReport({ mode }: { mode: "monthly" | "range" }) 
         <EmptyState compact icon="▤" title="Choose a reporting period" message="Load a preview to verify the services and attendance before exporting." />
       ) : (
         <>
-          <div className="report-actions no-print">
+          <div className="report-actions report-primary-actions no-print">
             <button className="button subtle" type="button" onClick={() => window.print()}><Printer aria-hidden="true" /> Print</button>
             <button className="button primary" type="button" onClick={exportWorkbook}><Download aria-hidden="true" /> Export Excel</button>
           </div>
@@ -200,8 +200,17 @@ export function AttendanceExportReport({ mode }: { mode: "monthly" | "range" }) 
             )}
           <div className="attendance-report-preview print-report" aria-label={title}>
             <h3>{title}</h3>
-            <div className="report-table-scroll">
-              <table>
+            <div className="report-table-scroll attendance-sheet-scroll">
+              <table className="attendance-sheet-table">
+                <colgroup>
+                  <col className="attendance-sheet-name-column" />
+                  {currentPreview.services.map((service) => (
+                    <col
+                      className="attendance-sheet-service-column"
+                      key={service.id}
+                    />
+                  ))}
+                </colgroup>
                 <thead>
                   <tr>
                     <th scope="col">Members</th>

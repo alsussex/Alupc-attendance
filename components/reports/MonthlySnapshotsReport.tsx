@@ -57,8 +57,17 @@ function SnapshotTable({ payload }: { payload: MonthlySnapshotPayload }) {
       <h3>
         {payload.churchName} Attendance — {months[payload.month - 1]} {payload.year}
       </h3>
-      <div className="report-table-scroll">
-        <table>
+      <div className="report-table-scroll attendance-sheet-scroll">
+        <table className="attendance-sheet-table">
+          <colgroup>
+            <col className="attendance-sheet-name-column" />
+            {payload.services.map((service) => (
+              <col
+                className="attendance-sheet-service-column"
+                key={service.id}
+              />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               <th scope="col">Members</th>
