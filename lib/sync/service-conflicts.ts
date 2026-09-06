@@ -71,9 +71,30 @@ export function reconcileServiceMutation(
     const differing = SERVICE_FIELDS.filter(
       (field) => !same(field, local[field], remote[field]),
     );
-    if (differing.length === 1 && differing[0] === "status") {
-      if (local.status === "completed" || newerLocalReopen(local, remote)) {
-        return { kind: "retry", payload: { ...local } };
+    if (!same("status", local.status, remote.status)) {
+      // Older queue records predate base snapshots. A queued completion or a
+      // newer authorized reopen proves the user's intended status transition,
+      // but not that every stale local field should replace current cloud data.
+      // Apply only that transition on top of the authoritative server row.
+      if (local.status === "completed") {
+        return {
+          kind: "retry",
+          payload: {
+            ...remote,
+            status: "completed",
+            updated_by: local.updated_by,
+          },
+        };
+      }
+      if (newerLocalReopen(local, remote)) {
+        return {
+          kind: "retry",
+          payload: {
+            ...remote,
+            status: "draft",
+            updated_by: local.updated_by,
+          },
+        };
       }
       if (remote.status === "completed") {
         return { kind: "server", payload: remote };

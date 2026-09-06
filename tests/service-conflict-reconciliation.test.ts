@@ -79,22 +79,35 @@ describe("service semantic reconciliation", () => {
     });
   });
 
-  it("recovers a legacy queued reopen when it is newer than the server", () => {
+  it("recovers a legacy reopen without overwriting newer server details", () => {
     const result = reconcileServiceMutation(
       {
         ...base,
         status: "draft",
+        notes: "Stale local note",
+        unnamed_visitor_count: 1,
+        updated_by: admin.userId,
         updated_at: "2026-09-06T23:05:00.000Z",
       },
       undefined,
       {
         ...base,
         status: "completed",
+        notes: "Current server note",
+        unnamed_visitor_count: 4,
         service_time: "10:30:00",
         updated_at: "2026-09-06T23:00:00.000Z",
       },
     );
-    expect(result.kind).toBe("retry");
+    expect(result).toMatchObject({
+      kind: "retry",
+      payload: {
+        status: "draft",
+        notes: "Current server note",
+        unnamed_visitor_count: 4,
+        updated_by: admin.userId,
+      },
+    });
   });
 
   it("merges non-overlapping edits and retains genuine same-field conflicts", () => {
