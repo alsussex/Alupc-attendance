@@ -24,7 +24,7 @@ export function syncDiagnosticDetails(message?: string) {
     safeMessage = safeMessage.replace(pattern, "[redacted]");
   }
   const code = safeMessage.match(
-    /\b(?:SYNC_[A-Z_]+|PGRST\d+|[0-9A-Z]{5}|HTTP\s*[45]\d\d)\b/i,
+    /\b(?:SYNC_[A-Z_]+|PGRST\d+|[0-9A-Z]{5}|HTTP\s*[45]\d\d)\b/,
   )?.[0];
   return {
     code,

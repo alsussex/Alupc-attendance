@@ -772,6 +772,7 @@ export async function saveService(
     table: "services",
     recordId: service.id,
     payload: serviceCloudRecord(service),
+    basePayload: existing ? serviceCloudRecord(existing) : undefined,
   });
   const serviceAction = !existing
     ? "created"
@@ -998,6 +999,7 @@ export async function setUnnamedVisitorCount(
     table: "services",
     recordId: updated.id,
     payload: serviceCloudRecord(updated),
+    basePayload: serviceCloudRecord(service),
   });
   if ((service.unnamedVisitorCount ?? 0) !== updated.unnamedVisitorCount) {
     await recordAuditEntry(user, {
@@ -1085,6 +1087,7 @@ export async function setSundaySchoolKidsCount(
     table: "services",
     recordId: updated.id,
     payload: serviceCloudRecord(updated),
+    basePayload: serviceCloudRecord(service),
   });
   if (
     (service.sundaySchoolKidsCount ?? 0) !==
@@ -1181,6 +1184,7 @@ export async function setServiceArchived(
     table: "services",
     recordId: id,
     payload: serviceCloudRecord(updated),
+    basePayload: serviceCloudRecord(service),
   });
   await recordAuditEntry(user, {
     entityType: "service",
@@ -1242,6 +1246,7 @@ export async function removeService(user: UserContext, id: string) {
     table: "services",
     recordId: id,
     payload: serviceCloudRecord(updated),
+    basePayload: serviceCloudRecord(service),
   });
   await recordAuditEntry(user, {
     entityType: "service",

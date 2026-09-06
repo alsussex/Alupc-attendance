@@ -1,12 +1,21 @@
 "use client";
 
-import type { SyncQueueItem, VisitorSyncConflict } from "@/lib/domain";
+import type {
+  ChurchService,
+  SyncQueueItem,
+  VisitorSyncConflict,
+} from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
 import { announceDataChanged } from "@/lib/storage/data-events";
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { reconcileAttendanceMutation } from "@/lib/sync/attendance-conflicts";
+import {
+  reconcileServiceMutation,
+  serviceConflictFieldLabels,
+} from "@/lib/sync/service-conflicts";
 import { reconcileVisitorMutation } from "@/lib/sync/visitor-conflicts";
 import { humanReadableSyncError } from "@/lib/sync/errors";
+import { fromCloudRecord } from "@/lib/sync/serialization";
 
 export interface UploadTarget {
   upsert(
@@ -27,6 +36,7 @@ export interface UploadTarget {
 export interface UploadReceipt {
   version: number;
   updatedAt?: string;
+  serverPayload?: Record<string, unknown>;
 }
 
 export interface UploadResult {
@@ -273,7 +283,9 @@ export function createSupabaseUploadTarget(): UploadTarget {
           .select(
             table === "service_attendance"
               ? "version,updated_at,created_at,last_mutation_id,present"
-              : "version,updated_at,created_at,last_mutation_id",
+              : table === "services"
+                ? "id,organization_id,service_date,service_type,custom_name,service_time,notes,status,unnamed_visitor_count,sunday_school_kids_count,is_archived,deleted_at,version,updated_at,created_at,created_by,updated_by,last_mutation_id"
+                : "version,updated_at,created_at,last_mutation_id",
           ),
       );
       const { data: current, error: currentError } =
@@ -289,6 +301,7 @@ export function createSupabaseUploadTarget(): UploadTarget {
               typeof current.updated_at === "string"
                 ? current.updated_at
                 : undefined,
+            serverPayload: table === "services" ? current : undefined,
           };
         }
         if (table === "service_attendance") {
@@ -386,6 +399,65 @@ export function createSupabaseUploadTarget(): UploadTarget {
               typeof mergedData.updated_at === "string"
                 ? mergedData.updated_at
                 : undefined,
+          };
+        }
+        if (table === "services") {
+          const reconciliation = reconcileServiceMutation(
+            mutationPayload,
+            context.basePayload,
+            current,
+          );
+          if (
+            reconciliation.kind === "satisfied" ||
+            reconciliation.kind === "server"
+          ) {
+            return {
+              version: Number(current.version),
+              updatedAt:
+                typeof current.updated_at === "string"
+                  ? current.updated_at
+                  : undefined,
+              serverPayload: current,
+            };
+          }
+          if (reconciliation.kind === "conflict") {
+            const fields = serviceConflictFieldLabels(
+              reconciliation.fields,
+            ).join(", ");
+            throw new SynchronizationConflictError(
+              `Service fields changed differently on another device (${fields}). The local change remains safely queued.`,
+            );
+          }
+          const { data: serviceData, error: serviceError } =
+            await applyIdentity(
+              client.from(tableName).update({
+                ...reconciliation.payload,
+                last_mutation_id: context.mutationToken,
+              }),
+            )
+              .eq("version", current.version)
+              .select(
+                "id,organization_id,service_date,service_type,custom_name,service_time,notes,status,unnamed_visitor_count,sunday_school_kids_count,is_archived,deleted_at,version,updated_at,created_at,created_by,updated_by,last_mutation_id",
+              )
+              .maybeSingle();
+          if (serviceError) {
+            throw new SupabaseUploadError(
+              serviceError.message,
+              serviceError.code,
+            );
+          }
+          if (!serviceData) {
+            throw new SynchronizationConflictError(
+              "The service changed again while its saved changes were being reconciled. The local change remains safely queued.",
+            );
+          }
+          return {
+            version: Number(serviceData.version),
+            updatedAt:
+              typeof serviceData.updated_at === "string"
+                ? serviceData.updated_at
+                : undefined,
+            serverPayload: serviceData,
           };
         }
         if (
@@ -581,18 +653,36 @@ export async function uploadPendingChanges(
             });
           }
         }
+        if (receipt && item.table === "services") {
+          const localService = await database.get("services", item.recordId);
+          if (receipt.serverPayload) {
+            await database.put(
+              "services",
+              fromCloudRecord(
+                "services",
+                receipt.serverPayload,
+              ) as ChurchService,
+            );
+          } else if (localService) {
+            await database.put("services", {
+              ...localService,
+              version: receipt.version,
+              updatedAt: receipt.updatedAt ?? localService.updatedAt,
+            });
+          }
+        }
         await database.delete("syncQueue", item.id);
       } else if (current && receipt) {
         await database.put("syncQueue", {
           ...current,
           baseVersion: receipt.version,
-          basePayload: {
-            ...item.payload,
-            version: receipt.version,
-            ...(receipt.updatedAt
-              ? { updated_at: receipt.updatedAt }
-              : {}),
-          },
+          basePayload: receipt.serverPayload ?? {
+              ...item.payload,
+              version: receipt.version,
+              ...(receipt.updatedAt
+                ? { updated_at: receipt.updatedAt }
+                : {}),
+            },
           payload: {
             ...current.payload,
             version: receipt.version,
