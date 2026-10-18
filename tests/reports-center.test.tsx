@@ -182,6 +182,9 @@ describe("professional reports calculations", () => {
 
   it("calculates member attendance, visitor visits, and useful records", () => {
     const data = dataset();
+    data.visitors = data.visitors.map((item) =>
+      item.id === "v1" ? { ...item, childProgram: "sunday_school" } : item,
+    );
     expect(memberAttendanceReport(data, "member-1")).toMatchObject({
       present: 2,
       absent: 1,
@@ -189,8 +192,19 @@ describe("professional reports calculations", () => {
       firstAttendance: "2026-08-02",
       lastAttendance: "2026-08-02",
     });
-    expect(visitorReportRows(data)).toEqual([
-      expect.objectContaining({ name: "Jordan Guest", visits: 2 }),
+    expect(visitorReportRows(data)).toMatchObject([
+      {
+        name: "Jordan Guest",
+        visits: 2,
+        history: [
+          { serviceName: "Sunday Evening", serviceDate: "2026-08-02" },
+          {
+            serviceName: "Sunday Morning",
+            serviceDate: "2026-08-02",
+            childProgram: "Sunday School",
+          },
+        ],
+      },
     ]);
     expect(reportStatistics(data, new Date("2026-08-10T12:00:00Z"))).toMatchObject({
       averageThisYear: 3,
@@ -249,6 +263,43 @@ describe("ReportsCenter", () => {
     expect(screen.getByRole("heading", { name: "Service history" })).toBeVisible();
     expect(screen.getByText("Wednesday Bible Study")).toBeVisible();
     expect(screen.queryByText("deleted")).toBeNull();
+  });
+
+  it("opens a newest-first visitor history with service-specific child classifications", async () => {
+    const database = await getDatabase();
+    const data = dataset();
+    await database.put("visitors", {
+      ...data.visitors[0],
+      childProgram: "sunday_school",
+    });
+    await database.put("visitors", {
+      ...visitor("v3", "wed", "Jordan Guest", "returning-jordan"),
+      childProgram: "childrens_church",
+    });
+
+    render(<ReportsCenter />);
+    await waitFor(() => expect(screen.queryByLabelText("Loading reports")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: /Visitor Report/ }));
+
+    const historyButton = await screen.findByRole("button", {
+      name: "View attendance history for Jordan Guest",
+    });
+    fireEvent.click(historyButton);
+    const dialog = screen.getByRole("dialog", {
+      name: "Jordan Guest",
+    });
+    const visits = within(dialog).getAllByRole("listitem");
+
+    expect(visits).toHaveLength(3);
+    expect(visits[0]).toHaveTextContent("Wednesday Bible Study");
+    expect(visits[0]).toHaveTextContent("Children’s Church");
+    expect(visits[1]).toHaveTextContent("Sunday Evening");
+    expect(visits[2]).toHaveTextContent("Sunday Morning");
+    expect(visits[2]).toHaveTextContent("Sunday School");
+    expect(within(screen.getByRole("table")).queryByText("Services attended")).toBeNull();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
   });
 
   it("offers monthly, custom range, member, visitor, yearly, statistics, and Admin audit reports", async () => {

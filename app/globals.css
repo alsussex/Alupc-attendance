@@ -3827,6 +3827,15 @@ a.dashboard-recent-row:hover { padding-inline: .55rem; color: var(--ink); backgr
 .text-button:hover, .text-button:focus-visible { text-decoration: underline; }
 .text-button { display: inline-flex; align-items: center; gap: .3rem; }
 .text-button svg { width: 15px; height: 15px; }
+.visitor-report-name { min-height: 44px; text-align: left; }
+.visitor-report-history-modal { width: min(100%, 640px); }
+.visitor-report-history-modal .modal-heading > div > p:not(.eyebrow) { margin: .35rem 0 0; color: var(--muted); }
+.visitor-report-history-list { max-height: min(58vh, 560px); margin: 0; padding: 0; display: grid; gap: .65rem; overflow-y: auto; list-style: none; }
+.visitor-report-history-list li { padding: .9rem 1rem; display: grid; grid-template-columns: minmax(8rem, .7fr) minmax(0, 1.3fr); gap: .75rem; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-subtle); }
+.visitor-report-history-list time { color: var(--muted); font-size: .82rem; font-weight: 700; }
+.visitor-report-history-list li > div { min-width: 0; display: grid; align-content: start; justify-items: start; gap: .2rem; }
+.visitor-report-history-type, .visitor-report-history-time { color: var(--muted); font-size: .78rem; }
+.visitor-report-history-program { margin-top: .2rem; padding: .22rem .55rem; border-radius: 999px; background: var(--brand-soft); color: var(--brand-strong); font-size: .72rem; font-weight: 700; }
 .snapshot-admin-tools { display: grid; gap: 1rem; padding: 1rem 0 1.25rem; border-bottom: 1px solid var(--line); }
 .snapshot-admin-tools h3, .snapshot-list-section h3, .snapshot-selected-view h3 { margin: 0 0 .25rem; }
 .snapshot-admin-tools p, .snapshot-list-section p, .snapshot-selected-view p { margin: 0; color: var(--muted); }
@@ -3857,6 +3866,11 @@ a.dashboard-recent-row:hover { padding-inline: .55rem; color: var(--ink); backgr
   .report-metrics > div:not(:nth-child(3n + 1)) { border-left: 0; }
   .report-metrics > div:nth-child(even) { border-left: 1px solid var(--line); }
   .report-toolbar > label, .report-toolbar > .button { flex: 1 1 100%; }
+  .visitor-report-history-backdrop { align-items: center; padding: .65rem; }
+  .visitor-report-history-modal { width: 100%; max-height: calc(100dvh - 1.3rem); padding: 1.15rem; }
+  .visitor-report-history-modal .modal-heading h2 { font-size: 1.35rem; }
+  .visitor-report-history-list { max-height: calc(100dvh - 11rem); }
+  .visitor-report-history-list li { grid-template-columns: 1fr; gap: .45rem; }
   .snapshot-finalize-controls { grid-template-columns: 1fr; }
   .snapshot-finalize-controls .button { width: 100%; }
   .report-data-table th, .report-data-table td { padding: .72rem .55rem; }

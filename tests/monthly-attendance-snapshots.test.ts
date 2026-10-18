@@ -246,7 +246,9 @@ describe("monthly attendance snapshot integrity", () => {
     const contents = new TextDecoder().decode(workbook);
     expect(contents).toContain("Member, Historical");
     expect(contents).toContain("FirstNameOnly");
-    expect(contents).toContain("Sunday School Kids");
+    expect(contents).toContain(
+      "Children’s Programs (Sunday School &amp; Children’s Church)",
+    );
     expect(contents).toContain("Stored Official Heading");
     expect(contents).toContain("Abundant Life UPC Attendance - August 2026");
   });

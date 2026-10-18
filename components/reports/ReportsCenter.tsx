@@ -23,7 +23,11 @@ import { LoadingSkeleton } from "@/components/feedback/LoadingSkeleton";
 import { AttendanceExportReport } from "@/components/reports/AttendanceExportReport";
 import { MonthlySnapshotsReport } from "@/components/reports/MonthlySnapshotsReport";
 import { isAdmin } from "@/lib/auth/permissions";
-import type { ReportsDataset, ServiceReportRow } from "@/lib/reports/report-center";
+import type {
+  ReportsDataset,
+  ServiceReportRow,
+  VisitorReportRow,
+} from "@/lib/reports/report-center";
 import {
   completedServiceReportRows,
   adminReportDashboard,
@@ -156,12 +160,72 @@ function MemberReport({ dataset }: { dataset: ReportsDataset }) {
 function VisitorReport({ dataset }: { dataset: ReportsDataset }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [selectedVisitor, setSelectedVisitor] = useState<VisitorReportRow | null>(null);
   const rows = useMemo(() => visitorReportRows(dataset, from || undefined, to || undefined), [dataset, from, to]);
+  useEffect(() => {
+    if (!selectedVisitor) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedVisitor(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedVisitor]);
   return (
     <section className="report-section print-report">
-      <header className="report-section-heading"><div><p className="eyebrow">Named visitors</p><h2>Visitor report</h2><p>Visit frequency and service history for named visitors.</p></div><PrintExportActions onExport={() => downloadCsv("ALUPC-visitor-report.csv", ["Visitor", "Visits", "First visit", "Last visit", "Services"], rows.map((row) => [row.name, row.visits, row.firstVisit, row.lastVisit, row.serviceLabels.join("; ")]))} /></header>
+      <header className="report-section-heading"><div><p className="eyebrow">Named visitors</p><h2>Visitor report</h2><p>Visit frequency and service history for named visitors.</p></div><PrintExportActions onExport={() => downloadCsv("ALUPC-visitor-report.csv", ["Visitor", "Visits", "First visit", "Last visit"], rows.map((row) => [row.name, row.visits, row.firstVisit, row.lastVisit]))} /></header>
       <div className="report-toolbar no-print"><label>From<input type="date" value={from} onChange={(event) => setFrom(event.target.value)} /></label><label>To<input type="date" min={from || undefined} value={to} onChange={(event) => setTo(event.target.value)} /></label></div>
-      {rows.length === 0 ? <EmptyState compact icon="◇" title="No named visitors in this range" message="Change the date range or add named visitors during a service." /> : <div className="report-table-scroll"><table className="report-data-table"><thead><tr><th>Visitor</th><th>Visits</th><th>First visit</th><th>Last visit</th><th>Services attended</th></tr></thead><tbody>{rows.map((row) => <tr key={row.key}><th scope="row">{row.name}</th><td>{row.visits}</td><td>{formatDate(row.firstVisit)}</td><td>{formatDate(row.lastVisit)}</td><td>{row.serviceLabels.join(", ")}</td></tr>)}</tbody></table></div>}
+      {rows.length === 0 ? <EmptyState compact icon="◇" title="No named visitors in this range" message="Change the date range or add named visitors during a service." /> : <div className="report-table-scroll"><table className="report-data-table"><thead><tr><th>Visitor</th><th>Visits</th><th>First visit</th><th>Last visit</th></tr></thead><tbody>{rows.map((row) => <tr key={row.key}><th scope="row"><button className="text-button visitor-report-name" type="button" onClick={() => setSelectedVisitor(row)} aria-label={`View attendance history for ${row.name}`}>{row.name}</button></th><td>{row.visits}</td><td>{formatDate(row.firstVisit)}</td><td>{formatDate(row.lastVisit)}</td></tr>)}</tbody></table></div>}
+      {selectedVisitor && (
+        <div
+          className="modal-backdrop no-print visitor-report-history-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSelectedVisitor(null);
+          }}
+        >
+          <section
+            className="modal visitor-report-history-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="visitor-report-history-title"
+          >
+            <div className="modal-heading">
+              <div>
+                <p className="eyebrow">Visitor attendance history</p>
+                <h2 id="visitor-report-history-title">{selectedVisitor.name}</h2>
+                <p>{selectedVisitor.visits} visit{selectedVisitor.visits === 1 ? "" : "s"}</p>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="Close visitor attendance history"
+                autoFocus
+                onClick={() => setSelectedVisitor(null)}
+              >
+                ×
+              </button>
+            </div>
+            <ol className="visitor-report-history-list">
+              {selectedVisitor.history.map((visit) => (
+                <li key={visit.serviceId}>
+                  <time dateTime={visit.serviceDate}>{formatDate(visit.serviceDate)}</time>
+                  <div>
+                    <strong>{visit.serviceName}</strong>
+                    {visit.serviceType !== visit.serviceName && (
+                      <span className="visitor-report-history-type">{visit.serviceType}</span>
+                    )}
+                    {visit.childProgram && (
+                      <span className="visitor-report-history-program">{visit.childProgram}</span>
+                    )}
+                    {visit.serviceTime && (
+                      <span className="visitor-report-history-time">{formatTime(visit.serviceTime)}</span>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </div>
+      )}
     </section>
   );
 }

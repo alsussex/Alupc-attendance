@@ -27,7 +27,6 @@ import {
   type MonthlySnapshotPayload,
 } from "@/lib/reports/monthly-snapshots";
 import { getOrganization } from "@/lib/repositories/settings-repository";
-import { childProgramForService } from "@/lib/services/child-program";
 
 const months = Array.from({ length: 12 }, (_, index) =>
   new Intl.DateTimeFormat("en-CA", { month: "long", timeZone: "UTC" }).format(
@@ -45,11 +44,8 @@ function SnapshotTable({ payload }: { payload: MonthlySnapshotPayload }) {
   const regularVisitors = payload.visitors.filter(
     (visitor) => !visitor.childProgram,
   );
-  const sundaySchoolVisitors = payload.visitors.filter(
-    (visitor) => visitor.childProgram === "sunday_school",
-  );
-  const childrensChurchVisitors = payload.visitors.filter(
-    (visitor) => visitor.childProgram === "childrens_church",
+  const childrenVisitors = payload.visitors.filter(
+    (visitor) => Boolean(visitor.childProgram),
   );
   const attended = useMemo(
     () =>
@@ -113,34 +109,18 @@ function SnapshotTable({ payload }: { payload: MonthlySnapshotPayload }) {
               <th scope="row">Unnamed Visitors</th>
               {payload.services.map((service) => <td key={service.id}>{service.unnamedVisitors}</td>)}
             </tr>
-            <tr className="report-section-row"><th scope="row">Sunday School Kids</th><td colSpan={payload.services.length} /></tr>
-            {sundaySchoolVisitors.map((visitor) => (
+            <tr className="report-section-row"><th scope="row">Children’s Programs (Sunday School & Children’s Church)</th><td colSpan={payload.services.length} /></tr>
+            {childrenVisitors.map((visitor) => (
               <tr key={`sunday-school-${visitor.id}`}>
                 <th scope="row">{displayName(visitor)}</th>
                 {payload.services.map((service) => <td key={service.id}>{visitor.serviceId === service.id ? "✓" : ""}</td>)}
               </tr>
             ))}
             <tr className="report-summary-row">
-              <th scope="row">Unnamed Sunday School Kids</th>
+              <th scope="row">Unnamed Children</th>
               {payload.services.map((service) => {
-                const isChildrenChurch = childProgramForService(service.type)?.kind === "childrens_church";
-                const named = sundaySchoolVisitors.filter((visitor) => visitor.serviceId === service.id).length;
-                return <td key={service.id}>{isChildrenChurch ? 0 : Math.max(0, service.sundaySchoolKids - named)}</td>;
-              })}
-            </tr>
-            <tr className="report-section-row"><th scope="row">Children’s Church</th><td colSpan={payload.services.length} /></tr>
-            {childrensChurchVisitors.map((visitor) => (
-              <tr key={`childrens-church-${visitor.id}`}>
-                <th scope="row">{displayName(visitor)}</th>
-                {payload.services.map((service) => <td key={service.id}>{visitor.serviceId === service.id ? "✓" : ""}</td>)}
-              </tr>
-            ))}
-            <tr className="report-summary-row">
-              <th scope="row">Unnamed Children’s Church</th>
-              {payload.services.map((service) => {
-                const isChildrenChurch = childProgramForService(service.type)?.kind === "childrens_church";
-                const named = childrensChurchVisitors.filter((visitor) => visitor.serviceId === service.id).length;
-                return <td key={service.id}>{isChildrenChurch ? Math.max(0, service.sundaySchoolKids - named) : 0}</td>;
+                const named = childrenVisitors.filter((visitor) => visitor.serviceId === service.id).length;
+                return <td key={service.id}>{Math.max(0, service.sundaySchoolKids - named)}</td>;
               })}
             </tr>
             <tr className="report-summary-row">

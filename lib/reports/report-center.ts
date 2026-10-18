@@ -44,8 +44,16 @@ export interface VisitorReportRow {
   visits: number;
   firstVisit: string;
   lastVisit: string;
-  services: ServiceReportRow[];
-  serviceLabels: string[];
+  history: VisitorReportVisit[];
+}
+
+export interface VisitorReportVisit {
+  serviceId: string;
+  serviceDate: string;
+  serviceTime?: string;
+  serviceName: string;
+  serviceType: string;
+  childProgram?: "Sunday School" | "Children’s Church";
 }
 
 export interface YearlyReportSummary {
@@ -229,7 +237,14 @@ export function visitorReportRows(
         : visitor.childProgram === "childrens_church"
           ? "Children’s Church"
           : undefined;
-    const visitServiceLabel = `${service.service.customName || service.service.serviceType}${categoryLabel ? ` (${categoryLabel})` : ""}`;
+    const visit: VisitorReportVisit = {
+      serviceId: service.service.id,
+      serviceDate: service.service.serviceDate,
+      serviceTime: service.service.serviceTime,
+      serviceName: service.service.customName || service.service.serviceType,
+      serviceType: service.service.serviceType,
+      childProgram: categoryLabel,
+    };
     const existing = groups.get(key);
     if (!existing) {
       groups.set(key, {
@@ -238,20 +253,28 @@ export function visitorReportRows(
         visits: 1,
         firstVisit: service.service.serviceDate,
         lastVisit: service.service.serviceDate,
-        services: [service],
-        serviceLabels: [visitServiceLabel],
+        history: [visit],
       });
     } else {
       existing.visits += 1;
       existing.firstVisit = [existing.firstVisit, service.service.serviceDate].sort()[0];
       existing.lastVisit = [existing.lastVisit, service.service.serviceDate].sort().at(-1)!;
-      existing.services.push(service);
-      existing.serviceLabels.push(visitServiceLabel);
+      existing.history.push(visit);
     }
   }
-  return [...groups.values()].sort((left, right) =>
-    left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
-  );
+  return [...groups.values()]
+    .map((row) => ({
+      ...row,
+      history: row.history.sort(
+        (left, right) =>
+          right.serviceDate.localeCompare(left.serviceDate) ||
+          (right.serviceTime ?? "").localeCompare(left.serviceTime ?? "") ||
+          left.serviceName.localeCompare(right.serviceName),
+      ),
+    }))
+    .sort((left, right) =>
+      left.name.localeCompare(right.name, undefined, { sensitivity: "base" }),
+    );
 }
 
 export function yearlyReport(dataset: ReportsDataset, year: number) {

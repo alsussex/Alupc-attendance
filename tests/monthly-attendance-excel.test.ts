@@ -330,8 +330,8 @@ describe("monthly attendance workbook", () => {
     expect(cellText(output.sheet, `C${layout.visitorStartRow + 1}`)).toBe("✓");
     expect(cellText(output.sheet, `B${layout.unnamedVisitorsRow}`)).toBe("1");
     expect(cellText(output.sheet, `C${layout.unnamedVisitorsRow}`)).toBe("3");
-    expect(cellText(output.sheet, `B${layout.sundaySchoolKidsRow}`)).toBe("2");
-    expect(cellText(output.sheet, `C${layout.sundaySchoolKidsRow}`)).toBe("0");
+    expect(cellText(output.sheet, `B${layout.unnamedChildrenRow}`)).toBe("2");
+    expect(cellText(output.sheet, `C${layout.unnamedChildrenRow}`)).toBe("0");
     expect(cellText(output.sheet, `B${layout.totalAttendanceRow}`)).toContain("5");
     expect(cellText(output.sheet, `C${layout.totalAttendanceRow}`)).toContain("5");
   });
@@ -410,6 +410,53 @@ describe("monthly attendance workbook", () => {
     );
   });
 
+  it("groups both named child programs under one export section", () => {
+    const morning = service("morning", "2026-08-02", "10:30", {
+      serviceType: "Sunday Morning",
+      sundaySchoolKidsCount: 2,
+    });
+    const wednesday = service("wednesday", "2026-08-05", "18:30", {
+      serviceType: "Wednesday Bible Study",
+      sundaySchoolKidsCount: 3,
+    });
+    const data = dataset({
+      services: [morning, wednesday],
+      visitors: [
+        visitor("sunday-school-visitor", morning.id, "Tanner", "McLean", {
+          childProgram: "sunday_school",
+        }),
+        visitor("childrens-church-visitor", wednesday.id, "Jordan", "North", {
+          childProgram: "childrens_church",
+        }),
+      ],
+    });
+    const layout = monthlyWorkbookLayout(data);
+    const output = workbookXml(data);
+    const childRows = Array.from(
+      { length: layout.childrenEndRow - layout.childrenStartRow + 1 },
+      (_, index) => layout.childrenStartRow + index,
+    );
+
+    expect(cellText(output.sheet, `A${layout.childrenHeaderRow}`)).toBe(
+      "Children’s Programs (Sunday School & Children’s Church)",
+    );
+    expect(childRows).toHaveLength(2);
+    expect(
+      childRows.map((row) => [
+        cellText(output.sheet, `A${row}`),
+        cellText(output.sheet, `B${row}`),
+        cellText(output.sheet, `C${row}`),
+      ]),
+    ).toEqual([
+      ["North, Jordan", "", "✓"],
+      ["McLean, Tanner", "✓", ""],
+    ]);
+    expect(cellText(output.sheet, `B${layout.unnamedChildrenRow}`)).toBe("2");
+    expect(cellText(output.sheet, `C${layout.unnamedChildrenRow}`)).toBe("3");
+    expect(output.sheet).not.toContain("Children’s Church</t>");
+    expect(output.sheet).not.toContain("Sunday School Kids</t>");
+  });
+
   it("places repeat visits for one stable visitor identity on a single row", () => {
     const data = dataset({
       services: [
@@ -451,7 +498,7 @@ describe("monthly attendance workbook", () => {
     expect(cellText(output.sheet, `A${layout.separatorRow}`)).toBe("");
     expect(cellText(output.sheet, `A${layout.visitorHeaderRow}`)).toBe("Visitors");
     expect(cellText(output.sheet, `B${layout.unnamedVisitorsRow}`)).toBe("2");
-    expect(cellText(output.sheet, `B${layout.sundaySchoolKidsRow}`)).toBe("3");
+    expect(cellText(output.sheet, `B${layout.unnamedChildrenRow}`)).toBe("3");
     expect(cellText(output.sheet, `B${layout.totalAttendanceRow}`)).toContain(
       "COUNTIF",
     );
