@@ -91,6 +91,8 @@ describe("attendance people tabs", () => {
     expect(attendanceVisitorBreakdown([visitor], 2, 3)).toEqual({
       named: 1,
       unnamed: 2,
+      namedChildren: 0,
+      unnamedChildren: 3,
       children: 3,
       total: 6,
     });

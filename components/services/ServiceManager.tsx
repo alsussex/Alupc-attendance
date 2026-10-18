@@ -99,7 +99,10 @@ import {
   setPreferredServicesView,
   subscribeToServicesView,
 } from "@/lib/services/view-preference";
-import { childProgramForService } from "@/lib/services/child-program";
+import {
+  childProgramForService,
+  namedVisitorChildProgramForService,
+} from "@/lib/services/child-program";
 import { runUndoGroup } from "@/lib/undo/undo-service";
 import { nextServiceDefault } from "@/lib/services/next-service-default";
 
@@ -570,10 +573,12 @@ export function ServiceManager() {
         settings.includeVisitorsInTotal,
         active?.unnamedVisitorCount ?? 0,
         active?.sundaySchoolKidsCount ?? 0,
+        active?.serviceType,
       ),
     [
       active?.sundaySchoolKidsCount,
       active?.unnamedVisitorCount,
+      active?.serviceType,
       selected,
       settings.includeVisitorsInTotal,
       visitors,
@@ -599,8 +604,9 @@ export function ServiceManager() {
         visitors,
         active?.unnamedVisitorCount,
         childProgramCount,
+        active?.serviceType,
       ),
-    [active?.unnamedVisitorCount, childProgramCount, visitors],
+    [active?.serviceType, active?.unnamedVisitorCount, childProgramCount, visitors],
   );
 
   function selectAttendanceTab(tab: AttendanceTab, focus = false) {
@@ -1595,6 +1601,7 @@ export function ServiceManager() {
         {visitorOpen && !serviceLocked && (
           <VisitorModal
             settings={settings}
+            serviceType={active.serviceType}
             organizationId={active.organizationId}
             onClose={() => setVisitorOpen(false)}
             onSave={async (input) => {
@@ -1620,6 +1627,7 @@ export function ServiceManager() {
         {editingVisitor && !serviceLocked && (
           <VisitorModal
             settings={settings}
+            serviceType={active.serviceType}
             organizationId={active.organizationId}
             existing={editingVisitor}
             onClose={() => setEditingVisitor(null)}
@@ -2760,6 +2768,7 @@ function VisitorModal({
   existing,
   settings,
   organizationId,
+  serviceType,
 }: {
   onClose: () => void;
   onSave: (input: {
@@ -2770,10 +2779,15 @@ function VisitorModal({
     fallbackName?: string;
     returningVisitorPersonId?: string;
     legacyVisitorIds?: string[];
+    childProgram?: Exclude<
+      ServiceVisitor["childProgram"],
+      null | undefined
+    >;
   }) => Promise<void>;
   existing?: ServiceVisitor;
   settings: ApplicationSettings;
   organizationId: string;
+  serviceType: string;
 }) {
   const [firstName, setFirstName] = useState(existing?.firstName ?? "");
   const [lastName, setLastName] = useState(existing?.lastName ?? "");
@@ -2781,6 +2795,10 @@ function VisitorModal({
     existing?.savedAsMember ?? false,
   );
   const [notes, setNotes] = useState(existing?.notes ?? "");
+  const childProgram = namedVisitorChildProgramForService(serviceType);
+  const [childProgramChecked, setChildProgramChecked] = useState(
+    existing?.childProgram === childProgram?.kind,
+  );
   const [matches, setMatches] = useState<ReturningVisitorMatch[]>([]);
   const [selectedMatchKey, setSelectedMatchKey] = useState("");
   const [differentPerson, setDifferentPerson] = useState(false);
@@ -2831,6 +2849,9 @@ function VisitorModal({
         fallbackName: settings.visitorLabel,
         returningVisitorPersonId: selectedMatch?.visitorPersonId,
         legacyVisitorIds: selectedMatch?.legacyVisitorIds,
+        ...(childProgram
+          ? { childProgram: childProgramChecked ? childProgram.kind : undefined }
+          : {}),
       });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The visitor could not be added.");
@@ -2926,6 +2947,17 @@ function VisitorModal({
                 Use returning visitor instead
               </button>
             </div>
+          )}
+          {childProgram && (
+            <label className="choice-row">
+              <input
+                type="checkbox"
+                checked={childProgramChecked}
+                onChange={(event) => setChildProgramChecked(event.target.checked)}
+                disabled={saving || saveAsMember}
+              />
+              <span><strong>{childProgram.label.replace(/ Kids$/, "")}</strong><small>Count this visit with {childProgram.label} for this service.</small></span>
+            </label>
           )}
           {settings.allowVisitorNotes && (
             <label>

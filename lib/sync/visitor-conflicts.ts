@@ -20,6 +20,7 @@ const VISITOR_FIELDS = [
   "last_name",
   "display_name",
   "saved_as_member",
+  "child_program",
   "member_person_id",
   "notes",
   "deleted_at",

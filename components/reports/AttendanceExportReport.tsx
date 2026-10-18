@@ -20,6 +20,7 @@ import {
   needsLargeAttendanceRangeWarning,
 } from "@/lib/exports/monthly-attendance-workbook";
 import { summarizeServiceAttendance } from "@/lib/services/attendance-summary";
+import { childProgramForService } from "@/lib/services/child-program";
 
 const months = Array.from({ length: 12 }, (_, index) =>
   new Intl.DateTimeFormat("en-CA", { month: "long", timeZone: "UTC" }).format(
@@ -82,6 +83,15 @@ export function AttendanceExportReport({ mode }: { mode: "monthly" | "range" }) 
     }
     return values;
   }, [currentPreview]);
+  const regularVisitors = currentPreview?.visitors.filter(
+    (visitor) => !visitor.childProgram,
+  ) ?? [];
+  const sundaySchoolVisitors = currentPreview?.visitors.filter(
+    (visitor) => visitor.childProgram === "sunday_school",
+  ) ?? [];
+  const childrensChurchVisitors = currentPreview?.visitors.filter(
+    (visitor) => visitor.childProgram === "childrens_church",
+  ) ?? [];
 
   async function loadPreview() {
     if (!user || loading) return;
@@ -225,7 +235,7 @@ export function AttendanceExportReport({ mode }: { mode: "monthly" | "range" }) 
                     </tr>
                   ))}
                   <tr className="report-section-row"><th scope="row">Visitors</th><td colSpan={currentPreview.services.length} /></tr>
-                  {currentPreview.visitors.map((visitor) => (
+                  {regularVisitors.map((visitor) => (
                     <tr key={visitor.id}>
                       <th scope="row">{personName(visitor)}</th>
                       {currentPreview.services.map((service) => <td key={service.id}>{visitor.serviceId === service.id ? "✓" : ""}</td>)}
@@ -237,10 +247,30 @@ export function AttendanceExportReport({ mode }: { mode: "monthly" | "range" }) 
                       <td key={service.id}>{service.unnamedVisitorCount ?? 0}</td>
                     ))}
                   </tr>
+                  <tr className="report-section-row"><th scope="row">Sunday School Kids</th><td colSpan={currentPreview.services.length} /></tr>
+                  {sundaySchoolVisitors.map((visitor) => (
+                    <tr key={`sunday-school-${visitor.id}`}>
+                      <th scope="row">{personName(visitor)}</th>
+                      {currentPreview.services.map((service) => <td key={service.id}>{visitor.serviceId === service.id ? "✓" : ""}</td>)}
+                    </tr>
+                  ))}
                   <tr className="report-summary-row">
-                    <th scope="row">Sunday School Kids</th>
+                    <th scope="row">Unnamed Sunday School Kids</th>
                     {currentPreview.services.map((service) => (
-                      <td key={service.id}>{service.sundaySchoolKidsCount ?? 0}</td>
+                      <td key={service.id}>{childProgramForService(service.serviceType)?.kind === "childrens_church" ? 0 : service.sundaySchoolKidsCount ?? 0}</td>
+                    ))}
+                  </tr>
+                  <tr className="report-section-row"><th scope="row">Children’s Church</th><td colSpan={currentPreview.services.length} /></tr>
+                  {childrensChurchVisitors.map((visitor) => (
+                    <tr key={`childrens-church-${visitor.id}`}>
+                      <th scope="row">{personName(visitor)}</th>
+                      {currentPreview.services.map((service) => <td key={service.id}>{visitor.serviceId === service.id ? "✓" : ""}</td>)}
+                    </tr>
+                  ))}
+                  <tr className="report-summary-row">
+                    <th scope="row">Unnamed Children’s Church</th>
+                    {currentPreview.services.map((service) => (
+                      <td key={service.id}>{childProgramForService(service.serviceType)?.kind === "childrens_church" ? service.sundaySchoolKidsCount ?? 0 : 0}</td>
                     ))}
                   </tr>
                   <tr className="report-summary-row">

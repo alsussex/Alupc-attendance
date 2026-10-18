@@ -237,6 +237,11 @@ export function fromCloudRecord(
     lastName: stringOrEmpty(row, "last_name"),
     displayName: requiredString(row, "display_name"),
     savedAsMember: requiredBoolean(row, "saved_as_member"),
+    childProgram:
+      row.child_program === "sunday_school" ||
+      row.child_program === "childrens_church"
+        ? row.child_program
+        : undefined,
     memberPersonId: optionalString(row, "member_person_id"),
     notes: optionalString(row, "notes"),
     deletedAt: optionalString(row, "deleted_at"),

@@ -1,8 +1,14 @@
 "use client";
 
-import type { ChurchService, Person, ServiceVisitor } from "@/lib/domain";
+import type {
+  ChurchService,
+  Person,
+  ServiceVisitor,
+  VisitorChildProgram,
+} from "@/lib/domain";
 import type { MonthlyAttendanceDataset } from "@/lib/exports/monthly-attendance-data";
 import { summarizeServiceAttendance } from "@/lib/services/attendance-summary";
+import { childProgramForService } from "@/lib/services/child-program";
 
 const CHECKMARK = "✓";
 const encoder = new TextEncoder();
@@ -123,6 +129,13 @@ export interface MonthlyWorkbookLayout {
   visitorEndRow: number;
   unnamedVisitorsRow: number;
   sundaySchoolKidsRow: number;
+  sundaySchoolHeaderRow: number;
+  sundaySchoolStartRow: number;
+  sundaySchoolEndRow: number;
+  childrensChurchHeaderRow: number;
+  childrensChurchStartRow: number;
+  childrensChurchEndRow: number;
+  childrensChurchKidsRow: number;
   totalAttendanceRow: number;
 }
 
@@ -167,6 +180,7 @@ export interface AttendanceWorkbookVisitor {
   firstName: string;
   lastName: string;
   serviceIds: Set<string>;
+  childProgram?: VisitorChildProgram;
 }
 
 /**
@@ -180,9 +194,11 @@ export function attendanceWorkbookVisitors(
   const rows = new Map<string, AttendanceWorkbookVisitor>();
   for (const visitor of visitors) {
     if (visitor.deletedAt || visitor.savedAsMember) continue;
-    const key = visitor.visitorPersonId
+    const identityKey = visitor.visitorPersonId
       ? `visitor:${visitor.visitorPersonId}`
       : `visit:${visitor.id}`;
+    const childProgram = visitor.childProgram ?? undefined;
+    const key = `${identityKey}:${childProgram ?? "regular"}`;
     const existing = rows.get(key);
     if (existing) {
       existing.serviceIds.add(visitor.serviceId);
@@ -193,11 +209,13 @@ export function attendanceWorkbookVisitors(
       firstName: visitor.firstName,
       lastName: visitor.lastName,
       serviceIds: new Set([visitor.serviceId]),
+      childProgram,
     });
   }
   return [...rows.values()].sort((left, right) => {
     const collator = new Intl.Collator(undefined, { sensitivity: "base" });
     return (
+      (left.childProgram ?? "").localeCompare(right.childProgram ?? "") ||
       collator.compare(
         left.lastName || left.firstName,
         right.lastName || right.firstName,
@@ -206,6 +224,15 @@ export function attendanceWorkbookVisitors(
       left.id.localeCompare(right.id)
     );
   });
+}
+
+function workbookVisitorsForProgram(
+  visitors: ServiceVisitor[],
+  childProgram?: VisitorChildProgram,
+) {
+  return attendanceWorkbookVisitors(visitors).filter(
+    (visitor) => visitor.childProgram === childProgram,
+  );
 }
 
 function servicePeriod(service: ChurchService) {
@@ -404,7 +431,15 @@ function contentTypesXml() {
 export function monthlyWorkbookLayout(
   dataset: MonthlyAttendanceDataset,
 ): MonthlyWorkbookLayout {
-  const visitorRows = attendanceWorkbookVisitors(dataset.visitors);
+  const visitorRows = workbookVisitorsForProgram(dataset.visitors);
+  const sundaySchoolVisitors = workbookVisitorsForProgram(
+    dataset.visitors,
+    "sunday_school",
+  );
+  const childrensChurchVisitors = workbookVisitorsForProgram(
+    dataset.visitors,
+    "childrens_church",
+  );
   const memberStartRow = 3;
   const memberEndRow = memberStartRow + dataset.members.length - 1;
   const separatorRow = memberEndRow + 1;
@@ -412,8 +447,17 @@ export function monthlyWorkbookLayout(
   const visitorStartRow = visitorHeaderRow + 1;
   const visitorEndRow = visitorStartRow + visitorRows.length - 1;
   const unnamedVisitorsRow = visitorEndRow + 1;
-  const sundaySchoolKidsRow = unnamedVisitorsRow + 1;
-  const totalAttendanceRow = sundaySchoolKidsRow + 1;
+  const sundaySchoolHeaderRow = unnamedVisitorsRow + 1;
+  const sundaySchoolStartRow = sundaySchoolHeaderRow + 1;
+  const sundaySchoolEndRow =
+    sundaySchoolStartRow + sundaySchoolVisitors.length - 1;
+  const sundaySchoolKidsRow = sundaySchoolEndRow + 1;
+  const childrensChurchHeaderRow = sundaySchoolKidsRow + 1;
+  const childrensChurchStartRow = childrensChurchHeaderRow + 1;
+  const childrensChurchEndRow =
+    childrensChurchStartRow + childrensChurchVisitors.length - 1;
+  const childrensChurchKidsRow = childrensChurchEndRow + 1;
+  const totalAttendanceRow = childrensChurchKidsRow + 1;
   const monthName = new Intl.DateTimeFormat("en-CA", {
     month: "long",
     timeZone: "UTC",
@@ -436,6 +480,13 @@ export function monthlyWorkbookLayout(
     visitorEndRow,
     unnamedVisitorsRow,
     sundaySchoolKidsRow,
+    sundaySchoolHeaderRow,
+    sundaySchoolStartRow,
+    sundaySchoolEndRow,
+    childrensChurchHeaderRow,
+    childrensChurchStartRow,
+    childrensChurchEndRow,
+    childrensChurchKidsRow,
     totalAttendanceRow,
   };
 }
@@ -451,7 +502,15 @@ export function buildMonthlyAttendanceWorkbook(
   }
   const serviceColumns = attendanceServiceColumns(dataset);
   const services = serviceColumns.map((column) => column.service);
-  const visitorRows = attendanceWorkbookVisitors(dataset.visitors);
+  const visitorRows = workbookVisitorsForProgram(dataset.visitors);
+  const sundaySchoolVisitors = workbookVisitorsForProgram(
+    dataset.visitors,
+    "sunday_school",
+  );
+  const childrensChurchVisitors = workbookVisitorsForProgram(
+    dataset.visitors,
+    "childrens_church",
+  );
   const layout = monthlyWorkbookLayout(dataset);
   const columnCount = services.length + 1;
   const blankRow = (style: number) =>
@@ -533,11 +592,68 @@ export function buildMonthlyAttendanceWorkbook(
     ]),
   );
   rows.push(
+    rowXml(
+      layout.sundaySchoolHeaderRow,
+      [
+        { style: 5, value: "Sunday School Kids" },
+        ...Array.from({ length: services.length }, () => ({ style: 5 })),
+      ],
+      22,
+    ),
+  );
+  for (const [visitorIndex, visitor] of sundaySchoolVisitors.entries()) {
+    rows.push(
+      rowXml(layout.sundaySchoolStartRow + visitorIndex, [
+        { style: 3, value: displayName(visitor) },
+        ...services.map((service) => ({
+          style: 4,
+          value: visitor.serviceIds.has(service.id) ? CHECKMARK : undefined,
+        })),
+      ]),
+    );
+  }
+  rows.push(
     rowXml(layout.sundaySchoolKidsRow, [
-      { style: 6, value: "Sunday School Kids" },
+      { style: 6, value: "Unnamed Sunday School Kids" },
       ...services.map((service) => ({
         style: 7,
-        value: Math.max(0, Math.trunc(service.sundaySchoolKidsCount ?? 0)),
+        value:
+          childProgramForService(service.serviceType)?.kind === "childrens_church"
+            ? 0
+            : Math.max(0, Math.trunc(service.sundaySchoolKidsCount ?? 0)),
+      })),
+    ]),
+  );
+  rows.push(
+    rowXml(
+      layout.childrensChurchHeaderRow,
+      [
+        { style: 5, value: "Children’s Church" },
+        ...Array.from({ length: services.length }, () => ({ style: 5 })),
+      ],
+      22,
+    ),
+  );
+  for (const [visitorIndex, visitor] of childrensChurchVisitors.entries()) {
+    rows.push(
+      rowXml(layout.childrensChurchStartRow + visitorIndex, [
+        { style: 3, value: displayName(visitor) },
+        ...services.map((service) => ({
+          style: 4,
+          value: visitor.serviceIds.has(service.id) ? CHECKMARK : undefined,
+        })),
+      ]),
+    );
+  }
+  rows.push(
+    rowXml(layout.childrensChurchKidsRow, [
+      { style: 6, value: "Unnamed Children’s Church" },
+      ...services.map((service) => ({
+        style: 7,
+        value:
+          childProgramForService(service.serviceType)?.kind === "childrens_church"
+            ? Math.max(0, Math.trunc(service.sundaySchoolKidsCount ?? 0))
+            : 0,
       })),
     ]),
   );
@@ -551,14 +667,25 @@ export function buildMonthlyAttendanceWorkbook(
         `COUNTIF(${column}${layout.memberStartRow}:${column}${layout.memberEndRow},"${CHECKMARK}")`,
       );
     }
-    if (dataset.visitors.length > 0) {
+    if (layout.visitorEndRow >= layout.visitorStartRow) {
       terms.push(
         `COUNTIF(${column}${layout.visitorStartRow}:${column}${layout.visitorEndRow},"${CHECKMARK}")`,
+      );
+    }
+    if (layout.sundaySchoolEndRow >= layout.sundaySchoolStartRow) {
+      terms.push(
+        `COUNTIF(${column}${layout.sundaySchoolStartRow}:${column}${layout.sundaySchoolEndRow},"${CHECKMARK}")`,
+      );
+    }
+    if (layout.childrensChurchEndRow >= layout.childrensChurchStartRow) {
+      terms.push(
+        `COUNTIF(${column}${layout.childrensChurchStartRow}:${column}${layout.childrensChurchEndRow},"${CHECKMARK}")`,
       );
     }
     terms.push(
       `${column}${layout.unnamedVisitorsRow}`,
       `${column}${layout.sundaySchoolKidsRow}`,
+      `${column}${layout.childrensChurchKidsRow}`,
     );
     const summary = summarizeServiceAttendance(
       service,

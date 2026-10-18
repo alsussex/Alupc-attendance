@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { UserContext } from "@/lib/domain";
+import type { ServiceVisitor, UserContext } from "@/lib/domain";
 import {
   addServiceVisitor,
   editServiceVisitor,
@@ -21,6 +21,7 @@ import {
   filterAttendanceMembers,
   filterAttendanceVisitors,
 } from "@/lib/services/attendance-view";
+import { summarizeServiceAttendance } from "@/lib/services/attendance-summary";
 import {
   clearLocalDatabase,
   closeLocalDatabaseConnection,
@@ -42,6 +43,65 @@ beforeEach(async () => {
 });
 
 describe("attendance-taking view", () => {
+  it("stores a named child program per service and keeps totals distinct", async () => {
+    const morning = await saveService(attendanceTaker, {
+      serviceDate: "2026-10-18",
+      serviceType: "Sunday Morning",
+      status: "draft",
+      unnamedVisitorCount: 1,
+      sundaySchoolKidsCount: 2,
+    });
+    const evening = await saveService(attendanceTaker, {
+      serviceDate: "2026-10-18",
+      serviceType: "Sunday Evening",
+      status: "draft",
+    });
+    const { visitor } = await addServiceVisitor(attendanceTaker, morning.id, {
+      firstName: "Tanner",
+      lastName: "McLean",
+      saveAsMember: false,
+      childProgram: "sunday_school",
+    });
+
+    expect(visitor.childProgram).toBe("sunday_school");
+    expect(
+      summarizeServiceAttendance(morning, [], [visitor]),
+    ).toMatchObject({
+      namedVisitorCount: 0,
+      visitorTotal: 1,
+      sundaySchoolKidsCount: 3,
+      totalPresent: 4,
+    });
+
+    const edited = await editServiceVisitor(attendanceTaker, visitor.id, {
+      firstName: "Tanner",
+      lastName: "McLean",
+      childProgram: null,
+    });
+    expect(edited.childProgram).toBeNull();
+    expect(
+      summarizeServiceAttendance(morning, [], [edited]).totalPresent,
+    ).toBe(4);
+    expect(
+      summarizeServiceAttendance(morning, [], [edited]).visitorTotal,
+    ).toBe(2);
+    await expect(
+      addServiceVisitor(attendanceTaker, evening.id, {
+        firstName: "Tanner",
+        lastName: "McLean",
+        saveAsMember: false,
+        childProgram: "sunday_school",
+      }),
+    ).rejects.toThrow(/not available for this service/);
+
+    const cloud = toCloudRecord(visitor as unknown as Record<string, unknown>);
+    expect(cloud.child_program).toBe("sunday_school");
+    expect(
+      (fromCloudRecord("service_visitors", cloud) as ServiceVisitor)
+        .childProgram,
+    ).toBe("sunday_school");
+  });
+
   it("shows every active member by default and filters by attendance and name", async () => {
     const avery = await saveMember(attendanceTaker, {
       firstName: "Avery",

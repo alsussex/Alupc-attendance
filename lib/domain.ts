@@ -95,6 +95,8 @@ export interface AttendanceRecord extends AuditedRecord {
   present: boolean;
 }
 
+export type VisitorChildProgram = "sunday_school" | "childrens_church";
+
 export interface ServiceVisitor extends AuditedRecord {
   serviceId: string;
   visitorPersonId?: string;
@@ -102,6 +104,7 @@ export interface ServiceVisitor extends AuditedRecord {
   lastName: string;
   displayName: string;
   savedAsMember: boolean;
+  childProgram?: VisitorChildProgram | null;
   memberPersonId?: string;
   notes?: string;
   deletedAt?: string | null;

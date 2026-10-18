@@ -285,6 +285,8 @@ export function createSupabaseUploadTarget(): UploadTarget {
               ? "version,updated_at,created_at,last_mutation_id,present"
               : table === "services"
                 ? "id,organization_id,service_date,service_type,custom_name,service_time,notes,status,unnamed_visitor_count,sunday_school_kids_count,is_archived,deleted_at,version,updated_at,created_at,created_by,updated_by,last_mutation_id"
+                : table === "service_visitors"
+                  ? "id,organization_id,service_id,visitor_person_id,first_name,last_name,display_name,saved_as_member,child_program,member_person_id,notes,deleted_at,version,updated_at,created_at,created_by,updated_by,last_mutation_id"
                 : "version,updated_at,created_at,last_mutation_id",
           ),
       );

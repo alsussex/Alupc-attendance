@@ -1,5 +1,6 @@
 import type { Person, ServiceVisitor } from "@/lib/domain";
 import {
+  countNamedChildProgramVisitors,
   countNamedVisitors,
   countVisitors,
   normalizeSundaySchoolKidsCount,
@@ -61,13 +62,18 @@ export function attendancePresentCounts(
   includeVisitors = true,
   unnamedVisitorCount = 0,
   sundaySchoolKidsCount = 0,
+  serviceType?: string,
 ) {
-  const visitorCount = countVisitors(visitors, unnamedVisitorCount);
+  const visitorCount = countVisitors(visitors, unnamedVisitorCount, serviceType);
+  const classifiedChildCount = countNamedChildProgramVisitors(
+    visitors,
+    serviceType,
+  );
   return {
     total:
       presentMemberIds.size +
       (includeVisitors ? visitorCount : 0) +
-      Math.max(0, Math.trunc(sundaySchoolKidsCount)),
+      Math.max(0, Math.trunc(sundaySchoolKidsCount)) + classifiedChildCount,
     members: presentMemberIds.size,
     visitors: visitorCount,
   };
@@ -77,13 +83,19 @@ export function attendanceVisitorBreakdown(
   visitors: ServiceVisitor[],
   unnamedVisitorCount = 0,
   sundaySchoolKidsCount = 0,
+  serviceType?: string,
 ) {
-  const named = countNamedVisitors(visitors);
+  const allNamed = countNamedVisitors(visitors);
+  const namedChildren = countNamedChildProgramVisitors(visitors, serviceType);
+  const named = allNamed - namedChildren;
   const unnamed = normalizeUnnamedVisitorCount(unnamedVisitorCount);
-  const children = normalizeSundaySchoolKidsCount(sundaySchoolKidsCount);
+  const unnamedChildren = normalizeSundaySchoolKidsCount(sundaySchoolKidsCount);
+  const children = namedChildren + unnamedChildren;
   return {
     named,
     unnamed,
+    namedChildren,
+    unnamedChildren,
     children,
     total: named + unnamed + children,
   };

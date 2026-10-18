@@ -13,7 +13,10 @@ import {
 } from "@/lib/repositories/attendance-repository";
 import { buildAttendanceReportRows } from "@/lib/reports/attendance-report";
 import { attendancePresentCounts } from "@/lib/services/attendance-view";
-import { childProgramForService } from "@/lib/services/child-program";
+import {
+  childProgramForService,
+  namedVisitorChildProgramForService,
+} from "@/lib/services/child-program";
 import { summarizeServiceAttendance } from "@/lib/services/attendance-summary";
 import { buildOrganizationExport } from "@/lib/settings/exports";
 import {
@@ -37,6 +40,17 @@ beforeEach(async () => {
 });
 
 describe("Sunday School Kids attendance counter", () => {
+  it("offers named child classifications only for Sunday Morning and Wednesday", () => {
+    expect(namedVisitorChildProgramForService("Sunday Morning")?.kind).toBe(
+      "sunday_school",
+    );
+    expect(
+      namedVisitorChildProgramForService("Wednesday Bible Study")?.kind,
+    ).toBe("childrens_church");
+    expect(namedVisitorChildProgramForService("Sunday Evening")).toBeNull();
+    expect(namedVisitorChildProgramForService("Special Service")).toBeNull();
+  });
+
   it("increments independently from unnamed visitors and never becomes negative", async () => {
     const service = await saveService(user, {
       serviceDate: "2026-08-02",
@@ -209,16 +223,19 @@ describe("Sunday School Kids attendance counter", () => {
 
   it("uses service-specific labels while retaining one shared counter", () => {
     expect(childProgramForService("Sunday Morning")).toEqual({
+      kind: "sunday_school",
       label: "Sunday School Kids",
       helperText: "Children attending Sunday School without recorded names.",
     });
     expect(childProgramForService("Wednesday Bible Study")).toEqual({
+      kind: "childrens_church",
       label: "Children’s Church",
       helperText:
         "Children attending Children’s Church without recorded names.",
     });
     expect(childProgramForService("Sunday Evening")).toBeNull();
     expect(childProgramForService("Special Service")).toEqual({
+      kind: "sunday_school",
       label: "Sunday School Kids",
       helperText: "Children attending Sunday School without recorded names.",
     });

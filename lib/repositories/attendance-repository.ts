@@ -14,6 +14,7 @@ import {
   type ServiceStatus,
   type ServiceType,
   type ServiceVisitor,
+  type VisitorChildProgram,
   type UserContext,
 } from "@/lib/domain";
 import { getDatabase } from "@/lib/storage/database";
@@ -23,7 +24,10 @@ import { enqueueChange } from "@/lib/sync/queue";
 import { toCloudRecord } from "@/lib/sync/serialization";
 import { recordAuditEntry } from "@/lib/audit/audit-repository";
 import { memberContactValidation } from "@/lib/people/member-contact";
-import { childProgramForService } from "@/lib/services/child-program";
+import {
+  childProgramForService,
+  namedVisitorChildProgramForService,
+} from "@/lib/services/child-program";
 import {
   currentUndoDirection,
   recordUndoAction,
@@ -1415,10 +1419,18 @@ export async function addServiceVisitor(
     fallbackName?: string;
     returningVisitorPersonId?: string;
     legacyVisitorIds?: string[];
+    childProgram?: VisitorChildProgram;
   },
 ) {
   const database = await getDatabase();
-  await requireEditableService(user, serviceId);
+  const service = await requireEditableService(user, serviceId);
+  const program = namedVisitorChildProgramForService(service.serviceType);
+  if (
+    input.childProgram &&
+    (!program || input.childProgram !== program.kind)
+  ) {
+    throw new Error("This child classification is not available for this service.");
+  }
   const timestamp = nowIso();
   const firstName = input.firstName.trim();
   const lastName = input.lastName.trim();
@@ -1468,6 +1480,7 @@ export async function addServiceVisitor(
     lastName,
     displayName: makeDisplayName(firstName, lastName),
     savedAsMember: input.saveAsMember,
+    childProgram: input.saveAsMember ? undefined : input.childProgram,
     memberPersonId: member?.id,
     notes: input.notes?.trim() || undefined,
     createdAt: timestamp,
@@ -1541,6 +1554,7 @@ export async function editServiceVisitor(
     lastName: string;
     notes?: string;
     fallbackName?: string;
+    childProgram?: VisitorChildProgram | null;
   },
 ) {
   const database = await getDatabase();
@@ -1552,7 +1566,14 @@ export async function editServiceVisitor(
   ) {
     throw new Error("Visitor not found");
   }
-  await requireEditableService(user, visitor.serviceId);
+  const service = await requireEditableService(user, visitor.serviceId);
+  const program = namedVisitorChildProgramForService(service.serviceType);
+  if (
+    input.childProgram &&
+    (!program || input.childProgram !== program.kind)
+  ) {
+    throw new Error("This child classification is not available for this service.");
+  }
   const firstName = input.firstName.trim();
   const lastName = input.lastName.trim();
   if (!firstName) {
@@ -1564,6 +1585,13 @@ export async function editServiceVisitor(
     lastName,
     displayName: makeDisplayName(firstName, lastName),
     notes: input.notes?.trim() || undefined,
+    ...("childProgram" in input
+      ? {
+          childProgram:
+            input.childProgram ??
+            (visitor.childProgram ? null : visitor.childProgram),
+        }
+      : {}),
     updatedAt: nowIso(),
     updatedBy: user.userId,
   };
@@ -1577,7 +1605,8 @@ export async function editServiceVisitor(
   });
   if (
     visitor.displayName !== updated.displayName ||
-    visitor.notes !== updated.notes
+    visitor.notes !== updated.notes ||
+    visitor.childProgram !== updated.childProgram
   ) {
     await recordAuditEntry(user, {
       entityType: "visitor",
@@ -1589,10 +1618,12 @@ export async function editServiceVisitor(
         from: {
           name: visitor.displayName,
           notes: visitor.notes,
+          childProgram: visitor.childProgram,
         },
         to: {
           name: updated.displayName,
           notes: updated.notes,
+          childProgram: updated.childProgram,
         },
         ...undoAuditDetails(),
       },
@@ -1601,17 +1632,20 @@ export async function editServiceVisitor(
   announceDataChanged();
   if (
     visitor.displayName !== updated.displayName ||
-    visitor.notes !== updated.notes
+    visitor.notes !== updated.notes ||
+    visitor.childProgram !== updated.childProgram
   ) {
     const before = {
       firstName: visitor.firstName,
       lastName: visitor.lastName,
       notes: visitor.notes,
+      childProgram: visitor.childProgram,
     };
     const after = {
       firstName: updated.firstName,
       lastName: updated.lastName,
       notes: updated.notes,
+      childProgram: updated.childProgram,
     };
     const currentMatches = async (expected: typeof before) => {
       const currentDatabase = await getDatabase();
@@ -1626,6 +1660,7 @@ export async function editServiceVisitor(
           sameValue(current.firstName, expected.firstName) &&
           sameValue(current.lastName, expected.lastName) &&
           sameValue(current.notes, expected.notes) &&
+          sameValue(current.childProgram, expected.childProgram) &&
           serviceEditable(service),
       );
     };

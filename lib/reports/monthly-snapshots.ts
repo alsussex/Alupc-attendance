@@ -44,6 +44,7 @@ export interface SnapshotVisitor {
   lastName: string;
   displayName: string;
   serviceId: string;
+  childProgram?: ServiceVisitor["childProgram"];
 }
 
 export interface MonthlySnapshotPayload {
@@ -261,6 +262,7 @@ export function buildMonthlySnapshotPayload(
         lastName: visitor.lastName,
         displayName: visitor.displayName,
         serviceId: visitor.serviceId,
+        childProgram: visitor.childProgram,
       })),
   };
 }
@@ -385,6 +387,7 @@ export function snapshotToAttendanceDataset(
     lastName: visitor.lastName,
     displayName: visitor.displayName,
     savedAsMember: false,
+    childProgram: visitor.childProgram,
     createdBy: snapshot.finalizedBy ?? snapshot.id,
     updatedBy: snapshot.finalizedBy ?? snapshot.id,
     createdAt: timestamp,

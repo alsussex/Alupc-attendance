@@ -45,6 +45,7 @@ export interface VisitorReportRow {
   firstVisit: string;
   lastVisit: string;
   services: ServiceReportRow[];
+  serviceLabels: string[];
 }
 
 export interface YearlyReportSummary {
@@ -222,6 +223,13 @@ export function visitorReportRows(
       ? `visitor:${visitor.visitorPersonId}`
       : `visit:${visitor.id}`;
     const name = visitor.displayName.trim() || visitor.firstName.trim();
+    const categoryLabel =
+      visitor.childProgram === "sunday_school"
+        ? "Sunday School"
+        : visitor.childProgram === "childrens_church"
+          ? "Children’s Church"
+          : undefined;
+    const visitServiceLabel = `${service.service.customName || service.service.serviceType}${categoryLabel ? ` (${categoryLabel})` : ""}`;
     const existing = groups.get(key);
     if (!existing) {
       groups.set(key, {
@@ -231,12 +239,14 @@ export function visitorReportRows(
         firstVisit: service.service.serviceDate,
         lastVisit: service.service.serviceDate,
         services: [service],
+        serviceLabels: [visitServiceLabel],
       });
     } else {
       existing.visits += 1;
       existing.firstVisit = [existing.firstVisit, service.service.serviceDate].sort()[0];
       existing.lastVisit = [existing.lastVisit, service.service.serviceDate].sort().at(-1)!;
       existing.services.push(service);
+      existing.serviceLabels.push(visitServiceLabel);
     }
   }
   return [...groups.values()].sort((left, right) =>
